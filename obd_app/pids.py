@@ -318,7 +318,51 @@ PIDS: Dict[int, PidDef] = {
         PidDef(0x1C, 1, lambda d: {"obd_std": float(d[0])}, "Padrão OBD (011C)", extra=True, slow=True),
         PidDef(0x21, 2, lambda d: {"dist_mil": float((d[0] * 256) + d[1])}, "Distância c/ MIL (0121)", extra=True, slow=True),
         PidDef(0x51, 1, lambda d: {"fuel_type": float(d[0])}, "Tipo Combustível (0151)", extra=True, slow=True),
+        # PIDs SAE J1979 adicionais: só são lidos se a ECU declarar no bitmap (0100/0120/0140).
+        # Na ME7.5.30 do Gol G5 nenhum deles existe; ficam para outros carros / modo OBD2 genérico.
+        # As chaves abaixo NÃO estão em CHANNELS: entram no CSV como colunas dinâmicas (ver DYNAMIC_INFO).
+        PidDef(0x08, 1, lambda d: {"stft_b2": _trim(d[0])}, "STFT Banco 2 (0108)", extra=True, slow=True),
+        PidDef(0x09, 1, lambda d: {"ltft_b2": _trim(d[0])}, "LTFT Banco 2 (0109)", extra=True, slow=True),
+        PidDef(0x0A, 1, lambda d: {"fuel_press": d[0] * 3.0}, "Pressão Combustível (010A)", extra=True, slow=True),
+        PidDef(0x10, 2, lambda d: {"maf": ((d[0] * 256) + d[1]) / 100.0}, "MAF (0110)", extra=True),
+        PidDef(0x1F, 2, lambda d: {"run_time": float((d[0] * 256) + d[1])}, "Tempo Motor Ligado (011F)", extra=True, slow=True),
+        PidDef(0x2E, 1, lambda d: {"evap_purge": (d[0] * 100.0) / 255.0}, "Purga Cânister (012E)", extra=True, slow=True),
+        PidDef(0x2F, 1, lambda d: {"fuel_level": (d[0] * 100.0) / 255.0}, "Nível Combustível (012F)", extra=True, slow=True),
+        PidDef(0x30, 1, lambda d: {"warmups": float(d[0])}, "Aquecimentos desde Limpeza (0130)", extra=True, slow=True),
+        PidDef(0x31, 2, lambda d: {"dist_clr": float((d[0] * 256) + d[1])}, "Distância desde Limpeza (0131)", extra=True, slow=True),
+        PidDef(0x33, 1, lambda d: {"baro": float(d[0])}, "Pressão Barométrica (0133)", extra=True, slow=True),
+        PidDef(0x3C, 2, lambda d: {"cat_temp": ((d[0] * 256) + d[1]) / 10.0 - 40.0}, "Temp. Catalisador B1S1 (013C)", extra=True, slow=True),
+        PidDef(0x42, 2, lambda d: {"ecu_volt": ((d[0] * 256) + d[1]) / 1000.0}, "Tensão Módulo (0142)", extra=True, slow=True),
+        PidDef(0x43, 2, lambda d: {"abs_load": ((d[0] * 256) + d[1]) * 100.0 / 255.0}, "Carga Absoluta (0143)", extra=True),
+        PidDef(0x44, 2, lambda d: {"cmd_lambda": ((d[0] * 256) + d[1]) * 2.0 / 65536.0}, "Lambda Comandado (0144)", extra=True),
+        PidDef(0x45, 1, lambda d: {"rel_tps": (d[0] * 100.0) / 255.0}, "Borboleta Relativa (0145)", extra=True),
+        PidDef(0x46, 1, lambda d: {"ambient": d[0] - 40.0}, "Temp. Ambiente (0146)", extra=True, slow=True),
+        PidDef(0x47, 1, lambda d: {"tps_b": (d[0] * 100.0) / 255.0}, "Borboleta B (0147)", extra=True),
+        PidDef(0x49, 1, lambda d: {"pedal_d": (d[0] * 100.0) / 255.0}, "Pedal D (0149)", extra=True),
+        PidDef(0x4A, 1, lambda d: {"pedal_e": (d[0] * 100.0) / 255.0}, "Pedal E (014A)", extra=True),
+        PidDef(0x4C, 1, lambda d: {"cmd_throttle": (d[0] * 100.0) / 255.0}, "Atuador Borboleta (014C)", extra=True),
+        PidDef(0x4D, 2, lambda d: {"time_mil": float((d[0] * 256) + d[1])}, "Tempo c/ MIL (014D)", extra=True, slow=True),
+        PidDef(0x4E, 2, lambda d: {"time_clr": float((d[0] * 256) + d[1])}, "Tempo desde Limpeza (014E)", extra=True, slow=True),
+        PidDef(0x52, 1, lambda d: {"ethanol": (d[0] * 100.0) / 255.0}, "% Etanol (0152)", extra=True, slow=True),
+        PidDef(0x5C, 1, lambda d: {"oil_temp": d[0] - 40.0}, "Temp. Óleo (015C)", extra=True, slow=True),
+        PidDef(0x5E, 2, lambda d: {"fuel_rate": ((d[0] * 256) + d[1]) / 20.0}, "Consumo (015E)", extra=True),
     )
+}
+
+# Rótulo/unidade dos canais dinâmicos do Modo 01 (fora de CHANNELS) — usados no CSV e na aba "Todos os Canais"
+DYNAMIC_INFO: Dict[str, Tuple[str, str]] = {
+    "stft_b2": ("STFT Banco 2", "%"), "ltft_b2": ("LTFT Banco 2", "%"),
+    "fuel_press": ("Pressão Combustível", "kPa"), "maf": ("MAF", "g/s"),
+    "run_time": ("Tempo Motor Ligado", "s"), "evap_purge": ("Purga Cânister", "%"),
+    "fuel_level": ("Nível Combustível", "%"), "warmups": ("Aquecimentos desde Limpeza", "un"),
+    "dist_clr": ("Distância desde Limpeza", "km"), "baro": ("Pressão Barométrica", "kPa"),
+    "cat_temp": ("Temp. Catalisador B1S1", "°C"), "ecu_volt": ("Tensão Módulo", "V"),
+    "abs_load": ("Carga Absoluta", "%"), "cmd_lambda": ("Lambda Comandado", "λ"),
+    "rel_tps": ("Borboleta Relativa", "%"), "ambient": ("Temp. Ambiente", "°C"),
+    "tps_b": ("Borboleta B", "%"), "pedal_d": ("Pedal D", "%"), "pedal_e": ("Pedal E", "%"),
+    "cmd_throttle": ("Atuador Borboleta", "%"), "time_mil": ("Tempo c/ MIL", "min"),
+    "time_clr": ("Tempo desde Limpeza", "min"), "ethanol": ("% Etanol", "%"),
+    "oil_temp": ("Temp. Óleo", "°C"), "fuel_rate": ("Consumo", "l/h"),
 }
 
 # Ordem padrão (a sonda será ajustada automaticamente pelo autodiscovery no handshake)

@@ -5,11 +5,12 @@ import os
 import queue
 import time
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from . import dtc as dtcmod
+from . import vag
 from .elm327 import ELM327, extract_payload
 from .pids import (EXTRA_ORDER, LAMBDA_CANDIDATES, LTFT_CANDIDATES, PIDS,
                    STFT_CANDIDATES, parse_supported_bitmap)
@@ -24,9 +25,11 @@ class ObdWorker(QThread):
     rate = pyqtSignal(float, float)        # respostas/s, ciclos/s
     dtc_result = pyqtSignal(list, object)  # [(código, descrição)], (mil, count) | None
     info = pyqtSignal(str)
+    channels = pyqtSignal(dict)            # canais dinâmicos descobertos {chave: (rótulo, unidade)}
 
     MAX_CONSEC_ERRORS = 12
     BITMAP_PIDS = {0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0}
+    VAG_GROUPS = range(1, 256)             # blocos de medição possíveis (21 01 .. 21 FF)
 
     def __init__(self, transport: Transport, t0: float, parent=None):
         super().__init__(parent)
@@ -45,13 +48,22 @@ class ObdWorker(QThread):
         self.active_normal: List[int] = [0x0C, 0x0B, 0x0E, 0x11, 0x14, 0x06, 0x07, 0x05]
         self.active_extra: List[int] = list(EXTRA_ORDER)
         self.elm: Optional[ELM327] = None
+        # --- descoberta/rodízio de TODOS os blocos de medição VAG (gravação completa no CSV)
+        self.ecu_id = ""
+        self.vag_supported: set[int] = set()
+        self.vag_unsupported: set[int] = set()
+        self.vag_cells: Dict[str, Tuple[str, str]] = {}
+        self._vag_queue: List[int] = []          # blocos ainda não testados
+        self._vag_pending_nodata: List[int] = [] # NO DATA aguardando confirmação de que a sessão está viva
+        self._vag_fail: Dict[int, int] = {}
+        self._vag_rot_idx = 0
 
     # ---------------------------------------------------------------- API (GUI)
     def stop(self) -> None:
         self._running = False
 
     def request(self, cmd: str) -> None:
-        """'read_dtc' | 'clear_dtc'"""
+        """'read_dtc' | 'clear_dtc' | 'scan_vag'"""
         self._cmds.put(cmd)
 
     # ------------------------------------------------------------------- thread
@@ -109,6 +121,7 @@ class ObdWorker(QThread):
             self.active_fast = [0x2103, 0x2121]
             self.active_normal = [0x2103, 0x2121, 0x2120, 0x2104]
             self.active_extra = [0x2105]
+            self._vag_setup_discovery(diag_lines)
             for vk in (0x2103, 0x2120, 0x2104, 0x2105):
                 if not self._running:
                     raise TransportError("Cancelado")
@@ -116,6 +129,9 @@ class ObdWorker(QThread):
             self._emit({"fuel_sys1": 2.0, "o2_mask": 1.0})
             self._save_diag_log(diag_lines)
             self.info.emit("Sonda Lambda e Fuel Trims ativos via VAG KWP2000 (Blocos 003, 032, 033)!")
+            if self._vag_queue:
+                self.info.emit(f"Descobrindo os demais blocos de medição em segundo plano ({len(self._vag_queue)} "
+                               "a testar). Para descobrir tudo de uma vez: aba 'Todos os Canais' → Varrer blocos.")
             self.status.emit("connected", "Conectado — VAG KWP2000 Nativo (Blocos 001..033 Sonda Ativa)")
             return
 
@@ -195,6 +211,9 @@ class ObdWorker(QThread):
             return False
         if not vals:
             return False
+        if pdef.mode == 0x21:
+            # Além dos canais semânticos (rpm, lambda_v...), grava TODAS as células do bloco (gGGG_cN)
+            vals.update(self._vag_cells(r, pdef.pid) or {})
         self._emit(vals)
         self.log.emit(f"✔ {pdef.cmd} ({pdef.name}) ativo: {vals}")
         return True
@@ -232,13 +251,156 @@ class ObdWorker(QThread):
             if r_id.ok and r_id.data_lines():
                 raw_id = "".join(r_id.data_lines())
                 if raw_id.startswith("5A9B"):
-                    ascii_id = "".join(chr(b) if 32 <= b < 127 else " " for b in bytes.fromhex(raw_id[4:])).strip()
+                    try:
+                        id_bytes = bytes.fromhex(raw_id[4:4 + (len(raw_id) - 4) // 2 * 2])
+                    except ValueError:
+                        id_bytes = b""
+                    ascii_id = "".join(chr(b) if 32 <= b < 127 else " " for b in id_bytes).strip()
                     ecu_part = " ".join(ascii_id.split())
+                    if ecu_part:
+                        self.ecu_id = ecu_part.split()[0]  # ex.: 032906032AJ (usado no cache de blocos)
                     self.log.emit(f"✔ ECU Identificada (VAG): {ecu_part}")
                     diag_lines.append(f"VAG ECU ID (1A9B): {ecu_part}")
             if self._try_pid(0x2121, diag_lines):
                 return True
         return False
+
+    # ------------------------------------------------- blocos VAG genéricos (todos os campos no CSV)
+    def _vag_setup_discovery(self, diag_lines: List[str]) -> None:
+        """Carrega o cache de blocos desta ECU e monta a fila de blocos ainda não testados."""
+        cache = vag.load_cache(self.ecu_id or "desconhecida")
+        self.vag_supported |= set(cache["supported"])
+        self.vag_unsupported |= set(cache["unsupported"]) - self.vag_supported
+        for k, v in cache["cells"].items():
+            self.vag_cells.setdefault(k, v)
+        known = self.vag_supported | self.vag_unsupported
+        self._vag_queue = [g for g in self.VAG_GROUPS if g not in known]
+        self._vag_pending_nodata = []
+        self._vag_fail = {}
+        if self.vag_cells:
+            self.channels.emit(dict(self.vag_cells))
+        diag_lines.append(f"Cache de blocos VAG ({self.ecu_id or 'desconhecida'}): {len(self.vag_supported)} com dados, "
+                          f"{len(self.vag_unsupported)} inexistentes, {len(self._vag_queue)} a testar")
+
+    def _vag_save(self) -> None:
+        vag.save_cache(self.ecu_id or "desconhecida", list(self.vag_supported),
+                       list(self.vag_unsupported), self.vag_cells)
+
+    def _vag_mark(self, group: int, ok: bool) -> None:
+        changed = False
+        if ok and group not in self.vag_supported:
+            self.vag_supported.add(group)
+            self.vag_unsupported.discard(group)
+            changed = True
+        elif not ok and group not in self.vag_unsupported and group not in self.vag_supported:
+            self.vag_unsupported.add(group)
+            changed = True
+        if group in self._vag_queue:
+            self._vag_queue.remove(group)
+        if group in self._vag_pending_nodata:
+            self._vag_pending_nodata.remove(group)
+        if changed:
+            self._vag_save()
+
+    def _vag_confirm_pending(self) -> None:
+        """Uma leitura válida DEPOIS de um NO DATA prova que a sessão está viva => o bloco não existe mesmo."""
+        if self._vag_pending_nodata:
+            for g in list(self._vag_pending_nodata):
+                self._vag_mark(g, False)
+
+    def _vag_cells(self, resp, group: int) -> Optional[Dict[str, float]]:
+        """Decodifica todas as células do bloco ``group``. None se a resposta não contém ``61 GG``."""
+        try:
+            block = vag.extract_block(resp, group)
+            if block is None:
+                return None
+            cells = vag.decode_block(group, block)
+        except Exception:
+            return None
+        self._vag_mark(group, True)
+        new: Dict[str, Tuple[str, str]] = {}
+        for k, (_, unit) in cells.items():
+            old = self.vag_cells.get(k)
+            if old is None or old[1] != unit:
+                cell = int(k.rsplit("_c", 1)[1])
+                self.vag_cells[k] = new[k] = (vag.channel_label(group, cell, unit), unit)
+        if new:
+            self.channels.emit(new)
+            self._vag_save()
+        return {k: v for k, (v, _) in cells.items()}
+
+    def _probe_vag_group(self, group: int) -> Optional[bool]:
+        """Lê um bloco qualquer (descoberta ou rodízio). True = dados; False = inexistente; None = indeterminado."""
+        assert self.elm is not None
+        r = self.elm.command(f"21{group:02X}", 2.5)
+        vals = self._vag_cells(r, group)
+        if vals is not None:
+            pdef = PIDS.get(0x2100 | group)
+            if pdef is not None and pdef.mode == 0x21:
+                data = extract_payload(r, 0x21, group, pdef.nbytes)
+                if data is not None:
+                    try:
+                        vals.update({k: v for k, v in pdef.decode(data).items() if v is not None})
+                    except Exception:
+                        pass
+            if vals:
+                self._emit(vals)
+            self._vag_confirm_pending()
+            return True
+        if vag.is_negative(r):          # 7F 21 xx: a ECU disse explicitamente que o bloco não existe
+            self._vag_mark(group, False)
+            return False
+        if r.error == "NO DATA":        # pode ser bloco inexistente OU sessão caída: confirma depois
+            if group in self._vag_queue:
+                self._vag_queue.remove(group)
+            if group not in self._vag_pending_nodata:
+                self._vag_pending_nodata.append(group)
+            return None
+        n = self._vag_fail.get(group, 0) + 1
+        self._vag_fail[group] = n
+        if group in self._vag_queue:
+            self._vag_queue.remove(group)
+            if n < 3:
+                self._vag_queue.append(group)  # tenta de novo no fim da fila
+        return None
+
+    def _next_vag_item(self, cycle: int):
+        """1 bloco extra por ciclo: descoberta (3 de 4 ciclos enquanto houver fila) ou rodízio dos conhecidos."""
+        active = {k & 0xFF for k in (self.active_fast + self.active_normal + self.active_extra)
+                  if isinstance(k, int) and (k >> 8) == 0x21}
+        rot = sorted(self.vag_supported - active)
+        if self._vag_queue and (cycle % 4 != 3 or not rot):
+            return ("vag", self._vag_queue[0])
+        if rot:
+            g = rot[self._vag_rot_idx % len(rot)]
+            self._vag_rot_idx += 1
+            return ("vag", g)
+        return None
+
+    def _scan_all_vag(self) -> None:
+        """Varredura completa (botão da GUI): lê todos os blocos não marcados como inexistentes (~1-2 min)."""
+        assert self.elm is not None
+        groups = [g for g in self.VAG_GROUPS if g not in self.vag_unsupported]
+        n = len(groups)
+        self.log.emit(f"Varredura de blocos VAG: {n} blocos...")
+        for i, g in enumerate(groups):
+            if not self._running:
+                return
+            if i % 8 == 0:
+                self.status.emit("connected", f"Varrendo blocos VAG: {g:03d} ({i + 1}/{n})...")
+            res = self._probe_vag_group(g)
+            # a cada 8 blocos (ou NO DATA acumulado) faz um "heartbeat" no bloco 033 para validar a sessão
+            if (res is None and len(self._vag_pending_nodata) >= 8) or i % 8 == 7:
+                if self._probe_vag_group(0x21) is not True:
+                    self.log.emit("Sessão VAG não respondeu durante a varredura — reinicializando...")
+                    self._vag_pending_nodata.clear()
+                    self._reinit_bus()
+        self._probe_vag_group(0x21)
+        self._vag_save()
+        msg = (f"Varredura concluída: {len(self.vag_supported)} blocos com dados, "
+               f"{len(self.vag_unsupported)} inexistentes, {len(self.vag_cells)} campos gravados no CSV.")
+        self.info.emit(msg)
+        self.status.emit("connected", "Conectado — VAG KWP2000 Nativo (todos os blocos)")
 
     def _probe_sensors(self, diag_lines: List[str]) -> None:
         """Descobre automaticamente os sensores de Sonda Lambda, STFT, LTFT no Modo 01 (fallback/Demo)."""
@@ -350,6 +512,11 @@ class ObdWorker(QThread):
                     slow_extras.append(p)
             if slow_extras:
                 order.append(slow_extras[cycle % len(slow_extras)])
+            if self.vag_kwp_mode:
+                # +1 bloco VAG por ciclo (descoberta automática / rodízio de todos os blocos com dados)
+                extra_block = self._next_vag_item(cycle)
+                if extra_block is not None:
+                    order.append(extra_block)
             if cycle % 10 == 0:
                 order.append("ATRV")
         return order
@@ -387,6 +554,19 @@ class ObdWorker(QThread):
                     if v is not None:
                         self._emit({"battery": v})
                     continue
+                if isinstance(item, tuple):  # ("vag", grupo): bloco de medição genérico
+                    res = self._probe_vag_group(item[1])
+                    if res is True:
+                        n_resp += 1
+                        consec_err = 0
+                    elif res is None:
+                        consec_err += 1
+                        if consec_err >= self.MAX_CONSEC_ERRORS:
+                            self._reinit_bus()
+                            consec_err = 0
+                            no_data_streak.clear()
+                            break
+                    continue
                 pdef = PIDS[item]
                 resp = self.elm.query_pid(pdef.cmd)
                 if resp.ok:
@@ -397,6 +577,9 @@ class ObdWorker(QThread):
                         except Exception:
                             values = {}
                         if values:
+                            if pdef.mode == 0x21:
+                                values.update(self._vag_cells(resp, pdef.pid) or {})
+                                self._vag_confirm_pending()
                             self._emit(values)
                             n_resp += 1
                             consec_err = 0
@@ -512,3 +695,9 @@ class ObdWorker(QThread):
                 self.info.emit("Códigos de falha apagados." if ok else f"Falha ao apagar DTCs: {r.error or r.lines}")
                 self._cmds.put("read_dtc")
                 return
+            elif cmd == "scan_vag":
+                if self.vag_kwp_mode:
+                    self._scan_all_vag()
+                else:
+                    self.info.emit("Varredura de blocos disponível só no modo VAG KWP2000 (ECU VW/Bosch ME7). "
+                                   "No modo OBD2 todos os PIDs do bitmap já são lidos automaticamente.")

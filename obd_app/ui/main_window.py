@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, QGr
 from ..ble_scan import BleScanWorker
 from ..datalog import CsvLogger, SeriesBuffer
 from ..detector import DecelDetector, Event
-from ..pids import CHANNELS
+from ..pids import CHANNELS, DYNAMIC_INFO
 from ..transports import BleTransport, MockTransport, TcpTransport
 from ..worker import ObdWorker
 from .plots import WINDOW_S, DualAxisPlot
@@ -53,6 +53,9 @@ class MainWindow(QMainWindow):
         self.markers: List[Tuple[float, list]] = []
         self.frame = 0
         self.n_events = 0
+        # canais fora de CHANNELS (blocos VAG gGGG_cN, PIDs extras): {chave: (descrição, unidade)}
+        self.dyn_info: Dict[str, Tuple[str, str]] = {}
+        self._ch_rows: Dict[str, int] = {}
 
         self._build_ui()
         self._load_settings()
@@ -225,6 +228,28 @@ class MainWindow(QMainWindow):
         evl.addWidget(self.events, 1)
         evl.addWidget(ev_clear)
         tabs.addTab(ev_w, "Eventos")
+        # todos os canais (tudo o que a central enviou, inclusive blocos VAG genéricos)
+        self.ch_tab = QWidget()
+        chl = QVBoxLayout(self.ch_tab)
+        chl.setContentsMargins(4, 4, 4, 4)
+        chb = QHBoxLayout()
+        self.scan_btn = QPushButton("🔎 Varrer todos os blocos VAG (~1–2 min)")
+        self.scan_btn.setToolTip("Lê os blocos de medição 001..255 da central (modo VAG KWP2000) e passa a gravar\n"
+                                 "todos os campos encontrados no CSV. O resultado fica em cache para as próximas conexões.")
+        self.scan_btn.clicked.connect(lambda: self._request("scan_vag"))
+        self.ch_count_lbl = QLabel("0 canais")
+        chb.addWidget(self.scan_btn)
+        chb.addStretch()
+        chb.addWidget(self.ch_count_lbl)
+        chl.addLayout(chb)
+        self.ch_table = QTableWidget(0, 4)
+        self.ch_table.setHorizontalHeaderLabels(["Canal", "Descrição", "Valor", "Idade (s)"])
+        self.ch_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.ch_table.verticalHeader().setVisible(False)
+        self.ch_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        chl.addWidget(self.ch_table, 1)
+        tabs.addTab(self.ch_tab, "Todos os Canais")
+        self.tabs = tabs
         # DTC
         dtc_w = QWidget()
         dl = QVBoxLayout(dtc_w)
@@ -349,6 +374,8 @@ class MainWindow(QMainWindow):
         self.latest.clear()
         self.stamp.clear()
         self.dirty.clear()
+        self.ch_table.setRowCount(0)
+        self._ch_rows.clear()
         self.detector = DecelDetector()
         for card in self.cards.values():
             card.value.setText("--")
@@ -363,6 +390,7 @@ class MainWindow(QMainWindow):
         self.worker.rate.connect(self._on_rate)
         self.worker.dtc_result.connect(self._on_dtc)
         self.worker.info.connect(self._on_info)
+        self.worker.channels.connect(self._on_channels)
         self.worker.finished.connect(self._worker_finished)
         self._apply_worker_flags()
         self.worker.decel_mode = self.decel_btn.isChecked()
@@ -483,6 +511,62 @@ class MainWindow(QMainWindow):
             self._update_card_states(now)
             if self.logger.active:
                 self.rec_btn.setText(f"⏹ Gravando ({self.logger.rows} linhas)")
+        if self.frame % 15 == 0:
+            self._update_channels_table(now)
+
+    def _update_channels_table(self, now: float):
+        # Atualiza a tabela com todos os canais conhecidos recebidos até o momento
+        all_keys = list(CHANNELS.keys()) + [k for k in self.latest if k not in CHANNELS]
+        total_keys = set(all_keys) | set(self.dyn_info.keys())
+        self.ch_count_lbl.setText(f"{len(total_keys)} canais conhecidos ({len(self.latest)} ativos)")
+
+        for k in all_keys:
+            val = self.latest.get(k)
+            t_sample = self.stamp.get(k)
+            age_str = f"{now - t_sample:.1f}s" if t_sample is not None else "—"
+
+            if k in CHANNELS:
+                ch = CHANNELS[k]
+                desc = f"{ch.label} [{ch.unit}]" if ch.unit else ch.label
+                val_str = ch.fmt.format(val) if val is not None else "--"
+            elif k in self.dyn_info:
+                label, unit = self.dyn_info[k]
+                desc = f"{label} [{unit}]" if unit else label
+                val_str = f"{val:.3f}" if val is not None else "--"
+            elif k in DYNAMIC_INFO:
+                label, unit = DYNAMIC_INFO[k]
+                desc = f"{label} [{unit}]" if unit else label
+                val_str = f"{val:.3f}" if val is not None else "--"
+            else:
+                desc = k
+                val_str = f"{val:.3f}" if val is not None else "--"
+
+            row = self._ch_rows.get(k)
+            if row is None:
+                row = self.ch_table.rowCount()
+                self._ch_rows[k] = row
+                self.ch_table.insertRow(row)
+                self.ch_table.setItem(row, 0, QTableWidgetItem(k))
+                self.ch_table.setItem(row, 1, QTableWidgetItem(desc))
+                self.ch_table.setItem(row, 2, QTableWidgetItem(val_str))
+                self.ch_table.setItem(row, 3, QTableWidgetItem(age_str))
+            else:
+                item_desc = self.ch_table.item(row, 1)
+                if item_desc and item_desc.text() != desc:
+                    item_desc.setText(desc)
+                item_val = self.ch_table.item(row, 2)
+                if item_val and item_val.text() != val_str:
+                    item_val.setText(val_str)
+                item_age = self.ch_table.item(row, 3)
+                if item_age:
+                    item_age.setText(age_str)
+
+    def _on_channels(self, new_channels: dict):
+        self.dyn_info.update(new_channels)
+        extra_headers = {k: f"{desc} [{unit}]" if unit else desc for k, (desc, unit) in new_channels.items()}
+        self.logger.add_columns(extra_headers)
+        total_keys = set(CHANNELS.keys()) | set(self.dyn_info.keys()) | set(self.latest.keys())
+        self.ch_count_lbl.setText(f"{len(total_keys)} canais conhecidos ({len(self.latest)} ativos)")
 
     def _update_card_states(self, now: float):
         decel = self.decel_btn.isChecked()
@@ -541,7 +625,21 @@ class MainWindow(QMainWindow):
                 self.rec_btn.blockSignals(False)
                 return
             try:
-                self.logger.start(path)
+                extra_headers = {}
+                for k in self.latest:
+                    if k not in CHANNELS:
+                        if k in self.dyn_info:
+                            label, unit = self.dyn_info[k]
+                            extra_headers[k] = f"{label} [{unit}]" if unit else label
+                        elif k in DYNAMIC_INFO:
+                            label, unit = DYNAMIC_INFO[k]
+                            extra_headers[k] = f"{label} [{unit}]" if unit else label
+                        else:
+                            extra_headers[k] = k
+                for k, (label, unit) in self.dyn_info.items():
+                    if k not in CHANNELS and k not in extra_headers:
+                        extra_headers[k] = f"{label} [{unit}]" if unit else label
+                self.logger.start(path, extra=extra_headers)
             except OSError as e:
                 QMessageBox.critical(self, "Log", f"Não foi possível criar o arquivo:\n{e}")
                 self.rec_btn.setChecked(False)
@@ -554,10 +652,11 @@ class MainWindow(QMainWindow):
                 self.statusBar().showMessage(f"Log salvo: {path} ({rows} linhas)", 10000)
             self.rec_btn.setText("⏺ Gravar Log")
 
-    # ============================================================ DTC
+    # ============================================================ DTC e Diagnóstico
     def _set_dtc_enabled(self, on: bool):
         self.dtc_read_btn.setEnabled(on)
         self.dtc_clear_btn.setEnabled(on)
+        self.scan_btn.setEnabled(on)
 
     def _request(self, cmd: str):
         if self.worker:
