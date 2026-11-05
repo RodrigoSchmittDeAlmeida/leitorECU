@@ -10,11 +10,22 @@ from typing import Dict, List, Optional, Tuple
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from . import dtc as dtcmod
+from . import ford
 from . import vag
 from .elm327 import ELM327, extract_payload
 from .pids import (EXTRA_ORDER, LAMBDA_CANDIDATES, LTFT_CANDIDATES, PIDS,
                    STFT_CANDIDATES, parse_supported_bitmap)
 from .transports import Transport, TransportError
+
+PROFILE_VW_GOL = "vw_gol"
+PROFILE_FORD_KA = "ford_ka"
+PROFILE_GENERIC = "generic"
+
+VEHICLE_PROFILES = {
+    PROFILE_VW_GOL: "VW Gol G5 1.6 Flex (Bosch ME7.5.30 / KWP2000)",
+    PROFILE_FORD_KA: "Ford Ka+ 2016 SEL 1.5 Sigma (HS-CAN / Conforto BCM)",
+    PROFILE_GENERIC: "OBD2 Padrão / Automático",
+}
 
 
 class ObdWorker(QThread):
@@ -31,10 +42,11 @@ class ObdWorker(QThread):
     BITMAP_PIDS = {0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0}
     VAG_GROUPS = range(1, 256)             # blocos de medição possíveis (21 01 .. 21 FF)
 
-    def __init__(self, transport: Transport, t0: float, parent=None):
+    def __init__(self, transport: Transport, t0: float, vehicle_profile: str = PROFILE_VW_GOL, parent=None):
         super().__init__(parent)
         self.transport = transport
         self.t0 = t0
+        self.vehicle_profile = vehicle_profile
         self._running = True
         self.decel_mode = False
         self.read_extras = True  # lê tudo o que a ECU envia por padrão
@@ -44,6 +56,8 @@ class ObdWorker(QThread):
         self._cmds: "queue.Queue[str]" = queue.Queue()
         self.supported: set[int] = set()
         self.vag_kwp_mode: bool = False
+        self.ford_hscan_mode: bool = False
+        self._curr_header: str = "7E0"
         self.active_fast: List[int] = [0x0C, 0x0B, 0x0E, 0x11, 0x14]
         self.active_normal: List[int] = [0x0C, 0x0B, 0x0E, 0x11, 0x14, 0x06, 0x07, 0x05]
         self.active_extra: List[int] = list(EXTRA_ORDER)
@@ -112,30 +126,44 @@ class ObdWorker(QThread):
             f"Transporte: {self.transport.name} | Versão ELM: {self.elm.version}",
         ]
 
-        # 1. Tenta PRIMEIRO inicializar direto em VAG KWP2000 nativo (endereço 01, header 81 10 F1),
-        # que na Bosch ME7.5.30 (VW Gol G5) habilita imediatamente a Sonda Lambda, STFT, LTFT e todos os sensores!
         self.vag_kwp_mode = False
+        self.ford_hscan_mode = False
         self.supported = set()
-        if self.transport.name != "Demo" and self._init_vag_kwp2000(diag_lines, wait_close=False):
-            self.vag_kwp_mode = True
-            self.active_fast = [0x2103, 0x2121]
-            self.active_normal = [0x2103, 0x2121, 0x2120, 0x2104]
-            self.active_extra = [0x2105]
-            self._vag_setup_discovery(diag_lines)
-            for vk in (0x2103, 0x2120, 0x2104, 0x2105):
-                if not self._running:
-                    raise TransportError("Cancelado")
-                self._try_pid(vk, diag_lines)
-            self._emit({"fuel_sys1": 2.0, "o2_mask": 1.0})
+
+        # 1. Perfil Ford Ka+ 2016 (HS-CAN 500k, PCM Sigma 1.5, BCM Conforto, ABS, IPC, PSCM)
+        if self.vehicle_profile == PROFILE_FORD_KA or (self.vehicle_profile == PROFILE_GENERIC and self.transport.name == "Demo" and getattr(self, "force_ford", False)):
+            if self._init_ford_hscan(diag_lines):
+                self._save_diag_log(diag_lines)
+                return
+
+        # 2. Perfil VW Gol G5 (ou genérico): Tenta PRIMEIRO inicializar direto em VAG KWP2000 nativo (endereço 01, header 81 10 F1),
+        # que na Bosch ME7.5.30 (VW Gol G5) habilita imediatamente a Sonda Lambda, STFT, LTFT e todos os sensores!
+        if self.vehicle_profile in (PROFILE_VW_GOL, PROFILE_GENERIC):
+            if self.transport.name != "Demo" and self._init_vag_kwp2000(diag_lines, wait_close=False):
+                self.vag_kwp_mode = True
+                self.active_fast = [0x2103, 0x2121]
+                self.active_normal = [0x2103, 0x2121, 0x2120, 0x2104]
+                self.active_extra = [0x2105]
+                self._vag_setup_discovery(diag_lines)
+                for vk in (0x2103, 0x2120, 0x2104, 0x2105):
+                    if not self._running:
+                        raise TransportError("Cancelado")
+                    self._try_pid(vk, diag_lines)
+                self._emit({"fuel_sys1": 2.0, "o2_mask": 1.0})
+                self._save_diag_log(diag_lines)
+                self.info.emit("Sonda Lambda e Fuel Trims ativos via VAG KWP2000 (Blocos 003, 032, 033)!")
+                if self._vag_queue:
+                    self.info.emit(f"Descobrindo os demais blocos de medição em segundo plano ({len(self._vag_queue)} "
+                                   "a testar). Para descobrir tudo de uma vez: aba 'Todos os Canais' → Varrer blocos.")
+                self.status.emit("connected", "Conectado — VAG KWP2000 Nativo (Blocos 001..033 Sonda Ativa)")
+                return
+
+        # Se for perfil Ford Ka+ e ainda não conectou (ex: no Mock/Demo):
+        if self.vehicle_profile == PROFILE_FORD_KA and self._init_ford_hscan(diag_lines):
             self._save_diag_log(diag_lines)
-            self.info.emit("Sonda Lambda e Fuel Trims ativos via VAG KWP2000 (Blocos 003, 032, 033)!")
-            if self._vag_queue:
-                self.info.emit(f"Descobrindo os demais blocos de medição em segundo plano ({len(self._vag_queue)} "
-                               "a testar). Para descobrir tudo de uma vez: aba 'Todos os Canais' → Varrer blocos.")
-            self.status.emit("connected", "Conectado — VAG KWP2000 Nativo (Blocos 001..033 Sonda Ativa)")
             return
 
-        # 2. Fallback OBD2 padrão (ISO 9141-2 / KWP / CAN / Simulador Demo)
+        # 3. Fallback OBD2 padrão (ISO 9141-2 / KWP / CAN / Simulador Demo)
         if self.transport.name != "Demo":
             self.elm.command("ATPC", 2.0)
             time.sleep(2.0)
@@ -217,6 +245,200 @@ class ObdWorker(QThread):
         self._emit(vals)
         self.log.emit(f"✔ {pdef.cmd} ({pdef.name}) ativo: {vals}")
         return True
+
+    def _init_ford_hscan(self, diag_lines: List[str]) -> bool:
+        """Inicializa o barramento Ford HS-CAN 500 kbps (ISO 15765-4 11-bit) para o Ford Ka+ 2016 SEL."""
+        assert self.elm is not None
+        self.status.emit("connecting", "Inicializando barramento Ford HS-CAN 500k (ISO 15765-4)...")
+        self.log.emit("Inicializando Ford HS-CAN (ATSP6 + ATAL + ATCAF1 + ATSH7E0)...")
+        diag_lines.append("--- Inicializando Ford HS-CAN (ATSP6 + ATAL + ATCAF1 + ATSH 7E0) ---")
+
+        for cmd in ("ATAL", "ATSP6", "ATCAF1", "ATC1", "ATSH7E0"):
+            self.elm.command(cmd, 2.0)
+
+        self._curr_header = "7E0"
+
+        # Testa resposta do PCM (0100 ou 221624)
+        r = self.elm.command("0100", 6.0)
+        diag_lines.append(f"Ford PCM 0100 RX: {' / '.join(r.lines) or '-'} (err={r.error})")
+        payload = extract_payload(r, 1, 0x00, 4) if r.ok else None
+        if not r.ok and payload is None and self.transport.name != "Demo":
+            r_did = self.elm.command("221624", 4.0)
+            diag_lines.append(f"Ford PCM 221624 RX: {' / '.join(r_did.lines) or '-'} (err={r_did.error})")
+            if not r_did.ok:
+                return False
+
+        if payload:
+            self.supported |= parse_supported_bitmap(0x00, payload)
+            for base_pid, cmd_sup in ((0x20, "0120"), (0x40, "0140")):
+                if base_pid in self.supported:
+                    rs = self.elm.command(cmd_sup, 2.0)
+                    pl = extract_payload(rs, 1, base_pid, 4) if rs.ok else None
+                    if pl:
+                        self.supported |= parse_supported_bitmap(base_pid, pl)
+
+        self.ford_hscan_mode = True
+        self.active_fast = [0x0C, 0x0B, 0x0E, 0x11, 0x14, 0x04, 0x0D]
+        self.active_normal = [0x0C, 0x0B, 0x0E, 0x11, 0x14, 0x06, 0x07, 0x05, 0x0F, 0x2F, 0x42]
+        self.channels.emit(dict(ford.FORD_CHANNELS_INFO))
+
+        self.info.emit("Ford Ka+ 2016 Conectado! Barramento HS-CAN (PCM Motor Sigma 1.5, BCM Conforto, ABS, IPC, PSCM).")
+        self.status.emit("connected", "Conectado — Ford Ka+ 2016 HS-CAN 500k (PCM, BCM Conforto, ABS, IPC)")
+        return True
+
+    def _query_ford_did(self, module_tx: str, did: str, decode_fn: Callable[[bytes], Dict[str, float]]) -> Optional[Dict[str, float]]:
+        """Envia requisição Modo 22 Ford UDS para o módulo correspondente e decodifica a resposta."""
+        assert self.elm is not None
+        if self._curr_header != module_tx:
+            self.elm.command(f"ATSH{module_tx}")
+            self._curr_header = module_tx
+        r = self.elm.query_pid(did)
+        if not r.ok:
+            return None
+        prefix = "62" + (did[2:] if did.startswith("22") else did)
+        for line in r.data_lines():
+            clean = "".join(line.split()).upper()
+            idx = clean.find(prefix.upper())
+            if idx != -1:
+                hex_data = clean[idx + len(prefix):]
+                try:
+                    raw_bytes = bytes.fromhex(hex_data[:(len(hex_data) // 2) * 2])
+                    vals = decode_fn(raw_bytes)
+                    if vals:
+                        self._emit(vals)
+                        return vals
+                except Exception:
+                    pass
+        return None
+
+    def _poll_ford_cycle(self, cycle: int) -> int:
+        """Ciclo completo de leitura multiplexada Ford HS-CAN 500k (Motor Sigma 1.5 + Conforto BCM + ABS + Painel + EPAS)."""
+        assert self.elm is not None
+        n_resp = 0
+
+        # Garante header no PCM
+        if self._curr_header != "7E0":
+            self.elm.command("ATSH7E0")
+            self._curr_header = "7E0"
+
+        # 1. PIDs rápidos do Motor Sigma 1.5 (todo ciclo)
+        fast_pids = [0x0C, 0x0B, 0x0E, 0x11, 0x14]  # RPM, MAP, Avanço, TPS, Sonda 1
+        if not self.decel_mode:
+            fast_pids.extend([0x04, 0x0D])  # Carga, Velocidade
+
+        for pid_code in fast_pids:
+            if not self._running:
+                return n_resp
+            pdef = PIDS[pid_code]
+            resp = self.elm.query_pid(pdef.cmd)
+            if resp.ok:
+                data = extract_payload(resp, pdef.mode, pdef.pid, pdef.nbytes)
+                if data is not None:
+                    try:
+                        vals = {k: v for k, v in pdef.decode(data).items() if v is not None}
+                        if vals:
+                            self._emit(vals)
+                            n_resp += 1
+                    except Exception:
+                        pass
+
+        # Se prioridade de desaceleração ativada, foca 100% no motor Sigma
+        if self.decel_mode:
+            return n_resp
+
+        # 2. PIDs normais do PCM (intercalados)
+        if cycle % 2 == 0:
+            for pid_code in (0x06, 0x07, 0x05):  # STFT, LTFT, ECT
+                if not self._running:
+                    return n_resp
+                pdef = PIDS[pid_code]
+                resp = self.elm.query_pid(pdef.cmd)
+                if resp.ok:
+                    data = extract_payload(resp, pdef.mode, pdef.pid, pdef.nbytes)
+                    if data is not None:
+                        try:
+                            vals = {k: v for k, v in pdef.decode(data).items() if v is not None}
+                            if vals:
+                                self._emit(vals)
+                                n_resp += 1
+                        except Exception:
+                            pass
+
+        # DIDs Ford PCM: CHT Temp e VVT Ti-VCT
+        if cycle % 2 == 1:
+            if self._query_ford_did("7E0", "221624", ford._dec_pcm_cht):
+                n_resp += 1
+            if self._query_ford_did("7E0", "22093C", ford._dec_pcm_vvt):
+                n_resp += 1
+
+        # DIDs Ford PCM: Tempo de Injeção e Pressão A/C
+        if cycle % 4 == 0:
+            if self._query_ford_did("7E0", "221125", ford._dec_pcm_injection):
+                n_resp += 1
+            if self._query_ford_did("7E0", "221101", ford._dec_pcm_ac):
+                n_resp += 1
+            if self._query_ford_did("7E0", "221608", ford._dec_pcm_flex):
+                n_resp += 1
+
+        # 3. Módulo de CONFORTO & CARROCERIA (BCM 726)
+        if cycle % 2 == 0:
+            if self._query_ford_did("726", "22404C", ford._dec_bcm_doors):
+                n_resp += 1
+            if self._query_ford_did("726", "224050", ford._dec_bcm_lighting):
+                n_resp += 1
+            if cycle % 6 == 0:
+                if self._query_ford_did("726", "224060", ford._dec_bcm_accessories):
+                    n_resp += 1
+                if self._query_ford_did("726", "224001", ford._dec_bcm_voltage):
+                    n_resp += 1
+
+        # 4. Módulo de FREIOS ABS & ESTABILIDADE (ABS 760)
+        if cycle % 2 == 1:
+            if self._query_ford_did("760", "222B00", ford._dec_abs_wheels):
+                n_resp += 1
+            if self._query_ford_did("760", "222B01", ford._dec_abs_dynamics):
+                n_resp += 1
+
+        # 5. Módulo do PAINEL DE INSTRUMENTOS (IPC 720)
+        if cycle % 5 == 0:
+            if self._query_ford_did("720", "22DD01", ford._dec_ipc_odometer):
+                n_resp += 1
+            if self._query_ford_did("720", "222416", ford._dec_ipc_dashboard):
+                n_resp += 1
+
+        # 6. Módulo da DIREÇÃO ELÉTRICA EPAS (PSCM 730)
+        if cycle % 3 == 0:
+            if self._query_ford_did("730", "223300", ford._dec_pscm_steering):
+                n_resp += 1
+
+        # Restaura header do PCM
+        if self._curr_header != "7E0":
+            self.elm.command("ATSH7E0")
+            self._curr_header = "7E0"
+
+        return n_resp
+
+    def _scan_all_ford(self) -> None:
+        """Varredura completa de todos os módulos Ford (botão da GUI)."""
+        assert self.elm is not None
+        self.log.emit("Varredura de todos os módulos Ford (PCM, BCM Conforto, ABS, IPC, PSCM, RCM)...")
+        self.status.emit("connected", "Varrendo todos os módulos Ford Ka+...")
+        found = 0
+        for did_key, fdid in ford.FORD_DIDS.items():
+            if not self._running:
+                return
+            mod = ford.FORD_MODULES.get(fdid.module_key)
+            if not mod:
+                continue
+            res = self._query_ford_did(mod.tx_id, fdid.did, fdid.decode_fn)
+            if res:
+                found += 1
+                self.log.emit(f"✔ [{mod.name}] {fdid.label}: {res}")
+            time.sleep(0.05)
+        self.elm.command("ATSH7E0")
+        self._curr_header = "7E0"
+        self.info.emit(f"Varredura Ford concluída: {found} grupos de sensores lidos com sucesso.")
+        self.status.emit("connected", "Conectado — Ford Ka+ 2016 HS-CAN (Varredura Concluída)")
 
     def _init_vag_kwp2000(self, diag_lines: List[str], wait_close: bool = True) -> bool:
         """Inicializa o protocolo nativo VAG KWP2000 (ISO 14230-4 5-baud init no endereço 0x01, header 81 10 F1).
@@ -529,19 +751,40 @@ class ObdWorker(QThread):
         n_resp, n_cycles = 0, 0
         last_rate = time.monotonic()
         while self._running:
-            # Em modo VAG KWP2000 (Modo 21), cada resposta é multi-frame (29 bytes),
-            # então não devemos usar o sufixo '1' (fast_reply), senão o ELM327 corta no 1º frame de 7 bytes!
-            self.elm.fast_reply = False if self.vag_kwp_mode else self.fast_reply
+            # Em modo VAG KWP2000 (Modo 21) ou Ford HS-CAN UDS (Modo 22), as respostas podem ser multi-frame
+            self.elm.fast_reply = False if (self.vag_kwp_mode or self.ford_hscan_mode) else self.fast_reply
             self.elm.raw_log = self.raw_log
             self._process_commands()
 
-            # Modo Mudo/Pausado: mantém sessão viva com 1 pacote a cada 3s sem metralhar a Linha K
+            # Modo Mudo/Pausado: mantém sessão viva com 1 pacote a cada 3s sem metralhar a Linha K / CAN
             if self.poll_delay < 0:
                 time.sleep(0.1)
                 if time.monotonic() - last_rate >= 3.0:
                     self.elm.command("3E" if self.vag_kwp_mode else "0100", 2.0)
                     self.rate.emit(0.0, 0.0)
                     last_rate = time.monotonic()
+                continue
+
+            # Polling dedicado Ford HS-CAN 500k (PCM Motor Sigma, BCM Conforto, ABS, IPC, PSCM)
+            if self.ford_hscan_mode:
+                if self.poll_delay > 0:
+                    time.sleep(self.poll_delay)
+                n_resp_c = self._poll_ford_cycle(cycle)
+                n_resp += n_resp_c
+                if n_resp_c > 0:
+                    consec_err = 0
+                else:
+                    consec_err += 1
+                    if consec_err >= self.MAX_CONSEC_ERRORS:
+                        self._reinit_bus()
+                        consec_err = 0
+                cycle += 1
+                n_cycles += 1
+                now = time.monotonic()
+                if now - last_rate >= 1.0:
+                    dt = now - last_rate
+                    self.rate.emit(n_resp / dt, n_cycles / dt)
+                    n_resp, n_cycles, last_rate = 0, 0, now
                 continue
 
             for item in self._pid_list(cycle):
@@ -621,6 +864,18 @@ class ObdWorker(QThread):
     def _reinit_bus(self) -> None:
         self.status.emit("connecting", "Comunicação com a ECU perdida — reinicializando barramento...")
         assert self.elm is not None
+        if self.ford_hscan_mode:
+            self.log.emit("Reinicializando barramento Ford HS-CAN (ATPC + ATSP6 + ATSH7E0 + 0100)")
+            while self._running:
+                if self._init_ford_hscan([]):
+                    self.status.emit("connected", "Conectado — Ford HS-CAN reinicializado")
+                    return
+                for _ in range(15):
+                    if not self._running:
+                        return
+                    time.sleep(0.1)
+            return
+
         if self.vag_kwp_mode:
             self.log.emit("Reinicializando barramento VAG KWP2000 (ATPC + ATSP4 + ATIIA01 + 2121)")
             while self._running:
@@ -663,7 +918,29 @@ class ObdWorker(QThread):
                 return
             assert self.elm is not None
             if cmd == "read_dtc":
-                if self.vag_kwp_mode:
+                if self.ford_hscan_mode:
+                    all_codes = []
+                    dtc_count = 0
+                    for mod_name, tx_id in [
+                        ("PCM Motor", "7E0"),
+                        ("BCM Conforto", "726"),
+                        ("ABS/ESC", "760"),
+                        ("IPC Painel", "720"),
+                        ("PSCM Direção", "730"),
+                        ("RCM Airbag", "737"),
+                    ]:
+                        self.elm.command(f"ATSH{tx_id}")
+                        self._curr_header = tx_id
+                        r = self.elm.command("03", 2.5)
+                        codes = dtcmod.parse_dtcs(r) if r.ok else []
+                        if codes:
+                            for c in codes:
+                                all_codes.append((f"{c} [{mod_name}]", dtcmod.describe(c)))
+                                dtc_count += 1
+                    self.elm.command("ATSH7E0")
+                    self._curr_header = "7E0"
+                    self.dtc_result.emit(all_codes, (dtc_count > 0, dtc_count))
+                elif self.vag_kwp_mode:
                     r = self.elm.command("1800FF00", 5.0)
                     self.log.emit(f"> 1800FF00 -> {' / '.join(r.lines) or '-'}")
                     codes = dtcmod.parse_dtcs(r) if r.ok else []
@@ -684,7 +961,16 @@ class ObdWorker(QThread):
                         self.info.emit(f"Leitura de DTC falhou: {r.error}")
                     self.dtc_result.emit([(c, dtcmod.describe(c)) for c in codes], mil)
             elif cmd == "clear_dtc":
-                if self.vag_kwp_mode:
+                if self.ford_hscan_mode:
+                    for tx_id in ("7E0", "726", "760", "720", "730", "737"):
+                        self.elm.command(f"ATSH{tx_id}")
+                        self.elm.command("04", 2.0)
+                    self.elm.command("ATSH7E0")
+                    self._curr_header = "7E0"
+                    self.info.emit("Códigos de falha de todos os módulos Ford Ka+ apagados.")
+                    self._cmds.put("read_dtc")
+                    return
+                elif self.vag_kwp_mode:
                     r = self.elm.command("14FF00", 5.0)
                     self.log.emit(f"> 14FF00 -> {' / '.join(r.lines) or '-'}")
                     ok = any(l.startswith("54") for l in r.data_lines())
@@ -695,6 +981,11 @@ class ObdWorker(QThread):
                 self.info.emit("Códigos de falha apagados." if ok else f"Falha ao apagar DTCs: {r.error or r.lines}")
                 self._cmds.put("read_dtc")
                 return
+            elif cmd == "scan_ford":
+                if self.ford_hscan_mode:
+                    self._scan_all_ford()
+                else:
+                    self.info.emit("Varredura de módulos Ford disponível apenas no perfil Ford Ka+.")
             elif cmd == "scan_vag":
                 if self.vag_kwp_mode:
                     self._scan_all_vag()

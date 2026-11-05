@@ -11,17 +11,19 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QSettings, Qt, QThread, QTimer
 from PyQt6.QtGui import QAction, QFont
-from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout,
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
                              QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
-                             QPushButton, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
+                             QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
                              QVBoxLayout, QWidget)
 
+from .. import ford
 from ..ble_scan import BleScanWorker
 from ..datalog import CsvLogger, SeriesBuffer
 from ..detector import DecelDetector, Event
 from ..pids import CHANNELS, DYNAMIC_INFO
 from ..transports import BleTransport, MockTransport, TcpTransport
-from ..worker import ObdWorker
+from ..worker import (PROFILE_FORD_KA, PROFILE_GENERIC, PROFILE_VW_GOL,
+                      VEHICLE_PROFILES, ObdWorker)
 from .plots import WINDOW_S, DualAxisPlot
 from .style import COLORS, STYLE
 from .widgets import ValueCard
@@ -80,6 +82,300 @@ class MainWindow(QMainWindow):
         self.render_timer.start(33)  # ~30 FPS
 
     # ================================================================== UI
+    def _build_ford_tab(self) -> QWidget:
+        tab = QWidget()
+        main_lay = QVBoxLayout(tab)
+        main_lay.setContentsMargins(2, 2, 2, 2)
+        main_lay.setSpacing(4)
+
+        # Barra de Ação Superior
+        top_box = QHBoxLayout()
+        self.ford_scan_btn = QPushButton("🔎 Varrer todos os módulos Ford (PCM, BCM, ABS, IPC, PSCM)")
+        self.ford_scan_btn.setToolTip("Consulta todos os DIDs dos módulos Ford na rede HS-CAN 500k e grava tudo no CSV.")
+        self.ford_scan_btn.clicked.connect(lambda: self._request("scan_ford"))
+        top_box.addWidget(self.ford_scan_btn)
+        top_box.addStretch()
+        self.ford_net_lbl = QLabel("Rede: HS-CAN 500 kbps (11-bit)")
+        self.ford_net_lbl.setStyleSheet("color:#40c4ff; font-weight:bold; font-size:8.5pt;")
+        top_box.addWidget(self.ford_net_lbl)
+        main_lay.addLayout(top_box)
+
+        # ScrollArea responsivo para os módulos
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        container = QWidget()
+        lay = QVBoxLayout(container)
+        lay.setContentsMargins(2, 2, 2, 2)
+        lay.setSpacing(6)
+
+        # 1. Carroceria & Conforto (BCM 726)
+        bcm_box = QGroupBox("Módulo de Carroceria & Conforto (BCM / GEM - 0x726)")
+        bcm_lay = QVBoxLayout(bcm_box)
+        bcm_lay.setContentsMargins(6, 4, 6, 6)
+        bcm_lay.setSpacing(4)
+
+        bcm_lay.addWidget(QLabel("<b>Status de Portas e Aberturas:</b>"))
+        doors_grid = QGridLayout()
+        doors_grid.setSpacing(4)
+        self.b_door_fl = QLabel("DE: Fechada")
+        self.b_door_fr = QLabel("DD: Fechada")
+        self.b_door_rl = QLabel("TE: Fechada")
+        self.b_door_rr = QLabel("TD: Fechada")
+        self.b_door_trunk = QLabel("Porta-Malas: Fechado")
+        self.b_door_hood = QLabel("Capô: Fechado")
+        self.b_central_lock = QLabel("Travas: Destrancadas")
+        self.b_alarm = QLabel("Alarme PATS: Desarmado")
+
+        for lbl in (self.b_door_fl, self.b_door_fr, self.b_door_rl, self.b_door_rr,
+                    self.b_door_trunk, self.b_door_hood, self.b_central_lock, self.b_alarm):
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("background:#1f242b; color:#9aa4b2; padding:3px; border-radius:3px; font-size:8pt;")
+
+        doors_grid.addWidget(self.b_door_fl, 0, 0)
+        doors_grid.addWidget(self.b_door_fr, 0, 1)
+        doors_grid.addWidget(self.b_door_rl, 1, 0)
+        doors_grid.addWidget(self.b_door_rr, 1, 1)
+        doors_grid.addWidget(self.b_door_trunk, 2, 0)
+        doors_grid.addWidget(self.b_door_hood, 2, 1)
+        doors_grid.addWidget(self.b_central_lock, 3, 0)
+        doors_grid.addWidget(self.b_alarm, 3, 1)
+        bcm_lay.addLayout(doors_grid)
+
+        bcm_lay.addWidget(QLabel("<b>Iluminação & Acessórios Elétricos:</b>"))
+        lights_grid = QGridLayout()
+        lights_grid.setSpacing(4)
+        self.b_low_beam = QLabel("Farol Baixo: OFF")
+        self.b_high_beam = QLabel("Farol Alto: OFF")
+        self.b_fog_lights = QLabel("Faróis Neblina: OFF")
+        self.b_parking_lights = QLabel("Lanternas: OFF")
+        self.b_wiper = QLabel("Limpadores: Desligado")
+        self.b_defrost = QLabel("Desembaçador: OFF")
+        self.b_ignition = QLabel("Ignição: —")
+        self.b_bcm_bat = QLabel("Bateria BCM: — V")
+
+        for lbl in (self.b_low_beam, self.b_high_beam, self.b_fog_lights, self.b_parking_lights,
+                    self.b_wiper, self.b_defrost, self.b_ignition, self.b_bcm_bat):
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("background:#1f242b; color:#9aa4b2; padding:3px; border-radius:3px; font-size:8pt;")
+
+        lights_grid.addWidget(self.b_low_beam, 0, 0)
+        lights_grid.addWidget(self.b_high_beam, 0, 1)
+        lights_grid.addWidget(self.b_fog_lights, 1, 0)
+        lights_grid.addWidget(self.b_parking_lights, 1, 1)
+        lights_grid.addWidget(self.b_wiper, 2, 0)
+        lights_grid.addWidget(self.b_defrost, 2, 1)
+        lights_grid.addWidget(self.b_ignition, 3, 0)
+        lights_grid.addWidget(self.b_bcm_bat, 3, 1)
+        bcm_lay.addLayout(lights_grid)
+        lay.addWidget(bcm_box)
+
+        # 2. Freios ABS, ESC & Assistente de Rampa (ABS 760)
+        abs_box = QGroupBox("Freios ABS, Controle de Estabilidade (ESC) & HLA (0x760)")
+        abs_lay = QVBoxLayout(abs_box)
+        abs_lay.setContentsMargins(6, 4, 6, 6)
+        abs_lay.setSpacing(4)
+        abs_lay.addWidget(QLabel("<b>Velocidade Individual das 4 Rodas (km/h):</b>"))
+        wheels_grid = QGridLayout()
+        wheels_grid.setSpacing(4)
+        self.f_wheel_fl = QLabel("Diant. Esq: -- km/h")
+        self.f_wheel_fr = QLabel("Diant. Dir: -- km/h")
+        self.f_wheel_rl = QLabel("Tras. Esq: -- km/h")
+        self.f_wheel_rr = QLabel("Tras. Dir: -- km/h")
+        for lbl in (self.f_wheel_fl, self.f_wheel_fr, self.f_wheel_rl, self.f_wheel_rr):
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("background:#1f242b; color:#80d8ff; font-weight:bold; padding:3px; border-radius:3px; font-size:8.5pt;")
+        wheels_grid.addWidget(self.f_wheel_fl, 0, 0)
+        wheels_grid.addWidget(self.f_wheel_fr, 0, 1)
+        wheels_grid.addWidget(self.f_wheel_rl, 1, 0)
+        wheels_grid.addWidget(self.f_wheel_rr, 1, 1)
+        abs_lay.addLayout(wheels_grid)
+
+        dyn_grid = QGridLayout()
+        dyn_grid.setSpacing(4)
+        self.f_brake_press = QLabel("Pressão Freio: -- bar")
+        self.f_brake_sw = QLabel("Pedal Freio: Livre")
+        self.f_sas_angle = QLabel("Sensor SAS: --°")
+        self.f_esc_state = QLabel("Status ESC: Normal")
+        for lbl in (self.f_brake_press, self.f_brake_sw, self.f_sas_angle, self.f_esc_state):
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setStyleSheet("background:#1f242b; color:#e0e0e0; padding:3px; border-radius:3px; font-size:8pt;")
+        dyn_grid.addWidget(self.f_brake_press, 0, 0)
+        dyn_grid.addWidget(self.f_brake_sw, 0, 1)
+        dyn_grid.addWidget(self.f_sas_angle, 1, 0)
+        dyn_grid.addWidget(self.f_esc_state, 1, 1)
+        abs_lay.addLayout(dyn_grid)
+        lay.addWidget(abs_box)
+
+        # 3. Motor Ford Sigma 1.5 16V Ti-VCT Flex (PCM 7E0)
+        pcm_box = QGroupBox("Motor Sigma 1.5 16V Ti-VCT Flex (PCM - 0x7E0)")
+        pcm_lay = QGridLayout(pcm_box)
+        pcm_lay.setContentsMargins(6, 4, 6, 6)
+        pcm_lay.setSpacing(4)
+        self.f_cht = QLabel("Temp. Cabeça Cilindro (CHT): -- °C")
+        self.f_vvt_adm = QLabel("VVT Admissão: --°")
+        self.f_vvt_esc = QLabel("VVT Escape: --°")
+        self.f_inj_pw = QLabel("Tempo de Injeção: -- ms")
+        self.f_ac_press = QLabel("Pressão A/C: -- kPa")
+        self.f_ac_clutch = QLabel("Compressor A/C: --")
+        self.f_flex_eth = QLabel("Teor Etanol Tanque: -- %")
+        for lbl in (self.f_cht, self.f_vvt_adm, self.f_vvt_esc, self.f_inj_pw, self.f_ac_press, self.f_ac_clutch, self.f_flex_eth):
+            lbl.setStyleSheet("background:#1f242b; color:#e0e0e0; padding:3px; border-radius:3px; font-size:8pt;")
+        pcm_lay.addWidget(self.f_cht, 0, 0, 1, 2)
+        pcm_lay.addWidget(self.f_vvt_adm, 1, 0)
+        pcm_lay.addWidget(self.f_vvt_esc, 1, 1)
+        pcm_lay.addWidget(self.f_inj_pw, 2, 0)
+        pcm_lay.addWidget(self.f_flex_eth, 2, 1)
+        pcm_lay.addWidget(self.f_ac_press, 3, 0)
+        pcm_lay.addWidget(self.f_ac_clutch, 3, 1)
+        lay.addWidget(pcm_box)
+
+        # 4. Painel de Instrumentos (IPC 720) & Direção Elétrica (PSCM 730)
+        dash_box = QGroupBox("Painel de Instrumentos (IPC) & Direção Elétrica EPAS (PSCM)")
+        dash_lay = QGridLayout(dash_box)
+        dash_lay.setContentsMargins(6, 4, 6, 6)
+        dash_lay.setSpacing(4)
+        self.f_odometer = QLabel("Odômetro: -- km")
+        self.f_fuel_pct = QLabel("Combustível: -- %")
+        self.f_ext_temp = QLabel("Temp. Externa: -- °C")
+        self.f_parking_brake = QLabel("Freio de Mão: --")
+        self.f_seatbelt = QLabel("Cinto Segurança: --")
+        self.f_epas_angle = QLabel("Ângulo Volante: --°")
+        self.f_epas_torque = QLabel("Torque Direção: -- Nm")
+        self.f_epas_current = QLabel("Corrente Direção: -- A")
+        for lbl in (self.f_odometer, self.f_fuel_pct, self.f_ext_temp, self.f_parking_brake,
+                    self.f_seatbelt, self.f_epas_angle, self.f_epas_torque, self.f_epas_current):
+            lbl.setStyleSheet("background:#1f242b; color:#e0e0e0; padding:3px; border-radius:3px; font-size:8pt;")
+        dash_lay.addWidget(self.f_odometer, 0, 0)
+        dash_lay.addWidget(self.f_fuel_pct, 0, 1)
+        dash_lay.addWidget(self.f_ext_temp, 1, 0)
+        dash_lay.addWidget(self.f_parking_brake, 1, 1)
+        dash_lay.addWidget(self.f_seatbelt, 2, 0)
+        dash_lay.addWidget(self.f_epas_angle, 2, 1)
+        dash_lay.addWidget(self.f_epas_torque, 3, 0)
+        dash_lay.addWidget(self.f_epas_current, 3, 1)
+        lay.addWidget(dash_box)
+
+        lay.addStretch()
+        scroll.setWidget(container)
+        main_lay.addWidget(scroll, 1)
+        return tab
+
+    def _update_ford_ui(self):
+        latest = self.latest
+        if not latest:
+            return
+
+        def _badge(lbl, is_active, txt_on, txt_off, on_color="#69f0ae", off_color="#9aa4b2", on_bg="#1b5e20", off_bg="#1f242b"):
+            lbl.setText(txt_on if is_active else txt_off)
+            bg = on_bg if is_active else off_bg
+            color = on_color if is_active else off_color
+            border = on_color if is_active else "#343b46"
+            lbl.setStyleSheet(f"background:{bg}; color:{color}; font-weight:bold; padding:3px; border-radius:3px; border:1px solid {border}; font-size:8pt;")
+
+        # BCM Portas
+        if "door_fl" in latest:
+            _badge(self.b_door_fl, latest["door_fl"] > 0.5, "DE: ABERTA", "DE: Fechada", on_color="#ff5252", on_bg="#3d1418")
+        if "door_fr" in latest:
+            _badge(self.b_door_fr, latest["door_fr"] > 0.5, "DD: ABERTA", "DD: Fechada", on_color="#ff5252", on_bg="#3d1418")
+        if "door_rl" in latest:
+            _badge(self.b_door_rl, latest["door_rl"] > 0.5, "TE: ABERTA", "TE: Fechada", on_color="#ff5252", on_bg="#3d1418")
+        if "door_rr" in latest:
+            _badge(self.b_door_rr, latest["door_rr"] > 0.5, "TD: ABERTA", "TD: Fechada", on_color="#ff5252", on_bg="#3d1418")
+        if "door_trunk" in latest:
+            _badge(self.b_door_trunk, latest["door_trunk"] > 0.5, "Porta-Malas: ABERTO", "Porta-Malas: Fechado", on_color="#ff5252", on_bg="#3d1418")
+        if "door_hood" in latest:
+            _badge(self.b_door_hood, latest["door_hood"] > 0.5, "Capô: ABERTO", "Capô: Fechado", on_color="#ff5252", on_bg="#3d1418")
+        if "central_lock" in latest:
+            _badge(self.b_central_lock, latest["central_lock"] > 0.5, "Travas: TRANCADAS", "Travas: Destrancadas", on_color="#ffab40", on_bg="#3a3214")
+        if "alarm_armed" in latest:
+            _badge(self.b_alarm, latest["alarm_armed"] > 0.5, "Alarme: ARMADO", "Alarme: Desarmado", on_color="#69f0ae", on_bg="#1b5e20")
+
+        # BCM Iluminação e Elétrica
+        if "low_beam" in latest:
+            _badge(self.b_low_beam, latest["low_beam"] > 0.5, "Farol Baixo: ON", "Farol Baixo: OFF", on_color="#40c4ff", on_bg="#0d47a1")
+        if "high_beam" in latest:
+            _badge(self.b_high_beam, latest["high_beam"] > 0.5, "Farol Alto: ON", "Farol Alto: OFF", on_color="#00e5ff", on_bg="#006064")
+        if "fog_lights" in latest:
+            _badge(self.b_fog_lights, latest["fog_lights"] > 0.5, "Neblina: ON", "Neblina: OFF", on_color="#69f0ae", on_bg="#1b5e20")
+        if "parking_lights" in latest:
+            _badge(self.b_parking_lights, latest["parking_lights"] > 0.5, "Lanternas: ON", "Lanternas: OFF", on_color="#ffc107", on_bg="#3a3214")
+        if "wiper_status" in latest:
+            wp_map = {0: "Desligado", 1: "Intermitente", 2: "Vel. Baixa", 3: "Vel. Alta"}
+            self.b_wiper.setText(f"Limpador: {wp_map.get(int(latest['wiper_status']), 'Ativo')}")
+        if "rear_defrost" in latest:
+            _badge(self.b_defrost, latest["rear_defrost"] > 0.5, "Desembaçador: ON", "Desembaçador: OFF", on_color="#ffab40", on_bg="#3a3214")
+        if "ignition_pos" in latest:
+            ig_map = {0: "Desligada", 1: "Acessório", 2: "Ligada (Run)", 3: "Partida (Crank)"}
+            self.b_ignition.setText(f"Ignição: {ig_map.get(int(latest['ignition_pos']), str(int(latest['ignition_pos'])))}")
+        if "bcm_battery_v" in latest:
+            self.b_bcm_bat.setText(f"Bateria BCM: {latest['bcm_battery_v']:.2f} V")
+
+        # ABS Rodas e Dinâmica
+        if "wheel_speed_fl" in latest:
+            self.f_wheel_fl.setText(f"Diant. Esq: {latest['wheel_speed_fl']:.1f} km/h")
+        if "wheel_speed_fr" in latest:
+            self.f_wheel_fr.setText(f"Diant. Dir: {latest['wheel_speed_fr']:.1f} km/h")
+        if "wheel_speed_rl" in latest:
+            self.f_wheel_rl.setText(f"Tras. Esq: {latest['wheel_speed_rl']:.1f} km/h")
+        if "wheel_speed_rr" in latest:
+            self.f_wheel_rr.setText(f"Tras. Dir: {latest['wheel_speed_rr']:.1f} km/h")
+        if "brake_pressure" in latest:
+            self.f_brake_press.setText(f"Pressão Freio: {latest['brake_pressure']:.1f} bar")
+        if "brake_pedal_sw" in latest:
+            self.f_brake_sw.setText("Pedal Freio: PRESSIONADO" if latest["brake_pedal_sw"] > 0.5 else "Pedal Freio: Livre")
+        if "steering_angle_abs" in latest:
+            self.f_sas_angle.setText(f"Sensor SAS: {latest['steering_angle_abs']:.1f}°")
+        if "esc_active" in latest:
+            self.f_esc_state.setText("ESC/HLA: INTERVINDO!" if latest["esc_active"] > 0.5 else "Status ESC: Normal")
+
+        # PCM Motor Sigma 1.5
+        if "cht_temp" in latest:
+            self.f_cht.setText(f"Temp. Cabeça Cilindro (CHT): {latest['cht_temp']:.0f} °C")
+        if "vvt_intake_deg" in latest:
+            self.f_vvt_adm.setText(f"VVT Admissão: {latest['vvt_intake_deg']:.1f}°")
+        if "vvt_exhaust_deg" in latest:
+            self.f_vvt_esc.setText(f"VVT Escape: {latest['vvt_exhaust_deg']:.1f}°")
+        if "inj_pulse_width" in latest:
+            self.f_inj_pw.setText(f"Tempo de Injeção: {latest['inj_pulse_width']:.2f} ms")
+        if "ac_pressure_kpa" in latest:
+            self.f_ac_press.setText(f"Pressão A/C: {latest['ac_pressure_kpa']:.0f} kPa")
+        if "ac_clutch" in latest:
+            self.f_ac_clutch.setText("Compressor A/C: Ligado" if latest["ac_clutch"] > 0.5 else "Compressor A/C: Desligado")
+        if "flex_ethanol_pct" in latest:
+            self.f_flex_eth.setText(f"Teor Etanol Tanque: {latest['flex_ethanol_pct']:.0f} %")
+
+        # IPC & PSCM
+        if "odometer_km" in latest:
+            self.f_odometer.setText(f"Odômetro: {latest['odometer_km']:,.0f} km".replace(",", "."))
+        if "fuel_level_pct" in latest:
+            self.f_fuel_pct.setText(f"Combustível: {latest['fuel_level_pct']:.1f} %")
+        if "ext_temp" in latest:
+            self.f_ext_temp.setText(f"Temp. Externa: {latest['ext_temp']:.1f} °C")
+        if "parking_brake" in latest:
+            self.f_parking_brake.setText("Freio de Mão: PUXADO" if latest["parking_brake"] > 0.5 else "Freio de Mão: Livre")
+        if "seatbelt_warning" in latest:
+            self.f_seatbelt.setText("Cinto: DESAFIVELADO" if latest["seatbelt_warning"] > 0.5 else "Cinto: Afivelado")
+        if "steering_wheel_angle" in latest:
+            self.f_epas_angle.setText(f"Ângulo Volante: {latest['steering_wheel_angle']:.1f}°")
+        if "steering_driver_torque" in latest:
+            self.f_epas_torque.setText(f"Torque Volante: {latest['steering_driver_torque']:.2f} Nm")
+        if "steering_motor_current" in latest:
+            self.f_epas_current.setText(f"Corrente Direção: {latest['steering_motor_current']:.1f} A")
+
+    def _vehicle_changed(self, idx: int):
+        titles = {
+            0: "Datalogger OBD2 — Bosch ME7.5.30 (VW Gol G5 1.6 Flex)",
+            1: "Datalogger OBD2 — Ford Ka+ 2016 SEL 1.5 Sigma Flex (HS-CAN / Conforto BCM)",
+            2: "Datalogger OBD2 Universal",
+        }
+        self.setWindowTitle(titles.get(idx, "Datalogger OBD2"))
+        if hasattr(self, "tabs") and hasattr(self, "ford_tab"):
+            if idx == 1:
+                self.tabs.setCurrentWidget(self.ford_tab)
+            elif idx == 0:
+                self.tabs.setCurrentWidget(self.ch_tab)
+
     def _build_ui(self):
         central = QWidget()
         root = QVBoxLayout(central)
@@ -92,6 +388,17 @@ class MainWindow(QMainWindow):
         cl = QHBoxLayout(conn)
         cl.setContentsMargins(6, 2, 6, 2)
         cl.setSpacing(6)
+
+        self.vehicle_cb = QComboBox()
+        self.vehicle_cb.addItems([
+            "VW Gol G5 1.6 Flex (ME7.5.30)",
+            "Ford Ka+ 2016 SEL 1.5 Sigma (HS-CAN)",
+            "OBD2 Genérico / Automático",
+        ])
+        self.vehicle_cb.currentIndexChanged.connect(self._vehicle_changed)
+        cl.addWidget(QLabel("Veículo:"))
+        cl.addWidget(self.vehicle_cb)
+
         self.mode = QComboBox()
         self.mode.addItems(["Bluetooth BLE (Vgate iCar Pro)", "Wi-Fi (TCP)", "Demo / Simulador"])
         self.mode.currentIndexChanged.connect(self._mode_changed)
@@ -234,6 +541,9 @@ class MainWindow(QMainWindow):
         split.addWidget(plots_w)
 
         tabs = QTabWidget()
+        # Ford Ka+ (Módulos & Conforto)
+        self.ford_tab = self._build_ford_tab()
+        tabs.addTab(self.ford_tab, "🚗 Ford Ka+ (Conforto & Módulos)")
         # eventos
         ev_w = QWidget()
         evl = QVBoxLayout(ev_w)
@@ -316,6 +626,9 @@ class MainWindow(QMainWindow):
         self.ip.setText(s.value("ip", "192.168.0.10"))
         self.port.setValue(int(s.value("port", 35000)))
         self.mode.setCurrentIndex(int(s.value("mode", MODE_BLE)))
+        veh_idx = int(s.value("vehicle_idx", 0))
+        self.vehicle_cb.setCurrentIndex(veh_idx)
+        self._vehicle_changed(veh_idx)
         addr = s.value("ble_addr", "")
         name = s.value("ble_name", "")
         if addr:
@@ -328,6 +641,7 @@ class MainWindow(QMainWindow):
         s.setValue("ip", self.ip.text().strip())
         s.setValue("port", self.port.value())
         s.setValue("mode", self.mode.currentIndex())
+        s.setValue("vehicle_idx", self.vehicle_cb.currentIndex())
         s.setValue("ble_addr", self._ble_address())
         s.setValue("ble_name", self.ble_dev.currentText().split("  [")[0] if self.ble_dev.currentData() else "")
         s.setValue("extras", "true" if self.extras_chk.isChecked() else "false")
@@ -403,7 +717,9 @@ class MainWindow(QMainWindow):
             card.value.setText("--")
             card.set_state("stale", "")
         self.t0 = time.monotonic()
-        self.worker = ObdWorker(transport, self.t0, self)
+        veh_map = {0: PROFILE_VW_GOL, 1: PROFILE_FORD_KA, 2: PROFILE_GENERIC}
+        veh_profile = veh_map.get(self.vehicle_cb.currentIndex(), PROFILE_VW_GOL)
+        self.worker = ObdWorker(transport, self.t0, vehicle_profile=veh_profile, parent=self)
         if isinstance(transport, BleTransport):
             transport._log = self.worker.log.emit  # sinal Qt: seguro entre threads
         self.worker.sample.connect(self._on_sample)
@@ -416,11 +732,12 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self._worker_finished)
         self._apply_worker_flags()
         self.worker.decel_mode = self.decel_btn.isChecked()
+        self.vehicle_cb.setEnabled(False)
         self.mode.setEnabled(False)
         self.wifi_box.setEnabled(False)
         self.ble_box.setEnabled(False)
         self.connect_btn.setText("Desconectar")
-        self.console.appendPlainText(f"===== {datetime.now():%H:%M:%S} conectando ({transport.name}) =====")
+        self.console.appendPlainText(f"===== {datetime.now():%H:%M:%S} conectando ({transport.name} - {VEHICLE_PROFILES.get(veh_profile)}) =====")
         self.worker.start(QThread.Priority.HighPriority)
 
     def _stop_worker(self):
@@ -434,6 +751,7 @@ class MainWindow(QMainWindow):
         self.connect_btn.setEnabled(True)
         self.connect_btn.setChecked(False)
         self.connect_btn.setText("Conectar")
+        self.vehicle_cb.setEnabled(True)
         self.mode.setEnabled(True)
         self.wifi_box.setEnabled(True)
         self.ble_box.setEnabled(True)
@@ -529,6 +847,8 @@ class MainWindow(QMainWindow):
             if k in self.cards:
                 self.cards[k].set_value(self.latest[k])
         self.dirty.clear()
+        if self.frame % 3 == 0:
+            self._update_ford_ui()
         if self.frame % 6 == 0:
             self._update_card_states(now)
             if self.logger.active:

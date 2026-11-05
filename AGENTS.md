@@ -6,12 +6,20 @@ Documento de referência técnica completo para desenvolvedores e agentes de int
 
 ## 1. Visão Geral do Projeto
 
-O **leitorECU** é um aplicativo desktop multiplataforma (otimizado para Windows, escrito em Python 3.13+ com PyQt6 e PyQtGraph rodando a 30 FPS estáveis) para diagnóstico, aquisição de dados e telemetria de alta frequência voltado para a central **Bosch ME7.5.30** (usada na linha Volkswagen Gol G5, Voyage, Saveiro, Fox e Polo com motores 1.0 e 1.6 8V TotalFlex EA111).
+O **leitorECU** é um aplicativo desktop multiplataforma (otimizado para Windows, escrito em Python 3.13+ com PyQt6 e PyQtGraph rodando a 30 FPS estáveis) para diagnóstico, aquisição de dados e telemetria de alta frequência voltado para múltiplos veículos:
+1. **Volkswagen Gol G5, Voyage, Saveiro, Fox e Polo (1.0 e 1.6 8V TotalFlex EA111)**: Central **Bosch ME7.5.30** via protocolo proprietário **VAG KWP2000**.
+2. **Ford Ka+ 2016 SEL Sedan (Motor Sigma 1.5 16V Flex Ti-VCT)**: Barramento **Ford HS-CAN 500 kbps** (ISO 15765-4 / UDS ISO 14229) com suporte multimodular completo:
+   - **PCM** (0x7E0 / 0x7E8): Motor Sigma 1.5 (RPM, MAP, TPS, Avanço, Sondas, CHT, VVT, Tempo de Injeção, Pressão A/C, Etanol flex).
+   - **BCM** (0x726 / 0x72E): Módulo de Carroceria e Conforto (status das 4 portas, porta-malas sedan, capô, travas elétricas, alarme PATS, farol baixo/alto, faróis de neblina, lanternas, limpadores, desembaçador, ignição, tensão BCM).
+   - **ABS/ESC** (0x760 / 0x768): Velocidade individual das 4 rodas (FL, FR, RL, RR em km/h), pressão do freio no cilindro mestre, pedal de freio, sensor de ângulo SAS, status de intervenção ESC/HLA.
+   - **IPC** (0x720 / 0x728): Painel de instrumentos (odômetro total em km, nível de combustível, temperatura externa, freio de mão, cinto).
+   - **PSCM** (0x730 / 0x738): Direção elétrica progressiva EPAS (ângulo do volante, torque aplicado, corrente do motor elétrico).
+   - **RCM** (0x737 / 0x73F): Módulo de airbags e retenção.
 
 O sistema suporta:
 - **Adaptadores ELM327 BLE (Bluetooth Low Energy / Bluetooth 4.0+)**: ex. Vgate iCar Pro BLE4.0 (`IOS-Vlink`).
 - **Adaptadores ELM327 Wi-Fi / TCP**: conexão direta via socket `192.168.0.10:35000`.
-- **Modo Demo / Simulador**: emulador de motor com injeção de falhas e física em tempo real.
+- **Modo Demo / Simulador**: emulador de motor com injeção de falhas e física em tempo real para ambos os perfis (VW ME7.5.30 e Ford Ka+ HS-CAN).
 
 ---
 
@@ -44,7 +52,44 @@ Ao disparar o 5-baud init no endereço `01`, a central retorna os KeyBytes **`EF
 
 ---
 
-## 3. Arquitetura do Software
+---
+
+## 3. O Barramento Ford HS-CAN 500 kbps (Ford Ka+ 2016 SEL 1.5 Sigma Sedan)
+
+### 3.1 Topologia de Rede & Módulos Suportados
+O Ford Ka de 3ª geração (B562) utiliza barramento CAN de alta velocidade (HS-CAN) a 500 kbps nos pinos 6 (CAN-H) e 14 (CAN-L) do conector OBD2:
+- **PCM (0x7E0 / 0x7E8)**: Módulo do Motor Sigma 1.5 16V Ti-VCT Flex.
+- **BCM (0x726 / 0x72E)**: Módulo de Carroceria e Conforto (GEM).
+- **ABS/ESC (0x760 / 0x768)**: Módulo de Freios ABS, Controle de Estabilidade e Assistente de Partida em Rampa (HLA).
+- **IPC (0x720 / 0x728)**: Painel de Instrumentos.
+- **PSCM (0x730 / 0x738)**: Direção Elétrica Progressiva (EPAS).
+- **RCM (0x737 / 0x73F)**: Módulo de Airbags e Retenção.
+
+### 3.2 Protocolo UDS Ford (Modo 22 - ReadDataByIdentifier)
+- Inicialização ELM327: `ATSP6` (ISO 15765-4 CAN 11/500k), `ATAL`, `ATCAF1`, `ATC1`, `ATSH 7E0`.
+- **BCM Conforto (`ATSH 726`)**:
+  - `22404C`: Status das 4 portas (DE, DD, TE, TD), porta-malas sedan, capô e travas elétricas.
+  - `224050`: Status de iluminação (farol baixo, farol alto, neblina, lanternas, setas, pisca-alerta).
+  - `224060`: Limpadores de para-brisa, desembaçador traseiro, ignição (Off/Acc/Run/Crank) e alarme PATS.
+  - `224001`: Tensão da bateria medida diretamente pelo BCM.
+- **ABS & Estabilidade (`ATSH 760`)**:
+  - `222B00`: Velocidade individual das 4 rodas em tempo real (km/h).
+  - `222B01`: Pressão no cilindro mestre de freio (bar), pedal de freio, sensor de ângulo de esterçamento (SAS) e intervenção ESC/HLA.
+- **PCM Motor Sigma (`ATSH 7E0`)**:
+  - `221624`: Temperatura da Cabeça do Cilindro (CHT °C).
+  - `22093C`: Avanço dos comandos variáveis Ti-VCT (Admissão e Escape em °).
+  - `221125`: Tempo de injeção dos bicos injetores (Pulse Width ms).
+  - `221101`: Pressão do refrigerante do ar condicionado (kPa) e status do compressor.
+  - `221608`: Nível de etanol flex virtual no tanque (%).
+- **IPC Painel (`ATSH 720`)**:
+  - `22DD01`: Odômetro total em km.
+  - `222416`: Nível de combustível (%), temperatura externa (°C), alertas de cinto e freio de mão.
+- **PSCM Direção (`ATSH 730`)**:
+  - `223300`: Ângulo do volante (°), torque aplicado pelo motorista (Nm) e corrente do motor EPAS (A).
+
+---
+
+## 4. Arquitetura do Software
 
 ```
 leitorECU/
@@ -61,11 +106,12 @@ leitorECU/
     ├── elm327.py               # Protocolo AT ELM327, extração de payload hex e tratamento de erro
     ├── pids.py                 # Definição de canais fixos, PIDs Modo 01 e fórmulas VAG
     ├── vag.py                  # Módulo genérico de blocos VAG (tabela de 70+ fórmulas k, cache JSON)
+    ├── ford.py                 # Módulo de diagnóstico Ford HS-CAN 500k e DIDs Modo 22 UDS
     ├── worker.py               # QThread principal: handshake, autodiscovery, polling e DTC
     ├── datalog.py              # CsvLogger com colunas dinâmicas (Excel pt-BR) e SeriesBuffer
     ├── detector.py             # Detector em tempo real de desaceleração, cut-off e falhas
     ├── dtc.py                  # Parser e descritor de DTCs (Modo 03 e KWP Serviço 18)
-    ├── mock_engine.py          # Simulador de motor com física real e injeção periódica de defeito
+    ├── mock_engine.py          # Simulador com física de motor ME7.5 e Ford Ka+ HS-CAN
     └── ui/
         ├── __init__.py
         ├── main_window.py      # Janela principal PyQt6 (cards, abas, render loop a 30 FPS)
@@ -76,7 +122,7 @@ leitorECU/
 
 ---
 
-## 4. Fluxo de Dados e Ciclo de Vida da Conexão
+## 5. Fluxo de Dados e Ciclo de Vida da Conexão
 
 ```
 [UI / MainWindow]
