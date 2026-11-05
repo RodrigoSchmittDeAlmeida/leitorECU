@@ -29,7 +29,7 @@ from .style import COLORS, STYLE
 from .widgets import ValueCard
 
 MODE_BLE, MODE_WIFI, MODE_DEMO = 0, 1, 2
-PLOTTED = ("rpm", "tps", "map", "lambda_v", "advance", "stft", "ltft")
+PLOTTED = ("rpm", "tps", "map", "lambda_v", "lambda2_v", "advance", "stft", "ltft")
 STALE_S = 3.0
 EVENT_COLORS = {"info": "#80d8ff", "warn": "#ffc107", "alarm": "#ff5252", "ok": "#69f0ae"}
 
@@ -212,22 +212,45 @@ class MainWindow(QMainWindow):
         pcm_lay = QGridLayout(pcm_box)
         pcm_lay.setContentsMargins(6, 4, 6, 6)
         pcm_lay.setSpacing(4)
+
+        self.f_sonda1 = QLabel("Sonda 1 (Pré-Cat): -- V")
+        self.f_sonda2 = QLabel("Sonda 2 (Pós-Cat): -- V")
+        self.f_cat_diag = QLabel("Catalisador: --")
+        self.f_fuel_sys = QLabel("Injeção: --")
+        self.f_cat_temp = QLabel("Temp. Catalisador: -- °C")
+        self.f_iat = QLabel("Temp. Ar (IAT): -- °C")
         self.f_cht = QLabel("Temp. Cabeça Cilindro (CHT): -- °C")
-        self.f_app_pedal = QLabel("Pedal Acelerador (APP): -- %")
         self.f_fan_duty = QLabel("Ventoinha Radiador: -- %")
+        self.f_app_pedal = QLabel("Pedal Acelerador (APP): -- %")
         self.f_inj_pw = QLabel("Tempo de Injeção: -- ms")
+        self.f_flex_eth = QLabel("Teor Etanol Tanque: -- %")
+        self.f_baro = QLabel("Pressão Baro: -- kPa")
         self.f_ac_press = QLabel("Pressão A/C: -- kPa")
         self.f_ac_clutch = QLabel("Compressor A/C: --")
-        self.f_flex_eth = QLabel("Teor Etanol Tanque: -- %")
-        for lbl in (self.f_cht, self.f_app_pedal, self.f_fan_duty, self.f_inj_pw, self.f_ac_press, self.f_ac_clutch, self.f_flex_eth):
+
+        pcm_labels = (
+            self.f_sonda1, self.f_sonda2, self.f_cat_diag, self.f_fuel_sys,
+            self.f_cat_temp, self.f_iat, self.f_cht, self.f_fan_duty,
+            self.f_app_pedal, self.f_inj_pw, self.f_flex_eth, self.f_baro,
+            self.f_ac_press, self.f_ac_clutch
+        )
+        for lbl in pcm_labels:
             lbl.setStyleSheet("background:#1f242b; color:#e0e0e0; padding:3px; border-radius:3px; font-size:8pt;")
-        pcm_lay.addWidget(self.f_cht, 0, 0, 1, 2)
-        pcm_lay.addWidget(self.f_app_pedal, 1, 0)
-        pcm_lay.addWidget(self.f_fan_duty, 1, 1)
-        pcm_lay.addWidget(self.f_inj_pw, 2, 0)
-        pcm_lay.addWidget(self.f_flex_eth, 2, 1)
-        pcm_lay.addWidget(self.f_ac_press, 3, 0)
-        pcm_lay.addWidget(self.f_ac_clutch, 3, 1)
+
+        pcm_lay.addWidget(self.f_sonda1, 0, 0)
+        pcm_lay.addWidget(self.f_sonda2, 0, 1)
+        pcm_lay.addWidget(self.f_cat_diag, 1, 0)
+        pcm_lay.addWidget(self.f_fuel_sys, 1, 1)
+        pcm_lay.addWidget(self.f_cat_temp, 2, 0)
+        pcm_lay.addWidget(self.f_iat, 2, 1)
+        pcm_lay.addWidget(self.f_cht, 3, 0)
+        pcm_lay.addWidget(self.f_fan_duty, 3, 1)
+        pcm_lay.addWidget(self.f_app_pedal, 4, 0)
+        pcm_lay.addWidget(self.f_inj_pw, 4, 1)
+        pcm_lay.addWidget(self.f_flex_eth, 5, 0)
+        pcm_lay.addWidget(self.f_baro, 5, 1)
+        pcm_lay.addWidget(self.f_ac_press, 6, 0)
+        pcm_lay.addWidget(self.f_ac_clutch, 6, 1)
         lay.addWidget(pcm_box)
 
         # 4. Painel de Instrumentos (IPC 720) & Direção Elétrica (PSCM 730)
@@ -330,6 +353,50 @@ class MainWindow(QMainWindow):
             self.f_esc_state.setText("ESC/HLA: INTERVINDO!" if latest["esc_active"] > 0.5 else "Status ESC: Normal")
 
         # PCM Motor Sigma 1.5 DOHC (comandos fixos, sem VVT)
+        s1 = latest.get("lambda_v")
+        if s1 is not None:
+            self.f_sonda1.setText(f"Sonda 1 (Pré-Cat): {s1:.3f} V")
+        s2 = latest.get("lambda2_v")
+        if s2 is not None:
+            self.f_sonda2.setText(f"Sonda 2 (Pós-Cat): {s2:.3f} V")
+
+        # Avaliação do Catalisador (Sonda 1 vs Sonda 2)
+        if s1 is not None and s2 is not None:
+            temp_ref = latest.get("cht_temp") or latest.get("ect") or 0.0
+            if temp_ref < 60.0:
+                self.f_cat_diag.setText("Catalisador: AQUECENDO...")
+                self.f_cat_diag.setStyleSheet("background:#1a2b3c; color:#80d8ff; padding:3px; border-radius:3px; font-size:8pt;")
+            elif 0.50 <= s2 <= 0.82:
+                self.f_cat_diag.setText("Catalisador: SAUDÁVEL (Eficiente)")
+                self.f_cat_diag.setStyleSheet("background:#143820; color:#69f0ae; padding:3px; border-radius:3px; font-size:8pt; font-weight:bold;")
+            elif s2 < 0.20:
+                self.f_cat_diag.setText("Catalisador: MISTURA POBRE / AR")
+                self.f_cat_diag.setStyleSheet("background:#3a2010; color:#ffab40; padding:3px; border-radius:3px; font-size:8pt;")
+            else:
+                self.f_cat_diag.setText("Catalisador: MONITORANDO...")
+                self.f_cat_diag.setStyleSheet("background:#1f242b; color:#e0e0e0; padding:3px; border-radius:3px; font-size:8pt;")
+
+        # Status do Sistema de Injeção (Malha Aberta / Fechada)
+        fs = latest.get("fuel_sys1")
+        if fs is not None:
+            fs_int = int(fs)
+            if fs_int == 2:
+                self.f_fuel_sys.setText("Injeção: Malha Fechada (CL)")
+            elif fs_int == 1:
+                self.f_fuel_sys.setText("Injeção: Malha Aberta (Frio)")
+            elif fs_int == 4:
+                self.f_fuel_sys.setText("Injeção: Malha Aberta (WOT)")
+            elif fs_int == 8:
+                self.f_fuel_sys.setText("Injeção: Malha Aberta (Falha)")
+            elif fs_int == 16:
+                self.f_fuel_sys.setText("Injeção: CL c/ Falha Sensor")
+            else:
+                self.f_fuel_sys.setText(f"Injeção: Status {fs_int}")
+
+        if "cat_temp" in latest:
+            self.f_cat_temp.setText(f"Temp. Catalisador: {latest['cat_temp']:.0f} °C")
+        if "iat" in latest:
+            self.f_iat.setText(f"Temp. Ar (IAT): {latest['iat']:.0f} °C")
         if "cht_temp" in latest:
             self.f_cht.setText(f"Temp. Cabeça Cilindro (CHT): {latest['cht_temp']:.0f} °C")
         if "app_pedal_pct" in latest:
@@ -338,6 +405,8 @@ class MainWindow(QMainWindow):
             self.f_fan_duty.setText(f"Ventoinha Radiador: {latest['fan_duty_pct']:.0f} %")
         if "inj_pulse_width" in latest:
             self.f_inj_pw.setText(f"Tempo de Injeção: {latest['inj_pulse_width']:.2f} ms")
+        if "baro" in latest:
+            self.f_baro.setText(f"Pressão Baro: {latest['baro']:.0f} kPa")
         if "ac_pressure_kpa" in latest:
             self.f_ac_press.setText(f"Pressão A/C: {latest['ac_pressure_kpa']:.0f} kPa")
         if "ac_clutch" in latest:
@@ -525,7 +594,8 @@ class MainWindow(QMainWindow):
             "rpm": self.p1.add_curve("RPM", COLORS["rpm"], width=2),
             "tps": self.p1.add_curve("TPS %", COLORS["tps"], right=True),
             "map": self.p1.add_curve("MAP kPa", COLORS["map"], right=True),
-            "lambda_v": self.p2.add_curve("Sonda V", COLORS["lambda_v"], width=2),
+            "lambda_v": self.p2.add_curve("Sonda 1 (Pré)", COLORS["lambda_v"], width=2),
+            "lambda2_v": self.p2.add_curve("Sonda 2 (Pós)", COLORS["lambda2_v"], width=1.8),
             "advance": self.p2.add_curve("Avanço °", COLORS["advance"], right=True),
             "stft": self.p3.add_curve("STFT %", COLORS["stft"], width=2),
             "ltft": self.p3.add_curve("LTFT %", COLORS["ltft"], width=2),
@@ -938,6 +1008,8 @@ class MainWindow(QMainWindow):
                     state, note = "warn", "sem carga?"
             elif k == "lambda_v":
                 state, note = self._lambda_state(now)
+            elif k == "lambda2_v":
+                state, note = self._lambda2_state(now)
             elif k == "advance" and v < -5:
                 state, note = "warn", "retardado"
             card.set_state(state, note)
@@ -945,7 +1017,7 @@ class MainWindow(QMainWindow):
     def _lambda_state(self, now: float) -> Tuple[str, str]:
         t, v = self.buffers["lambda_v"].window(now - 4.0)
         rpm = self.latest.get("rpm", 0)
-        ect = self.latest.get("ect")
+        ect = self.latest.get("ect") or self.latest.get("cht_temp")
         if len(v) < 4 or rpm < 650 or self.detector.in_decel:
             return "normal", ""
         if ect is not None and ect < 65:
@@ -954,6 +1026,23 @@ class MainWindow(QMainWindow):
             m = float(np.mean(v))
             return "alarm", "TRAVADA " + ("RICA" if m > 0.6 else "POBRE" if m < 0.3 else "")
         return "normal", ""
+
+    def _lambda2_state(self, now: float) -> Tuple[str, str]:
+        t, v2 = self.buffers["lambda2_v"].window(now - 6.0)
+        rpm = self.latest.get("rpm", 0)
+        ect = self.latest.get("ect") or self.latest.get("cht_temp")
+        if len(v2) < 4 or rpm < 650 or self.detector.in_decel:
+            return "normal", ""
+        if ect is not None and ect < 65:
+            return "normal", "aquecendo"
+        ptp2 = float(np.ptp(v2))
+        m2 = float(np.mean(v2))
+        _, v1 = self.buffers["lambda_v"].window(now - 6.0)
+        if len(v1) >= 4 and float(np.ptp(v1)) > 0.35 and ptp2 > 0.30:
+            return "alarm", "CATALISADOR?"
+        if m2 < 0.15:
+            return "warn", "POBRE/AR"
+        return "normal", "CATAL. OK"
 
     # ============================================================ log CSV
     def _toggle_record(self, on: bool):

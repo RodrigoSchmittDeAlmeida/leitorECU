@@ -21,25 +21,32 @@ class Channel:
 CHANNELS: Dict[str, Channel] = {
     c.key: c
     for c in (
-        # Cards principais (topo)
+        # Linha 1 de Cards (Ar, Giro, Carga e Elétrica - 7 cards)
         Channel("rpm", "RPM", "rpm", "{:.0f}", card=True),
         Channel("map", "MAP", "kPa", "{:.0f}", card=True),
         Channel("advance", "Avanço", "°", "{:.1f}", card=True),
         Channel("tps", "Borboleta (TPS)", "%", "{:.1f}", card=True),
-        Channel("lambda_v", "Sonda Lambda 1", "V", "{:.3f}", card=True),
+        Channel("load", "Carga Calculada", "%", "{:.1f}", card=True),
+        Channel("speed", "Velocidade", "km/h", "{:.0f}", card=True),
+        Channel("battery", "Bateria", "V", "{:.1f}", card=True),
+
+        # Linha 2 de Cards (Sondas 1 e 2, Mistura e Temperaturas - 7 cards)
+        Channel("lambda_v", "Sonda 1 (Pré)", "V", "{:.3f}", card=True),
+        Channel("lambda2_v", "Sonda 2 (Pós)", "V", "{:.3f}", card=True),
         Channel("lambda_trim", "Correção Sonda", "%", "{:.1f}", card=True),
         Channel("stft", "STFT", "%", "{:.1f}", card=True),
         Channel("ltft", "LTFT", "%", "{:.1f}", card=True),
         Channel("ect", "Temp. Motor (ECT)", "°C", "{:.0f}", card=True),
-        Channel("load", "Carga Calculada", "%", "{:.1f}", card=True),
-        Channel("speed", "Velocidade", "km/h", "{:.0f}", card=True),
         Channel("iat", "Temp. Ar (IAT)", "°C", "{:.0f}", card=True),
-        Channel("battery", "Bateria", "V", "{:.1f}", card=True),
+
         # Canais adicionais reportados pela ECU (gravados no CSV continuamente)
-        Channel("lambda2_v", "Sonda Lambda 2", "V", "{:.3f}", card=False),
         Channel("lambda2_trim", "Correção Sonda 2", "%", "{:.1f}", card=False),
         Channel("fuel_sys1", "Status Malha Comb. 1 (0103)", "cod", "{:.0f}", card=False),
         Channel("fuel_sys2", "Status Malha Comb. 2 (0103)", "cod", "{:.0f}", card=False),
+        Channel("cat_temp", "Temp. Catalisador (013C)", "°C", "{:.0f}", card=False),
+        Channel("ecu_volt", "Tensão PCM (0142)", "V", "{:.2f}", card=False),
+        Channel("baro", "Pressão Barométrica (0133)", "kPa", "{:.0f}", card=False),
+        Channel("fuel_rate", "Consumo Instantâneo (015E)", "L/h", "{:.1f}", card=False),
         Channel("mil_on", "Luz Injeção (0101)", "0/1", "{:.0f}", card=False),
         Channel("dtc_count", "Qtd. DTCs (0101)", "un", "{:.0f}", card=False),
         Channel("o2_mask", "Máscara Sondas (0113)", "bit", "{:.0f}", card=False),
@@ -66,10 +73,10 @@ def _dec_lambda_nb(d: bytes) -> Dict[str, Optional[float]]:
 
 
 def _dec_lambda_nb2(d: bytes) -> Dict[str, Optional[float]]:
-    """PID 0115: Sonda convencional B1S2 (pós-catalisador) ou única."""
+    """PID 0115: Sonda convencional B1S2 (pós-catalisador) (A/200 Volts, B = trim secundário)."""
     a, b = d[0], d[1]
     v = a / 200.0
-    out: Dict[str, Optional[float]] = {"lambda2_v": v, "lambda_v": v}
+    out: Dict[str, Optional[float]] = {"lambda2_v": v}
     if b != 0xFF:
         t = _trim(b)
         out["lambda2_trim"] = t

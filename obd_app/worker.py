@@ -322,7 +322,8 @@ class ObdWorker(QThread):
             self._curr_header = "7E0"
 
         # 1. PIDs rápidos do Motor Sigma 1.5 (todo ciclo)
-        fast_pids = [0x0C, 0x0B, 0x0E, 0x11, 0x14]  # RPM, MAP, Avanço, TPS, Sonda 1
+        # O Ford Ka 1.5 Sigma tem 2 sondas lambda: Sonda 1 pré-cat (0114) e Sonda 2 pós-cat (0115)
+        fast_pids = [0x0C, 0x0B, 0x0E, 0x11, 0x14, 0x15]  # RPM, MAP, Avanço, TPS, Sonda 1, Sonda 2
         if not self.decel_mode:
             fast_pids.extend([0x04, 0x0D])  # Carga, Velocidade
 
@@ -348,7 +349,24 @@ class ObdWorker(QThread):
 
         # 2. PIDs normais do PCM (intercalados)
         if cycle % 2 == 0:
-            for pid_code in (0x06, 0x07, 0x05):  # STFT, LTFT, ECT
+            for pid_code in (0x06, 0x07, 0x05, 0x0F):  # STFT, LTFT, ECT, IAT
+                if not self._running:
+                    return n_resp
+                pdef = PIDS[pid_code]
+                resp = self.elm.query_pid(pdef.cmd)
+                if resp.ok:
+                    data = extract_payload(resp, pdef.mode, pdef.pid, pdef.nbytes)
+                    if data is not None:
+                        try:
+                            vals = {k: v for k, v in pdef.decode(data).items() if v is not None}
+                            if vals:
+                                self._emit(vals)
+                                n_resp += 1
+                        except Exception:
+                            pass
+
+        if cycle % 4 == 2:
+            for pid_code in (0x03, 0x3C, 0x42, 0x33):  # Status Malha (0103), Temp Catalisador (013C), Tensão PCM (0142), Baro (0133)
                 if not self._running:
                     return n_resp
                 pdef = PIDS[pid_code]
@@ -373,13 +391,17 @@ class ObdWorker(QThread):
             if cycle % 4 == 1 and self._query_ford_did("7E0", "220332", ford._dec_pcm_fan):
                 n_resp += 1
 
-        # DIDs Ford PCM: Tempo de Injeção e Pressão A/C
+        # DIDs Ford PCM: Tempo de Injeção, Pressão A/C, Etanol Flex, Catalisador e Baro
         if cycle % 4 == 0:
             if self._query_ford_did("7E0", "221125", ford._dec_pcm_injection):
                 n_resp += 1
             if self._query_ford_did("7E0", "221101", ford._dec_pcm_ac):
                 n_resp += 1
             if self._query_ford_did("7E0", "221608", ford._dec_pcm_flex):
+                n_resp += 1
+            if self._query_ford_did("7E0", "221627", ford._dec_pcm_cat_temp):
+                n_resp += 1
+            if self._query_ford_did("7E0", "220320", ford._dec_pcm_baro):
                 n_resp += 1
 
         # 3. Módulo de CONFORTO & CARROCERIA (BCM 726)

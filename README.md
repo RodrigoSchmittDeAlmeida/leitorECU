@@ -6,7 +6,7 @@ App desktop **offline** (PyQt6 + PyQtGraph, 30 FPS) para diagnóstico avançado 
 ### Perfis de Veículos Suportados:
 1. **VW Gol G5 1.6 Flex (Bosch ME7.5.30)**: Comunicação via protocolo proprietário **VAG KWP2000** (Modo 21 - Blocos de Medição 001..255) com Sonda Lambda, STFT e LTFT ativas.
 2. **Ford Ka+ 2016 SEL 1.5 Sigma Flex Sedan (Motor Sigma DOHC 16V sem VVT)**: Barramento **Ford HS-CAN 500 kbps** (ISO 15765-4 / UDS ISO 14229 Modo 22) com telemetria de múltiplos módulos:
-   - **PCM (0x7E0)**: Motor Sigma 1.5 DOHC (comandos fixos, sem VVT), CHT (temp cabeçote), Pedal APP %, Eletroventilador PWM %, Tempo de Injeção, Pressão A/C e Etanol Flex.
+   - **PCM (0x7E0)**: Motor Sigma 1.5 DOHC (comandos fixos, sem VVT) com **duas sondas lambda** (Sonda 1 pré-cat e Sonda 2 pós-cat com diagnóstico de eficiência do catalisador), status de malha de injeção (CL/OL), CHT (temp cabeçote), temp catalisador, Pedal APP %, Eletroventilador PWM %, Tempo de Injeção, IAT, Pressão A/C e Etanol Flex.
    - **BCM (0x726)**: Módulo de Conforto (status das 4 portas, porta-malas sedan, capô, travas elétricas, alarme PATS, farol baixo/alto, faróis de neblina, limpadores, ignição, tensão BCM).
    - **ABS/ESC (0x760)**: Velocidade das 4 rodas individualmente (km/h), pressão de freio, pedal, sensor de ângulo SAS e status ESC/HLA.
    - **IPC (0x720)**: Painel (odômetro total em km, combustível %, temp externa °C, alertas).

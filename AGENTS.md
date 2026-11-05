@@ -9,7 +9,7 @@ Documento de referência técnica completo para desenvolvedores e agentes de int
 O **leitorECU** é um aplicativo desktop multiplataforma (otimizado para Windows, escrito em Python 3.13+ com PyQt6 e PyQtGraph rodando a 30 FPS estáveis) para diagnóstico, aquisição de dados e telemetria de alta frequência voltado para múltiplos veículos:
 1. **Volkswagen Gol G5, Voyage, Saveiro, Fox e Polo (1.0 e 1.6 8V TotalFlex EA111)**: Central **Bosch ME7.5.30** via protocolo proprietário **VAG KWP2000**.
 2. **Ford Ka+ 2016 SEL Sedan (Motor Sigma 1.5 16V Flex DOHC - Comandos Fixos, sem VVT)**: Barramento **Ford HS-CAN 500 kbps** (ISO 15765-4 / UDS ISO 14229) com suporte multimodular completo:
-   - **PCM** (0x7E0 / 0x7E8): Motor Sigma 1.5 DOHC (RPM, MAP, TPS, Avanço, Sondas, CHT, Pedal Acelerador APP %, Eletroventilador PWM %, Tempo de Injeção, Pressão A/C, Etanol flex). *Nota técnica: O motor Sigma 1.5 do Ka 2014-2018 possui comandos fixos sem variadores de fase (sem VVT/Ti-VCT). Não confundir com o motor Sigma 1.6 Ti-VCT nem com o motor Dragon 1.5 de 3 cilindros.*
+   - **PCM** (0x7E0 / 0x7E8): Motor Sigma 1.5 DOHC com **duas sondas lambda** (Sonda 1 B1S1 pré-cat `0114` e Sonda 2 B1S2 pós-cat `0115` para diagnóstico de eficiência do catalisador), Status de Malha Aberta/Fechada `0103`, CHT, Pedal Acelerador APP %, Eletroventilador PWM %, Tempo de Injeção, Temp. Catalisador, Temp. Ar IAT, Pressão A/C e Etanol flex. *Nota técnica: O motor Sigma 1.5 do Ka 2014-2018 possui comandos fixos sem variadores de fase (sem VVT/Ti-VCT). Não confundir com o motor Sigma 1.6 Ti-VCT nem com o motor Dragon 1.5 de 3 cilindros.*
    - **BCM** (0x726 / 0x72E): Módulo de Carroceria e Conforto (status das 4 portas, porta-malas sedan, capô, travas elétricas, alarme PATS, farol baixo/alto, faróis de neblina, lanternas, limpadores, desembaçador, ignição, tensão BCM).
    - **ABS/ESC** (0x760 / 0x768): Velocidade individual das 4 rodas (FL, FR, RL, RR em km/h), pressão do freio no cilindro mestre, pedal de freio, sensor de ângulo SAS, status de intervenção ESC/HLA.
    - **IPC** (0x720 / 0x728): Painel de instrumentos (odômetro total em km, nível de combustível, temperatura externa, freio de mão, cinto).
@@ -77,6 +77,13 @@ O Ford Ka de 3ª geração (B562) utiliza barramento CAN de alta velocidade (HS-
   - `222B00`: Velocidade individual das 4 rodas em tempo real (km/h).
   - `222B01`: Pressão no cilindro mestre de freio (bar), pedal de freio, sensor de ângulo de esterçamento (SAS) e intervenção ESC/HLA.
 - **PCM Motor Sigma (`ATSH 7E0`)**:
+  - `0114` (PID Modo 01): Sonda Lambda 1 (B1S1 pré-catalisador) — tensão oscilante (0.1V - 0.9V) e STFT do sensor.
+  - `0115` (PID Modo 01): Sonda Lambda 2 (B1S2 pós-catalisador) — monitoramento da eficiência catalítica (~0.60V - 0.75V estável).
+  - `0103` (PID Modo 01): Status do Sistema de Combustível (Malha Aberta / Malha Fechada / WOT).
+  - `010F` (PID Modo 01): Temperatura do Ar de Admissão no coletor T-MAP (IAT °C).
+  - `013C` / `221627`: Temperatura estimada do monólito do catalisador (°C).
+  - `0142`: Tensão do módulo de controle (PCM interno em V).
+  - `0133` / `220320`: Pressão barométrica absoluta (kPa).
   - `221624`: Temperatura da Cabeça do Cilindro (CHT °C) — o Sigma não usa sensor ECT direto na água, mas sim CHT seco na carcaça.
   - `22032B`: Posição do sensor do pedal do acelerador APP (%).
   - `220332`: Ciclo de trabalho do eletroventilador de arrefecimento (PWM Duty Cycle %).

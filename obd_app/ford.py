@@ -197,6 +197,21 @@ def _dec_pcm_flex(d: bytes) -> Dict[str, float]:
     return {}
 
 
+def _dec_pcm_cat_temp(d: bytes) -> Dict[str, float]:
+    """Temperatura estimada do catalisador (PCM DID 221627)."""
+    if len(d) >= 2:
+        raw = (d[0] << 8) | d[1]
+        return {"cat_temp": (raw / 10.0) - 40.0}
+    return {}
+
+
+def _dec_pcm_baro(d: bytes) -> Dict[str, float]:
+    """Pressão barométrica absoluta (PCM DID 220320)."""
+    if len(d) >= 1:
+        return {"baro": float(d[0])}
+    return {}
+
+
 def _dec_ipc_odometer(d: bytes) -> Dict[str, float]:
     """Odômetro total em km (IPC DID 22DD01)."""
     if len(d) >= 3:
@@ -258,6 +273,8 @@ FORD_DIDS: Dict[str, FordDid] = {
     "pcm_injection": FordDid("pcm_injection", "pcm", "221125", "Tempo de Injeção", "ms", "{:.2f}", _dec_pcm_injection),
     "pcm_ac": FordDid("pcm_ac", "pcm", "221101", "Pressão A/C", "kPa", "{:.0f}", _dec_pcm_ac),
     "pcm_flex": FordDid("pcm_flex", "pcm", "221608", "Etanol Flex no Tanque", "%", "{:.0f}", _dec_pcm_flex),
+    "pcm_cat_temp": FordDid("pcm_cat_temp", "pcm", "221627", "Temp. Catalisador", "°C", "{:.0f}", _dec_pcm_cat_temp),
+    "pcm_baro": FordDid("pcm_baro", "pcm", "220320", "Pressão Barométrica", "kPa", "{:.0f}", _dec_pcm_baro),
 
     # Painel de Instrumentos (IPC 720)
     "ipc_odometer": FordDid("ipc_odometer", "ipc", "22DD01", "Odômetro Total", "km", "{:.0f}", _dec_ipc_odometer),
@@ -309,6 +326,8 @@ FORD_CHANNELS_INFO: Dict[str, Tuple[str, str]] = {
     "ac_pressure_kpa": ("Pressão Refrigerante A/C", "kPa"),
     "ac_clutch": ("Embreagem Compressor A/C", "0/1"),
     "flex_ethanol_pct": ("Teor de Etanol Tanque", "%"),
+    "cat_temp": ("Temp. Catalisador (UDS)", "°C"),
+    "baro": ("Pressão Barométrica (UDS)", "kPa"),
 
     # Painel & Direção
     "odometer_km": ("Odômetro Total", "km"),

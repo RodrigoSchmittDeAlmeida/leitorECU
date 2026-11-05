@@ -5,6 +5,7 @@ COLORS = {
     "tps": "#40c4ff",
     "map": "#b2ff59",
     "lambda_v": "#ffd740",
+    "lambda2_v": "#ff80ab",  # Sonda 2 pós-catalisador (rosa/magenta suave para contraste com Sonda 1)
     "advance": "#e040fb",
     "stft": "#69f0ae",
     "ltft": "#ff9100",

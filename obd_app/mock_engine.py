@@ -15,7 +15,7 @@ import time
 from .pids import PIDS
 
 CYCLE = 24.0
-SUPPORTED = {0x01, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x11, 0x13, 0x14, 0x15, 0x1C, 0x20, 0x2F, 0x33, 0x40, 0x42, 0x44, 0x5C}
+SUPPORTED = {0x01, 0x03, 0x04, 0x05, 0x06, 0x07, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x11, 0x13, 0x14, 0x15, 0x1C, 0x20, 0x2F, 0x33, 0x3C, 0x40, 0x42, 0x44, 0x5C}
 
 
 def _clamp(v, lo, hi):
@@ -43,38 +43,54 @@ class MockEngine:
             rpm = 850 + 25 * math.sin(t * 3)
             tps, mp, adv = 0.0, 32 + 2 * math.sin(t), 10 + 2 * math.sin(t * 2.3)
             lam = 0.45 + 0.38 * osc
+            lam2 = 0.65 + 0.02 * math.sin(t * 0.4)
+            fuel_sys = 2  # Closed Loop
         elif ph < 9:  # aceleração
             k = (ph - 6) / 3
             rpm = 850 + (4200 - 850) * k
             tps, mp, adv = 15 + 45 * k, 55 + 35 * k, 18 + 8 * k
             lam = 0.82 + 0.03 * osc
+            lam2 = 0.76 + 0.04 * k
+            fuel_sys = 4 if tps > 50 else 2  # Open Loop WOT
         elif ph < 12:  # cruzeiro alto
             rpm = 4200 + 60 * math.sin(t * 4)
             tps, mp, adv = 35.0, 62.0, 30 + math.sin(t)
             lam = 0.45 + 0.4 * osc
+            lam2 = 0.68 + 0.02 * math.sin(t * 0.3)
+            fuel_sys = 2  # Closed Loop
         elif ph < 16:  # desaceleração
             k = ph - 12
             rpm = 1000 + 3200 * math.exp(-k * 1.1)
             tps, mp = 0.0, 20 + 3 * k
             if fault:
                 lam = 0.82 + 0.03 * osc
+                lam2 = 0.45 + 0.35 * osc  # catalisador ineficiente simulado: oscila com a Sonda 1!
                 adv = 4 - 4 * k
+                fuel_sys = 2
             else:
                 lam = 0.06 if rpm > 1250 else 0.45 + 0.38 * osc
+                lam2 = 0.08 if rpm > 1250 else 0.64 + 0.02 * math.sin(t * 0.5)
                 adv = 6 - k
+                fuel_sys = 1 if rpm > 1250 else 2  # Open Loop desaceleração
         else:  # dashpot
             k = ph - 16
             rpm = 850 + 150 * math.exp(-k)
             tps, mp, adv = 0.0, 33.0, 10 + 2 * math.sin(t * 2.3)
             lam = 0.45 + 0.38 * osc
+            lam2 = 0.65 + 0.02 * math.sin(t * 0.4)
+            fuel_sys = 2
 
         ect = _clamp(70 + t * 0.4, 70, 92)
         stft = 6 * -osc + (3 if fault else 0)
         ltft = 12.5 if fault else 3.1
         load = _clamp(mp * 1.1, 0, 100)
         speed = _clamp((rpm - 800) / 45, 0, 140)
-        return dict(rpm=rpm, tps=tps, map=mp, adv=adv, lam=_clamp(lam, 0.02, 1.0), ect=ect,
-                    stft=stft, ltft=ltft, load=load, speed=speed, iat=35.0, t=t, ph=ph)
+        cat_temp = _clamp(480.0 + (rpm / 4200.0) * 190.0 + 10.0 * math.sin(t * 0.1), 380.0, 720.0)
+        bat = 13.9 + 0.1 * math.sin(t * 0.5)
+        return dict(rpm=rpm, tps=tps, map=mp, adv=adv, lam=_clamp(lam, 0.02, 1.0),
+                    lam2=_clamp(lam2, 0.02, 1.0), ect=ect, stft=stft, ltft=ltft,
+                    load=load, speed=speed, iat=32.0, t=t, ph=ph, fuel_sys=fuel_sys,
+                    cat_temp=cat_temp, bat=bat, baro=98.0)
 
     # ---------------------------------------------------------------- respostas
     def respond(self, cmd: str, kline: float) -> tuple[str, float]:
@@ -211,6 +227,10 @@ class MockEngine:
                     return "62110104BE01"
                 if did == "1608":  # Etanol flex virtual
                     return "62160855"
+                if did == "1627":  # Temp Catalisador
+                    return f"621627{int((s['cat_temp'] + 40.0) * 10):04X}"
+                if did == "0320":  # Pressão barométrica
+                    return f"620320{int(s['baro']):02X}"
 
             # IPC 720 (Painel de Instrumentos)
             if self.header == "720":
@@ -252,7 +272,8 @@ class MockEngine:
             0x0E: lambda: f"{int(_clamp((s['adv'] + 64) * 2, 0, 255)):02X}",
             0x11: lambda: f"{int(s['tps'] * 255 / 100):02X}",
             0x14: lambda: f"{int(s['lam'] * 200):02X}{int(_clamp(128 + s['stft'] * 1.28, 0, 254)):02X}",
-            0x15: lambda: f"{int(s['lam'] * 200):02X}{int(_clamp(128 + s['stft'] * 1.28, 0, 254)):02X}",
+            0x15: lambda: f"{int(s['lam2'] * 200):02X}{int(_clamp(128 + s['stft'] * 0.2, 0, 254)):02X}",
+            0x03: lambda: f"{s['fuel_sys']:02X}00",
             0x06: lambda: f"{int(_clamp(128 + s['stft'] * 1.28, 0, 255)):02X}",
             0x07: lambda: f"{int(_clamp(128 + s['ltft'] * 1.28, 0, 255)):02X}",
             0x05: lambda: f"{int(s['ect'] + 40):02X}",
@@ -260,10 +281,12 @@ class MockEngine:
             0x0D: lambda: f"{int(s['speed']):02X}",
             0x0F: lambda: f"{int(s['iat'] + 40):02X}",
             0x2F: lambda: "AD",  # 68% combustível
-            0x33: lambda: "64",  # 100 kPa
-            0x42: lambda: "364E",  # 13.902 V
+            0x33: lambda: f"{int(s['baro']):02X}",  # kPa
+            0x3C: lambda: f"{int((s['cat_temp'] + 40.0) * 10):04X}",  # Temp Catalisador
+            0x42: lambda: f"{int(s['bat'] * 1000):04X}",  # Tensão PCM
             0x44: lambda: f"{int(s['lam'] * 32768):04X}",
             0x5C: lambda: f"{int(s['ect'] + 35):02X}",
+            0x5E: lambda: f"{int((s['load'] / 100.0) * 8.0 * 20):04X}",  # Fuel Rate
         }
         if pid not in enc or pid not in SUPPORTED:
             return "NO DATA"
