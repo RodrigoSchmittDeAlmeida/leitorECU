@@ -170,3 +170,4 @@ Ao realizar modificações ou expansões no código:
    Toda comunicação entre o `ObdWorker` (thread em background) e a `MainWindow` (thread principal da interface gráfica) deve obrigatoriamente trafegar por sinais Qt (`pyqtSignal`). Nunca acesse atributos da interface gráfica diretamente de dentro da QThread.
 5. **Modo Mudo / Pausa da Linha K**:
    A Linha K do Gol G5 compartilha chicote próximo aos tweeters de áudio. O seletor de cadência com opção de pausa ("Pausar Linha K") evita indução de ruído acústico quando o carro está parado. Mantenha essa funcionalidade preservada.
+
