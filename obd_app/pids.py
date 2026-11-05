@@ -1,0 +1,338 @@
+"""Definição dos canais (sensores), PIDs do Modo 01, blocos VW KWP2000 (Modo 21) e fórmulas.
+
+A = primeiro byte de dados, B = segundo byte (após os bytes de confirmação ``41 XX`` ou ``61 XX``).
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Dict, Optional, Tuple
+
+
+@dataclass(frozen=True)
+class Channel:
+    key: str
+    label: str
+    unit: str
+    fmt: str = "{:.0f}"
+    card: bool = True  # se True, exibe card no topo; todos os canais são gravados no CSV
+
+
+# Todos os canais exibidos/gravados (ordem = ordem das colunas do CSV)
+CHANNELS: Dict[str, Channel] = {
+    c.key: c
+    for c in (
+        # Cards principais (topo)
+        Channel("rpm", "RPM", "rpm", "{:.0f}", card=True),
+        Channel("map", "MAP", "kPa", "{:.0f}", card=True),
+        Channel("advance", "Avanço", "°", "{:.1f}", card=True),
+        Channel("tps", "Borboleta (TPS)", "%", "{:.1f}", card=True),
+        Channel("lambda_v", "Sonda Lambda 1", "V", "{:.3f}", card=True),
+        Channel("lambda_trim", "Correção Sonda", "%", "{:.1f}", card=True),
+        Channel("stft", "STFT", "%", "{:.1f}", card=True),
+        Channel("ltft", "LTFT", "%", "{:.1f}", card=True),
+        Channel("ect", "Temp. Motor (ECT)", "°C", "{:.0f}", card=True),
+        Channel("load", "Carga Calculada", "%", "{:.1f}", card=True),
+        Channel("speed", "Velocidade", "km/h", "{:.0f}", card=True),
+        Channel("iat", "Temp. Ar (IAT)", "°C", "{:.0f}", card=True),
+        Channel("battery", "Bateria", "V", "{:.1f}", card=True),
+        # Canais adicionais reportados pela ECU (gravados no CSV continuamente)
+        Channel("lambda2_v", "Sonda Lambda 2", "V", "{:.3f}", card=False),
+        Channel("lambda2_trim", "Correção Sonda 2", "%", "{:.1f}", card=False),
+        Channel("fuel_sys1", "Status Malha Comb. 1 (0103)", "cod", "{:.0f}", card=False),
+        Channel("fuel_sys2", "Status Malha Comb. 2 (0103)", "cod", "{:.0f}", card=False),
+        Channel("mil_on", "Luz Injeção (0101)", "0/1", "{:.0f}", card=False),
+        Channel("dtc_count", "Qtd. DTCs (0101)", "un", "{:.0f}", card=False),
+        Channel("o2_mask", "Máscara Sondas (0113)", "bit", "{:.0f}", card=False),
+        Channel("obd_std", "Padrão OBD (011C)", "id", "{:.0f}", card=False),
+        Channel("dist_mil", "Dist. c/ MIL (0121)", "km", "{:.0f}", card=False),
+        Channel("fuel_type", "Tipo Combustível (0151)", "id", "{:.0f}", card=False),
+    )
+}
+
+
+def _trim(a: int) -> float:
+    return ((a - 128) * 100.0) / 128.0
+
+
+def _dec_lambda_nb(d: bytes) -> Dict[str, Optional[float]]:
+    """PID 0114: Sonda convencional B1S1 (A/200 Volts, B = STFT da sonda)."""
+    a, b = d[0], d[1]
+    out: Dict[str, Optional[float]] = {"lambda_v": a / 200.0, "lambda_trim": None}
+    if b != 0xFF:
+        t = _trim(b)
+        out["lambda_trim"] = t
+        out["stft"] = t
+    return out
+
+
+def _dec_lambda_nb2(d: bytes) -> Dict[str, Optional[float]]:
+    """PID 0115: Sonda convencional B1S2 (pós-catalisador) ou única."""
+    a, b = d[0], d[1]
+    v = a / 200.0
+    out: Dict[str, Optional[float]] = {"lambda2_v": v, "lambda_v": v}
+    if b != 0xFF:
+        t = _trim(b)
+        out["lambda2_trim"] = t
+    return out
+
+
+def _dec_lambda_wb_v(d: bytes) -> Dict[str, Optional[float]]:
+    """PID 0124: 4 bytes (AB = Fator Lambda 0..2, CD = Tensão 0..8 V)."""
+    eq = ((d[0] * 256) + d[1]) * 2.0 / 65536.0
+    v = ((d[2] * 256) + d[3]) * 8.0 / 65536.0
+    if 0.005 <= v <= 5.0:
+        return {"lambda_v": v}
+    return {"lambda_v": eq}
+
+
+def _dec_lambda_wb_i(d: bytes) -> Dict[str, Optional[float]]:
+    """PID 0134: 4 bytes (AB = Fator Lambda 0..2, CD = Corrente mA)."""
+    eq = ((d[0] * 256) + d[1]) * 2.0 / 65536.0
+    return {"lambda_v": eq}
+
+
+def decode_vag_cell(k: int, a: int, b: int) -> Tuple[Optional[float], str]:
+    """Decodifica uma célula de 3 bytes (fórmula k, byte A, byte B) de Bloco de Medição VW KWP2000."""
+    if k == 0x01:
+        return 0.2 * a * b, "rpm"
+    if k in (0x02, 0x03):
+        return 0.002 * a * b, "%"
+    if k == 0x04:
+        return abs(b - 127) * 0.01 * a * (-1.0 if b < 127 else 1.0), "deg"
+    if k == 0x05:
+        return a * (b - 100) * 0.1, "C"
+    if k in (0x06, 0x15):
+        return 0.001 * a * b, "V"
+    if k == 0x07:
+        return 0.01 * a * b, "km/h"
+    if k == 0x08:
+        return 0.1 * a * b, ""
+    if k == 0x09:
+        return (b - 127) * 0.02 * a, "deg"
+    if k == 0x0B:
+        return 0.0001 * a * (b - 128) + 1.0, "lambda"
+    if k == 0x0E:
+        return 0.005 * a * b, "bar"
+    if k == 0x0F:
+        return 0.01 * a * b, "ms"
+    if k == 0x12:
+        return 0.04 * a * b, "mbar"
+    if k == 0x14:
+        return a * (b - 128) / 128.0, "%"
+    if k == 0x16:
+        return 0.001 * a * b, "ms"
+    if k == 0x17:
+        return (b / 256.0) * a, "%"
+    if k == 0x1B:
+        return (b - 128) * 0.01 * a, "deg"
+    if k == 0x21:
+        return 100.0 if a == 0 else (100.0 * b / a), "%"
+    if k == 0x2B:
+        return 0.1 * a * b, "V"
+    if k == 0x3B:
+        return ((a * 256) + b) / 32768.0, "lambda"
+    return None, ""
+
+
+def _dec_vag_group33(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 033 (comando 2121): Célula 1 = Correção Sonda/STFT (%), Célula 2 = Tensão Sonda (V)."""
+    out: Dict[str, Optional[float]] = {}
+    v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+    v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+    if v1 is not None and u1 == "%":
+        out["lambda_trim"] = v1
+        out["stft"] = v1
+    elif v1 is not None and u1 in ("V", "lambda"):
+        out["lambda_v"] = v1
+    if v2 is not None and u2 in ("V", "lambda"):
+        out["lambda_v"] = v2
+    elif v2 is not None and u2 == "%" and "stft" not in out:
+        out["lambda_trim"] = v2
+        out["stft"] = v2
+    return out
+
+
+def _dec_vag_group32(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 032 (comando 2120): Célula 1 = LTFT Lenta (%), Célula 2 = LTFT Parcial (%)."""
+    out: Dict[str, Optional[float]] = {}
+    v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+    v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+    if v2 is not None and u2 == "%":
+        out["ltft"] = v2
+    elif v1 is not None and u1 == "%":
+        out["ltft"] = v1
+    return out
+
+
+def _dec_vag_group31(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 031 (comando 211F): Célula 1 = Sonda Lambda 1 (V), Célula 3 = Sonda 2."""
+    v1, _ = decode_vag_cell(d[0], d[1], d[2])
+    return {"lambda_v": v1} if v1 is not None else {}
+
+
+def _dec_vag_group01(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 001 (comando 2101): Célula 1 = RPM, Célula 2 = ECT (°C), Célula 3 = Correção Lambda (%)."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 9:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
+        if v1 is not None and u1 == "rpm":
+            out["rpm"] = v1
+        if v2 is not None and u2 == "C":
+            out["ect"] = v2
+        if v3 is not None and u3 == "%":
+            out["lambda_trim"] = v3
+            out["stft"] = v3
+        elif v3 is not None and u3 in ("V", "lambda"):
+            out["lambda_v"] = v3
+    return out
+
+
+def _dec_vag_group02(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 002 (comando 2102): C1 = RPM, C2 = Carga (%), C3 = Tempo Injeção (ms), C4 = MAP (mbar)."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 12:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v4, u4 = decode_vag_cell(d[9], d[10], d[11])
+        if v1 is not None and u1 == "rpm":
+            out["rpm"] = v1
+        if v2 is not None and u2 == "%":
+            out["load"] = v2
+        if v4 is not None and u4 == "mbar":
+            out["map"] = v4 / 10.0  # mbar -> kPa
+    return out
+
+
+def _dec_vag_group03(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 003 (comando 2103): C1 = RPM, C2 = MAP (mbar), C3 = TPS (%), C4 = Avanço (°)."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 12:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
+        v4, u4 = decode_vag_cell(d[9], d[10], d[11])
+        if v1 is not None and u1 == "rpm":
+            out["rpm"] = v1
+        if v2 is not None and u2 == "mbar":
+            out["map"] = v2 / 10.0  # mbar -> kPa
+        if v3 is not None and u3 == "%":
+            out["tps"] = v3
+        if v4 is not None and u4 == "deg":
+            out["advance"] = v4
+    return out
+
+
+def _dec_vag_group04(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 004 (comando 2104): C1 = RPM, C2 = Bateria (V), C3 = ECT (°C), C4 = IAT (°C)."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 12:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
+        v4, u4 = decode_vag_cell(d[9], d[10], d[11])
+        if v1 is not None and u1 == "rpm":
+            out["rpm"] = v1
+        if v2 is not None and u2 == "V":
+            out["battery"] = v2
+        if v3 is not None and u3 == "C":
+            out["ect"] = v3
+        if v4 is not None and u4 == "C":
+            out["iat"] = v4
+    return out
+
+
+def _dec_vag_group05(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 005 (comando 2105): C1 = RPM, C2 = Carga (%), C3 = Velocidade (km/h)."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 9:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
+        if v1 is not None and u1 == "rpm":
+            out["rpm"] = v1
+        if v2 is not None and u2 == "%":
+            out["load"] = v2
+        if v3 is not None and u3 == "km/h":
+            out["speed"] = v3
+    return out
+
+
+@dataclass(frozen=True)
+class PidDef:
+    pid: int
+    nbytes: int
+    decode: Callable[[bytes], Dict[str, Optional[float]]]
+    name: str
+    mode: int = 0x01
+    fast: bool = False   # lido também no modo "Prioridade de Desaceleração"
+    extra: bool = False  # PID opcional / complementar
+    slow: bool = False   # muda devagar: lido a cada N ciclos
+
+    @property
+    def key(self) -> int:
+        return self.pid if self.mode == 0x01 else ((self.mode << 8) | self.pid)
+
+    @property
+    def cmd(self) -> str:
+        return f"{self.mode:02X}{self.pid:02X}"
+
+
+PIDS: Dict[int, PidDef] = {
+    p.key: p
+    for p in (
+        PidDef(0x0C, 2, lambda d: {"rpm": ((d[0] * 256) + d[1]) / 4.0}, "RPM", fast=True),
+        PidDef(0x0B, 1, lambda d: {"map": float(d[0])}, "MAP", fast=True),
+        PidDef(0x0E, 1, lambda d: {"advance": (d[0] / 2.0) - 64.0}, "Avanço", fast=True),
+        PidDef(0x11, 1, lambda d: {"tps": (d[0] * 100.0) / 255.0}, "TPS", fast=True),
+        # Sondas Modo 01 (0114 B1S1, 0115 B1S2, 0116..011B bancos/sensores extras, 0124/0134 wideband)
+        PidDef(0x14, 2, _dec_lambda_nb, "Sonda Lambda B1S1 (0114)", fast=True),
+        PidDef(0x15, 2, _dec_lambda_nb2, "Sonda Lambda B1S2 (0115)", fast=True),
+        PidDef(0x16, 2, _dec_lambda_nb, "Sonda Lambda B1S3 (0116)", fast=True),
+        PidDef(0x17, 2, _dec_lambda_nb, "Sonda Lambda B1S4 (0117)", fast=True),
+        PidDef(0x18, 2, _dec_lambda_nb, "Sonda Lambda B2S1 (0118)", fast=True),
+        PidDef(0x19, 2, _dec_lambda_nb2, "Sonda Lambda B2S2 (0119)", fast=True),
+        PidDef(0x24, 4, _dec_lambda_wb_v, "Sonda Lambda Eq/V (0124)", fast=True),
+        PidDef(0x34, 4, _dec_lambda_wb_i, "Sonda Lambda Eq/mA (0134)", fast=True),
+        # Fuel Trims e Temperatura Modo 01
+        PidDef(0x06, 1, lambda d: {"stft": _trim(d[0])}, "STFT"),
+        PidDef(0x07, 1, lambda d: {"ltft": _trim(d[0])}, "LTFT", slow=True),
+        PidDef(0x05, 1, lambda d: {"ect": d[0] - 40.0}, "ECT", slow=True),
+        # Blocos de Medição VW KWP2000 (Modo 21)
+        PidDef(0x21, 6, _dec_vag_group33, "VW Bloco 033 Sonda+STFT (2121)", mode=0x21, fast=True),
+        PidDef(0x20, 6, _dec_vag_group32, "VW Bloco 032 LTFT (2120)", mode=0x21, slow=True),
+        PidDef(0x1F, 3, _dec_vag_group31, "VW Bloco 031 Sonda (211F)", mode=0x21, fast=True),
+        PidDef(0x01, 9, _dec_vag_group01, "VW Bloco 001 RPM+ECT+STFT (2101)", mode=0x21),
+        PidDef(0x02, 12, _dec_vag_group02, "VW Bloco 002 RPM+Carga+MAP (2102)", mode=0x21, extra=True),
+        PidDef(0x03, 12, _dec_vag_group03, "VW Bloco 003 RPM+MAP+TPS+Avanço (2103)", mode=0x21, fast=True),
+        PidDef(0x04, 12, _dec_vag_group04, "VW Bloco 004 RPM+Bat+ECT+IAT (2104)", mode=0x21, slow=True),
+        PidDef(0x05, 9, _dec_vag_group05, "VW Bloco 005 RPM+Carga+Vel (2105)", mode=0x21, extra=True),
+        # Todos os demais PIDs que a sua ECU declarou no bitmap (01, 03, 04, 0D, 0F, 13, 1C, 21, 51)
+        PidDef(0x04, 1, lambda d: {"load": (d[0] * 100.0) / 255.0}, "Carga", extra=True),
+        PidDef(0x0D, 1, lambda d: {"speed": float(d[0])}, "Velocidade", extra=True),
+        PidDef(0x0F, 1, lambda d: {"iat": d[0] - 40.0}, "IAT", extra=True, slow=True),
+        PidDef(0x01, 4, lambda d: {"mil_on": 1.0 if (d[0] & 0x80) else 0.0, "dtc_count": float(d[0] & 0x7F)}, "Status Monitor (0101)", extra=True, slow=True),
+        PidDef(0x03, 2, lambda d: {"fuel_sys1": float(d[0]), "fuel_sys2": float(d[1])}, "Status Malha Comb. (0103)", extra=True, slow=True),
+        PidDef(0x13, 1, lambda d: {"o2_mask": float(d[0])}, "Sensores O2 Presentes (0113)", extra=True, slow=True),
+        PidDef(0x1C, 1, lambda d: {"obd_std": float(d[0])}, "Padrão OBD (011C)", extra=True, slow=True),
+        PidDef(0x21, 2, lambda d: {"dist_mil": float((d[0] * 256) + d[1])}, "Distância c/ MIL (0121)", extra=True, slow=True),
+        PidDef(0x51, 1, lambda d: {"fuel_type": float(d[0])}, "Tipo Combustível (0151)", extra=True, slow=True),
+    )
+}
+
+# Ordem padrão (a sonda será ajustada automaticamente pelo autodiscovery no handshake)
+NORMAL_ORDER = [0x0C, 0x0B, 0x0E, 0x11, 0x14, 0x06, 0x07, 0x05]
+FAST_ORDER = [0x0C, 0x0B, 0x0E, 0x11, 0x14]
+EXTRA_ORDER = [0x04, 0x0D, 0x0F, 0x03, 0x01, 0x13, 0x1C, 0x21, 0x51]
+
+# Candidatos de Sonda Lambda testados automaticamente na inicialização
+LAMBDA_CANDIDATES = [0x14, 0x15, 0x24, 0x34]
+STFT_CANDIDATES = [0x06]
+LTFT_CANDIDATES = [0x07]
+
+
+def parse_supported_bitmap(base_pid: int, data: bytes) -> set[int]:
+    """Converte a resposta de 0100/0120/0140 (4 bytes) no conjunto de PIDs suportados."""
+    value = int.from_bytes(data[:4], "big")
+    return {base_pid + i + 1 for i in range(32) if value & (1 << (31 - i))}

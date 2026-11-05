@@ -1,0 +1,16 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs e datalogs de testes
+logs/
+*.csv
+*.log
+
+# Ambientes virtuais e IDEs
+venv/
+.env
+.venv/
+.vscode/
+.idea/
