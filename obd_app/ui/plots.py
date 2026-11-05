@@ -11,8 +11,9 @@ class DualAxisPlot(pg.PlotWidget):
     def __init__(self, title: str, left_label: str, left_range, right_label: str | None = None,
                  right_range=None, parent=None):
         super().__init__(parent=parent, background="#0f1115")
+        self.setMinimumHeight(100)
         self.pi = self.getPlotItem()
-        self.pi.setTitle(title, color="#9aa4b2", size="10pt")
+        self.pi.setTitle(title, color="#9aa4b2", size="8.5pt")
         self.pi.showGrid(x=True, y=True, alpha=0.18)
         self.pi.setLabel("left", left_label)
         self.pi.setXRange(-WINDOW_S, 0, padding=0)

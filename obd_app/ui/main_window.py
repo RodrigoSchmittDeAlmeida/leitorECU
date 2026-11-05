@@ -11,7 +11,7 @@ import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QSettings, Qt, QThread, QTimer
 from PyQt6.QtGui import QAction, QFont
-from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout,
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout,
                              QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
                              QPushButton, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
                              QVBoxLayout, QWidget)
@@ -36,7 +36,19 @@ class MainWindow(QMainWindow):
     def __init__(self, demo: bool = False):
         super().__init__()
         self.setWindowTitle("Datalogger OBD2 — Bosch ME7.5.30 (VW Gol G5 1.6 Flex)")
-        self.resize(1500, 950)
+
+        # Ajuste adaptativo para caber 100% na tela 1920x1080 (mesmo com escala do Windows de 125% ou 150%)
+        screen = QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            target_w = min(1460, max(1000, int(avail.width() * 0.95)))
+            target_h = min(780, max(560, int(avail.height() * 0.92)))
+            self.resize(target_w, target_h)
+            self.move(avail.x() + (avail.width() - target_w) // 2,
+                      avail.y() + (avail.height() - target_h) // 2)
+        else:
+            self.resize(1280, 720)
+
         self.setStyleSheet(STYLE)
         pg.setConfigOptions(antialias=False, foreground="#9aa4b2")
 
@@ -71,13 +83,15 @@ class MainWindow(QMainWindow):
     def _build_ui(self):
         central = QWidget()
         root = QVBoxLayout(central)
-        root.setContentsMargins(8, 6, 8, 6)
-        root.setSpacing(6)
+        root.setContentsMargins(6, 4, 6, 4)
+        root.setSpacing(4)
         self.setCentralWidget(central)
 
         # ---------------- conexão
         conn = QGroupBox("Conexão ELM327")
         cl = QHBoxLayout(conn)
+        cl.setContentsMargins(6, 2, 6, 2)
+        cl.setSpacing(6)
         self.mode = QComboBox()
         self.mode.addItems(["Bluetooth BLE (Vgate iCar Pro)", "Wi-Fi (TCP)", "Demo / Simulador"])
         self.mode.currentIndexChanged.connect(self._mode_changed)
@@ -103,7 +117,7 @@ class MainWindow(QMainWindow):
         bl.setContentsMargins(0, 0, 0, 0)
         self.ble_dev = QComboBox()
         self.ble_dev.setEditable(True)
-        self.ble_dev.setMinimumWidth(300)
+        self.ble_dev.setMinimumWidth(180)
         self.ble_dev.lineEdit().setPlaceholderText("Clique em Procurar ou digite o endereço")
         self.ble_scan_btn = QPushButton("🔍 Procurar BLE")
         self.ble_scan_btn.clicked.connect(self._scan_ble)
@@ -114,7 +128,7 @@ class MainWindow(QMainWindow):
 
         self.connect_btn = QPushButton("Conectar", objectName="connect")
         self.connect_btn.setCheckable(True)
-        self.connect_btn.setMinimumWidth(120)
+        self.connect_btn.setMinimumWidth(95)
         self.connect_btn.clicked.connect(self._toggle_connect)
         cl.addWidget(self.connect_btn)
         self.status_lbl = QLabel("Desconectado")
@@ -124,23 +138,26 @@ class MainWindow(QMainWindow):
 
         # ---------------- controles
         ctl = QHBoxLayout()
-        self.decel_btn = QPushButton("⚡ Prioridade de Desaceleração", objectName="decel")
+        ctl.setContentsMargins(0, 0, 0, 0)
+        ctl.setSpacing(6)
+        self.decel_btn = QPushButton("⚡ Desaceleração", objectName="decel")
         self.decel_btn.setCheckable(True)
-        self.decel_btn.setMinimumWidth(250)
+        self.decel_btn.setMinimumWidth(110)
         self.decel_btn.setToolTip("Lê apenas RPM, MAP, Avanço, TPS e Sonda (pausa ECT/STFT/LTFT)\n"
                                   "para aumentar a taxa de amostragem e capturar Cut-Off / Dashpot.")
         self.decel_btn.toggled.connect(self._decel_toggled)
         self.rec_btn = QPushButton("⏺ Gravar Log")
         self.rec_btn.setCheckable(True)
         self.rec_btn.toggled.connect(self._toggle_record)
-        self.freeze_btn = QPushButton("⏸ Congelar gráficos")
+        self.freeze_btn = QPushButton("⏸ Congelar")
         self.freeze_btn.setCheckable(True)
-        clear_btn = QPushButton("Limpar gráficos")
+        clear_btn = QPushButton("Limpar")
         clear_btn.clicked.connect(self._clear_plots)
-        self.extras_chk = QCheckBox("Ler todos os PIDs da central (carga, velocidade, IAT, malha, bateria)")
+        self.extras_chk = QCheckBox("Todos os PIDs")
+        self.extras_chk.setToolTip("Lê todos os PIDs da central (carga, velocidade, IAT, malha fechada, bateria)")
         self.extras_chk.setChecked(True)
         self.extras_chk.toggled.connect(self._apply_worker_flags)
-        self.fast_chk = QCheckBox("Resposta rápida (sufixo 1)")
+        self.fast_chk = QCheckBox("Resposta rápida")
         self.fast_chk.setToolTip("Envia '010C1' em vez de '010C': o ELM327 não espera timeout após a resposta.\n"
                                  "Aumenta bastante a taxa; desative se o adaptador responder '?' ou NO DATA.")
         self.fast_chk.toggled.connect(self._apply_worker_flags)
@@ -149,9 +166,9 @@ class MainWindow(QMainWindow):
         self.cadence_cb = QComboBox()
         self.cadence_cb.addItems([
             "Taxa: Máxima",
-            "Taxa: Suave (reduz ruído K-Line)",
-            "Taxa: Silenciosa (1 Hz)",
-            "Pausar Linha K (Mudo)",
+            "Taxa: Suave (som)",
+            "Taxa: 1 Hz",
+            "Pausar Linha K",
         ])
         self.cadence_cb.setToolTip(
             "Controla a frequência de pacotes na Linha K.\n"
@@ -161,19 +178,20 @@ class MainWindow(QMainWindow):
         self.cadence_cb.currentIndexChanged.connect(self._apply_worker_flags)
         for w in (self.decel_btn, self.rec_btn, self.freeze_btn, clear_btn):
             ctl.addWidget(w)
-        ctl.addSpacing(8)
+        ctl.addSpacing(6)
         for w in (self.cadence_cb, self.extras_chk, self.fast_chk, self.raw_chk):
             ctl.addWidget(w)
         ctl.addStretch()
         self.rate_lbl = QLabel("0.0 resp/s | 0.0 ciclos/s")
-        self.rate_lbl.setFont(QFont("Consolas", 11, QFont.Weight.Bold))
+        self.rate_lbl.setFont(QFont("Consolas", 10, QFont.Weight.Bold))
         self.rate_lbl.setStyleSheet("color:#40c4ff;")
         ctl.addWidget(self.rate_lbl)
         root.addLayout(ctl)
 
         # ---------------- cards
         cards = QGridLayout()
-        cards.setSpacing(6)
+        cards.setContentsMargins(0, 0, 0, 0)
+        cards.setSpacing(4)
         self.cards: Dict[str, ValueCard] = {}
         card_channels = [(k, ch) for k, ch in CHANNELS.items() if getattr(ch, "card", True)]
         for i, (k, ch) in enumerate(card_channels):
@@ -245,6 +263,9 @@ class MainWindow(QMainWindow):
         self.ch_table = QTableWidget(0, 4)
         self.ch_table.setHorizontalHeaderLabels(["Canal", "Descrição", "Valor", "Idade (s)"])
         self.ch_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.ch_table.setColumnWidth(0, 65)
+        self.ch_table.setColumnWidth(2, 75)
+        self.ch_table.setColumnWidth(3, 60)
         self.ch_table.verticalHeader().setVisible(False)
         self.ch_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         chl.addWidget(self.ch_table, 1)
@@ -277,7 +298,8 @@ class MainWindow(QMainWindow):
         split.addWidget(tabs)
         split.setStretchFactor(0, 4)
         split.setStretchFactor(1, 1)
-        split.setSizes([1100, 400])
+        split.setSizes([int(self.width() * 0.70), int(self.width() * 0.30)])
+        split.setChildrenCollapsible(False)
         root.addWidget(split, 1)
 
         self.statusBar().showMessage("Pronto. Escolha o modo de conexão e clique em Conectar.")

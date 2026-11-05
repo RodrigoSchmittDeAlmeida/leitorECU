@@ -13,25 +13,35 @@ class ValueCard(QFrame):
         self.ch = ch
         self.setObjectName("card")
         self.setProperty("state", "stale")
-        self.setMinimumWidth(118)
+        self.setMinimumWidth(100)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 4, 8, 4)
-        lay.setSpacing(0)
+        lay.setContentsMargins(6, 3, 6, 3)
+        lay.setSpacing(1)
+
         top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
         self.title = QLabel(ch.label, objectName="cardTitle")
         self.note = QLabel("", objectName="cardNote")
         top.addWidget(self.title)
         top.addStretch()
         top.addWidget(self.note)
         lay.addLayout(top)
+
+        val_box = QHBoxLayout()
+        val_box.setContentsMargins(0, 0, 0, 0)
+        val_box.setSpacing(3)
+        val_box.addStretch()
         self.value = QLabel("--", objectName="cardValue")
         self.value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if color:
             self.value.setStyleSheet(f"color: {color};")
-        lay.addWidget(self.value)
+        val_box.addWidget(self.value)
+
         self.unit = QLabel(ch.unit, objectName="cardUnit")
-        self.unit.setAlignment(Qt.AlignmentFlag.AlignRight)
-        lay.addWidget(self.unit)
+        self.unit.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
+        val_box.addWidget(self.unit)
+        lay.addLayout(val_box)
+
         self._state = "stale"
 
     def set_value(self, v: float) -> None:
