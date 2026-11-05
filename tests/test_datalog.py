@@ -76,3 +76,4 @@ def test_csv_logger_dynamic_columns():
 
         assert len(lines) == 3
         assert "Temp Cabeça Cilindro [°C]" in lines[0]
+

@@ -40,3 +40,4 @@ def test_main_window_instantiation():
     assert any("Ford Ka" in t for t in tab_names)
 
     win.close()
+

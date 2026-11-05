@@ -114,3 +114,4 @@ def test_vag_strategy_polling():
     assert "lambda_v" in all_keys
 
     transport.close()
+

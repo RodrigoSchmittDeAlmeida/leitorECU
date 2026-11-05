@@ -52,3 +52,4 @@ class BaseVehicleStrategy(ABC, IVehicleStrategy):
     def get_channels_info(self) -> Dict[str, Tuple[str, str]]:
         """Canais extras conhecidos pelo perfil."""
         return {}
+

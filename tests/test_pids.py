@@ -62,3 +62,4 @@ def test_mode01_pid_decoders():
 
     # TPS: A * 100 / 255 %
     assert pytest.approx(PIDS[0x11].decode(bytes([128]))["tps"], abs=0.5) == 50.19
+

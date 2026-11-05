@@ -78,3 +78,4 @@ def test_pscm_epas_steering():
     assert res["steering_wheel_angle"] == 15.0
     assert res["steering_driver_torque"] == 1.50
     assert res["steering_motor_current"] == 4.0
+

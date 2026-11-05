@@ -273,3 +273,4 @@ class FordHsCanStrategy(BaseVehicleStrategy):
 
     def get_channels_info(self) -> Dict[str, Tuple[str, str]]:
         return dict(ford.FORD_CHANNELS_INFO)
+

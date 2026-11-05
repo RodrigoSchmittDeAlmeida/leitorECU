@@ -53,3 +53,4 @@ def test_extract_block():
     block = extract_block(DummyResp(), 3)
     assert block is not None
     assert len(block) >= 12
+

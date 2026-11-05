@@ -100,3 +100,4 @@ class IVehicleStrategy(Protocol):
     def get_channels_info(self) -> Dict[str, Tuple[str, str]]:
         """Retorna metadados de canais específicos {chave: (descrição, unidade)}."""
         ...
+

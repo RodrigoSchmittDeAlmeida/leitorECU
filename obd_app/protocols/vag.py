@@ -249,3 +249,4 @@ class VagKwpStrategy(BaseVehicleStrategy):
 
     def get_channels_info(self) -> Dict[str, Tuple[str, str]]:
         return dict(self.vag_cells)
+

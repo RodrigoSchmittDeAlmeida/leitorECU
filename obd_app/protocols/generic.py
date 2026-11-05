@@ -171,3 +171,4 @@ class GenericObdStrategy(BaseVehicleStrategy):
     def clear_dtcs(self, elm: Any, worker: Any) -> None:
         elm.command("04", 4.0)
         self.read_dtcs(elm, worker)
+

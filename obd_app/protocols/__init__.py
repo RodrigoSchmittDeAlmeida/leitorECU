@@ -24,3 +24,4 @@ def get_vehicle_strategy(profile_id: str) -> BaseVehicleStrategy:
     """Retorna uma nova instância da estratégia correspondente ao ID do perfil."""
     strategy_cls = VEHICLE_STRATEGIES.get(profile_id, GenericObdStrategy)
     return strategy_cls()
+
