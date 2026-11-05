@@ -1,8 +1,11 @@
 """Módulo de diagnóstico Ford HS-CAN (ISO 15765-4 / UDS ISO 14229) para Ford Ka+ 2016 SEL 1.5 Sigma.
 
 Plataforma Ford B562 (Ka 3ª geração).
+Motor: Ford Sigma 1.5 16V DOHC Flex 4 cilindros (comandos de válvulas fixos, SEM VVT / SEM Ti-VCT).
+(Nota: O motor Sigma 1.5 do Ka não possui comando variável. Não confundir com o Sigma 1.6 Ti-VCT do Fiesta ou o motor Dragon 1.5 de 3 cilindros).
+
 Barramento de alta velocidade HS-CAN a 500 kbps (pinos 6 e 14 do conector OBD2):
-- PCM  (0x7E0 / 0x7E8): Módulo do Motor Sigma 1.5 16V Flex (Ti-VCT)
+- PCM  (0x7E0 / 0x7E8): Módulo do Motor Sigma 1.5 16V Flex DOHC (comandos fixos)
 - BCM  (0x726 / 0x72E): Módulo de Carroceria e Conforto (portas, travas, vidros, faróis, limpadores)
 - ABS  (0x760 / 0x768): Freios ABS, Controle de Estabilidade (ESC) e Assistente de Partida em Rampa (HLA)
 - IPC  (0x720 / 0x728): Painel de Instrumentos (odômetro, combustível, temp externa, alertas)
@@ -27,7 +30,7 @@ class FordModule:
 
 # Módulos presentes no barramento HS-CAN (500 kbps) do Ford Ka+ 2016 SEL
 FORD_MODULES: Dict[str, FordModule] = {
-    "pcm": FordModule("pcm", "PCM", "7E0", "7E8", "Módulo do Motor Sigma 1.5 16V Flex"),
+    "pcm": FordModule("pcm", "PCM", "7E0", "7E8", "Módulo do Motor Sigma 1.5 16V Flex DOHC"),
     "bcm": FordModule("bcm", "BCM", "726", "72E", "Módulo de Carroceria e Conforto (GEM)"),
     "abs": FordModule("abs", "ABS/ESC", "760", "768", "Sistema de Freios ABS, ESC e HLA"),
     "ipc": FordModule("ipc", "IPC", "720", "728", "Painel de Instrumentos e Odômetro"),
@@ -154,15 +157,17 @@ def _dec_pcm_cht(d: bytes) -> Dict[str, float]:
     return {"cht_temp": val}
 
 
-def _dec_pcm_vvt(d: bytes) -> Dict[str, float]:
-    """Avanço dos comandos de válvulas Ti-VCT (DID 22093C Admissão e 22093E Escape)."""
-    if len(d) >= 2:
-        # Admissão e Escape
-        adm = float(d[0] - 50)
-        esc = float(d[1] - 50)
-        return {"vvt_intake_deg": adm, "vvt_exhaust_deg": esc}
-    elif len(d) == 1:
-        return {"vvt_intake_deg": float(d[0] - 50)}
+def _dec_pcm_pedal(d: bytes) -> Dict[str, float]:
+    """Posição do pedal do acelerador eletrônico APP (DID 22032B)."""
+    if len(d) >= 1:
+        return {"app_pedal_pct": float(d[0] * 100.0 / 255.0)}
+    return {}
+
+
+def _dec_pcm_fan(d: bytes) -> Dict[str, float]:
+    """Controle PWM do eletroventilador do radiador (DID 220332)."""
+    if len(d) >= 1:
+        return {"fan_duty_pct": float(d[0] * 100.0 / 255.0)}
     return {}
 
 
@@ -246,9 +251,10 @@ FORD_DIDS: Dict[str, FordDid] = {
     "abs_wheels": FordDid("abs_wheels", "abs", "222B00", "Velocidade 4 Rodas", "km/h", "{:.1f}", _dec_abs_wheels, fast=True),
     "abs_dynamics": FordDid("abs_dynamics", "abs", "222B01", "Pressão Freio & SAS", "bar", "{:.1f}", _dec_abs_dynamics),
 
-    # Motor Sigma 1.5 (PCM 7E0)
+    # Motor Sigma 1.5 16V Flex DOHC (comandos fixos, sem VVT)
     "pcm_cht": FordDid("pcm_cht", "pcm", "221624", "Temp. Cabeça Cilindro (CHT)", "°C", "{:.0f}", _dec_pcm_cht),
-    "pcm_vvt": FordDid("pcm_vvt", "pcm", "22093C", "VVT Ti-VCT Admissão/Escape", "°", "{:.1f}", _dec_pcm_vvt),
+    "pcm_pedal": FordDid("pcm_pedal", "pcm", "22032B", "Pedal Acelerador (APP)", "%", "{:.1f}", _dec_pcm_pedal),
+    "pcm_fan": FordDid("pcm_fan", "pcm", "220332", "Eletroventilador Radiador", "%", "{:.0f}", _dec_pcm_fan),
     "pcm_injection": FordDid("pcm_injection", "pcm", "221125", "Tempo de Injeção", "ms", "{:.2f}", _dec_pcm_injection),
     "pcm_ac": FordDid("pcm_ac", "pcm", "221101", "Pressão A/C", "kPa", "{:.0f}", _dec_pcm_ac),
     "pcm_flex": FordDid("pcm_flex", "pcm", "221608", "Etanol Flex no Tanque", "%", "{:.0f}", _dec_pcm_flex),
@@ -295,10 +301,10 @@ FORD_CHANNELS_INFO: Dict[str, Tuple[str, str]] = {
     "esc_active": ("Intervenção ESC/ABS", "0/1"),
     "steering_angle_abs": ("Ângulo Esterçamento (SAS)", "°"),
 
-    # Motor Sigma 1.5 16V Ti-VCT
+    # Motor Sigma 1.5 16V Flex DOHC (comandos fixos, sem VVT)
     "cht_temp": ("Temp. Cabeça Cilindro (CHT)", "°C"),
-    "vvt_intake_deg": ("Avanço VVT Admissão", "°"),
-    "vvt_exhaust_deg": ("Avanço VVT Escape", "°"),
+    "app_pedal_pct": ("Pedal Acelerador (APP)", "%"),
+    "fan_duty_pct": ("Eletroventilador Radiador", "%"),
     "inj_pulse_width": ("Tempo de Injeção", "ms"),
     "ac_pressure_kpa": ("Pressão Refrigerante A/C", "kPa"),
     "ac_clutch": ("Embreagem Compressor A/C", "0/1"),
@@ -314,3 +320,4 @@ FORD_CHANNELS_INFO: Dict[str, Tuple[str, str]] = {
     "steering_driver_torque": ("Torque Aplicado Volante", "Nm"),
     "steering_motor_current": ("Corrente Motor Direção", "A"),
 }
+

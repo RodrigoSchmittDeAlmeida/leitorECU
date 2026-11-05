@@ -4,7 +4,7 @@ Suporta:
 - Ciclo de motor (marcha lenta, aceleração, cruzeiro, desaceleração com cut-off)
 - Protocolo VAG KWP2000 (endereço 01, blocos 003, 004, 005, 020, 031, 032, 033)
 - Protocolo Ford HS-CAN 500k (PCM 7E0, BCM 726 conforto, ABS 760, IPC 720, PSCM 730, RCM 737)
-- Modo 22 Ford UDS (DIDs de portas, faróis, limpadores, velocidades das 4 rodas, CHT, VVT, etc.)
+- Modo 22 Ford UDS (DIDs de portas, faróis, limpadores, velocidades das 4 rodas, CHT, pedal APP, PWM ventoinha, etc.)
 """
 from __future__ import annotations
 
@@ -193,15 +193,17 @@ class MockEngine:
                     pedal = 0x01 if press > 0 else 0x00
                     return f"622B01{press:04X}{pedal:02X}0000"
 
-            # PCM 7E0 (Motor Sigma 1.5 16V Ti-VCT)
+            # PCM 7E0 (Motor Sigma 1.5 16V Flex DOHC - sem VVT)
             if self.header == "7E0":
                 if did == "1624":  # CHT Temp
                     raw_cht = int((s["ect"] + 4.0 + 40.0) * 10)
                     return f"621624{raw_cht:04X}"
-                if did == "093C":  # VVT Admissão / Escape
-                    adm = int(12.0 + 15.0 * (s["rpm"] / 4500.0) + 50)
-                    esc = int(4.0 + 10.0 * (s["rpm"] / 4500.0) + 50)
-                    return f"62093C{adm:02X}{esc:02X}"
+                if did == "032B":  # Posição do pedal APP
+                    app_b = int(s["tps"] * 2.55)
+                    return f"62032B{app_b:02X}"
+                if did == "0332":  # Eletroventilador
+                    fan_pct = int(65 if s["ect"] > 88 else 0)
+                    return f"620332{int(fan_pct * 2.55):02X}"
                 if did == "1125":  # Tempo de injeção
                     pw = int((2.8 + (s["load"] / 100.0) * 8.5) * 1000)
                     return f"621125{pw:04X}"

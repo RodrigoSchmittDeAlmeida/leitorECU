@@ -8,8 +8,8 @@ Documento de referência técnica completo para desenvolvedores e agentes de int
 
 O **leitorECU** é um aplicativo desktop multiplataforma (otimizado para Windows, escrito em Python 3.13+ com PyQt6 e PyQtGraph rodando a 30 FPS estáveis) para diagnóstico, aquisição de dados e telemetria de alta frequência voltado para múltiplos veículos:
 1. **Volkswagen Gol G5, Voyage, Saveiro, Fox e Polo (1.0 e 1.6 8V TotalFlex EA111)**: Central **Bosch ME7.5.30** via protocolo proprietário **VAG KWP2000**.
-2. **Ford Ka+ 2016 SEL Sedan (Motor Sigma 1.5 16V Flex Ti-VCT)**: Barramento **Ford HS-CAN 500 kbps** (ISO 15765-4 / UDS ISO 14229) com suporte multimodular completo:
-   - **PCM** (0x7E0 / 0x7E8): Motor Sigma 1.5 (RPM, MAP, TPS, Avanço, Sondas, CHT, VVT, Tempo de Injeção, Pressão A/C, Etanol flex).
+2. **Ford Ka+ 2016 SEL Sedan (Motor Sigma 1.5 16V Flex DOHC - Comandos Fixos, sem VVT)**: Barramento **Ford HS-CAN 500 kbps** (ISO 15765-4 / UDS ISO 14229) com suporte multimodular completo:
+   - **PCM** (0x7E0 / 0x7E8): Motor Sigma 1.5 DOHC (RPM, MAP, TPS, Avanço, Sondas, CHT, Pedal Acelerador APP %, Eletroventilador PWM %, Tempo de Injeção, Pressão A/C, Etanol flex). *Nota técnica: O motor Sigma 1.5 do Ka 2014-2018 possui comandos fixos sem variadores de fase (sem VVT/Ti-VCT). Não confundir com o motor Sigma 1.6 Ti-VCT nem com o motor Dragon 1.5 de 3 cilindros.*
    - **BCM** (0x726 / 0x72E): Módulo de Carroceria e Conforto (status das 4 portas, porta-malas sedan, capô, travas elétricas, alarme PATS, farol baixo/alto, faróis de neblina, lanternas, limpadores, desembaçador, ignição, tensão BCM).
    - **ABS/ESC** (0x760 / 0x768): Velocidade individual das 4 rodas (FL, FR, RL, RR em km/h), pressão do freio no cilindro mestre, pedal de freio, sensor de ângulo SAS, status de intervenção ESC/HLA.
    - **IPC** (0x720 / 0x728): Painel de instrumentos (odômetro total em km, nível de combustível, temperatura externa, freio de mão, cinto).
@@ -58,7 +58,8 @@ Ao disparar o 5-baud init no endereço `01`, a central retorna os KeyBytes **`EF
 
 ### 3.1 Topologia de Rede & Módulos Suportados
 O Ford Ka de 3ª geração (B562) utiliza barramento CAN de alta velocidade (HS-CAN) a 500 kbps nos pinos 6 (CAN-H) e 14 (CAN-L) do conector OBD2:
-- **PCM (0x7E0 / 0x7E8)**: Módulo do Motor Sigma 1.5 16V Ti-VCT Flex.
+- **PCM (0x7E0 / 0x7E8)**: Módulo do Motor Sigma 1.5 16V Flex DOHC (comandos fixos, sem VVT). Central Continental EMS2211.
+  > *Atenção Técnica*: O motor Sigma 1.5 16V do Ka (geração B562, 2014-2018) possui duplo comando no cabeçote sem variador de fase (sem Ti-VCT / VVT). Não deve ser confundido com o motor 1.5 Dragon de 3 cilindros (que possui Ti-VCT) nem com o Sigma 1.6 Ti-VCT do New Fiesta.
 - **BCM (0x726 / 0x72E)**: Módulo de Carroceria e Conforto (GEM).
 - **ABS/ESC (0x760 / 0x768)**: Módulo de Freios ABS, Controle de Estabilidade e Assistente de Partida em Rampa (HLA).
 - **IPC (0x720 / 0x728)**: Painel de Instrumentos.
@@ -76,11 +77,12 @@ O Ford Ka de 3ª geração (B562) utiliza barramento CAN de alta velocidade (HS-
   - `222B00`: Velocidade individual das 4 rodas em tempo real (km/h).
   - `222B01`: Pressão no cilindro mestre de freio (bar), pedal de freio, sensor de ângulo de esterçamento (SAS) e intervenção ESC/HLA.
 - **PCM Motor Sigma (`ATSH 7E0`)**:
-  - `221624`: Temperatura da Cabeça do Cilindro (CHT °C).
-  - `22093C`: Avanço dos comandos variáveis Ti-VCT (Admissão e Escape em °).
+  - `221624`: Temperatura da Cabeça do Cilindro (CHT °C) — o Sigma não usa sensor ECT direto na água, mas sim CHT seco na carcaça.
+  - `22032B`: Posição do sensor do pedal do acelerador APP (%).
+  - `220332`: Ciclo de trabalho do eletroventilador de arrefecimento (PWM Duty Cycle %).
   - `221125`: Tempo de injeção dos bicos injetores (Pulse Width ms).
   - `221101`: Pressão do refrigerante do ar condicionado (kPa) e status do compressor.
-  - `221608`: Nível de etanol flex virtual no tanque (%).
+  - `221608`: Nível de etanol flex virtual calculado pela central (%).
 - **IPC Painel (`ATSH 720`)**:
   - `22DD01`: Odômetro total em km.
   - `222416`: Nível de combustível (%), temperatura externa (°C), alertas de cinto e freio de mão.

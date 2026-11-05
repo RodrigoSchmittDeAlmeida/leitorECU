@@ -364,11 +364,13 @@ class ObdWorker(QThread):
                         except Exception:
                             pass
 
-        # DIDs Ford PCM: CHT Temp e VVT Ti-VCT
+        # DIDs Ford PCM: CHT Temp, Pedal APP e Eletroventilador (Sigma 1.5 DOHC sem VVT)
         if cycle % 2 == 1:
             if self._query_ford_did("7E0", "221624", ford._dec_pcm_cht):
                 n_resp += 1
-            if self._query_ford_did("7E0", "22093C", ford._dec_pcm_vvt):
+            if self._query_ford_did("7E0", "22032B", ford._dec_pcm_pedal):
+                n_resp += 1
+            if cycle % 4 == 1 and self._query_ford_did("7E0", "220332", ford._dec_pcm_fan):
                 n_resp += 1
 
         # DIDs Ford PCM: Tempo de Injeção e Pressão A/C

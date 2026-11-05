@@ -207,23 +207,23 @@ class MainWindow(QMainWindow):
         abs_lay.addLayout(dyn_grid)
         lay.addWidget(abs_box)
 
-        # 3. Motor Ford Sigma 1.5 16V Ti-VCT Flex (PCM 7E0)
-        pcm_box = QGroupBox("Motor Sigma 1.5 16V Ti-VCT Flex (PCM - 0x7E0)")
+        # 3. Motor Ford Sigma 1.5 16V Flex DOHC (PCM 7E0 - Comandos Fixos, sem VVT)
+        pcm_box = QGroupBox("Motor Sigma 1.5 16V Flex DOHC (PCM - 0x7E0)")
         pcm_lay = QGridLayout(pcm_box)
         pcm_lay.setContentsMargins(6, 4, 6, 6)
         pcm_lay.setSpacing(4)
         self.f_cht = QLabel("Temp. Cabeça Cilindro (CHT): -- °C")
-        self.f_vvt_adm = QLabel("VVT Admissão: --°")
-        self.f_vvt_esc = QLabel("VVT Escape: --°")
+        self.f_app_pedal = QLabel("Pedal Acelerador (APP): -- %")
+        self.f_fan_duty = QLabel("Ventoinha Radiador: -- %")
         self.f_inj_pw = QLabel("Tempo de Injeção: -- ms")
         self.f_ac_press = QLabel("Pressão A/C: -- kPa")
         self.f_ac_clutch = QLabel("Compressor A/C: --")
         self.f_flex_eth = QLabel("Teor Etanol Tanque: -- %")
-        for lbl in (self.f_cht, self.f_vvt_adm, self.f_vvt_esc, self.f_inj_pw, self.f_ac_press, self.f_ac_clutch, self.f_flex_eth):
+        for lbl in (self.f_cht, self.f_app_pedal, self.f_fan_duty, self.f_inj_pw, self.f_ac_press, self.f_ac_clutch, self.f_flex_eth):
             lbl.setStyleSheet("background:#1f242b; color:#e0e0e0; padding:3px; border-radius:3px; font-size:8pt;")
         pcm_lay.addWidget(self.f_cht, 0, 0, 1, 2)
-        pcm_lay.addWidget(self.f_vvt_adm, 1, 0)
-        pcm_lay.addWidget(self.f_vvt_esc, 1, 1)
+        pcm_lay.addWidget(self.f_app_pedal, 1, 0)
+        pcm_lay.addWidget(self.f_fan_duty, 1, 1)
         pcm_lay.addWidget(self.f_inj_pw, 2, 0)
         pcm_lay.addWidget(self.f_flex_eth, 2, 1)
         pcm_lay.addWidget(self.f_ac_press, 3, 0)
@@ -329,13 +329,13 @@ class MainWindow(QMainWindow):
         if "esc_active" in latest:
             self.f_esc_state.setText("ESC/HLA: INTERVINDO!" if latest["esc_active"] > 0.5 else "Status ESC: Normal")
 
-        # PCM Motor Sigma 1.5
+        # PCM Motor Sigma 1.5 DOHC (comandos fixos, sem VVT)
         if "cht_temp" in latest:
             self.f_cht.setText(f"Temp. Cabeça Cilindro (CHT): {latest['cht_temp']:.0f} °C")
-        if "vvt_intake_deg" in latest:
-            self.f_vvt_adm.setText(f"VVT Admissão: {latest['vvt_intake_deg']:.1f}°")
-        if "vvt_exhaust_deg" in latest:
-            self.f_vvt_esc.setText(f"VVT Escape: {latest['vvt_exhaust_deg']:.1f}°")
+        if "app_pedal_pct" in latest:
+            self.f_app_pedal.setText(f"Pedal Acelerador (APP): {latest['app_pedal_pct']:.1f} %")
+        if "fan_duty_pct" in latest:
+            self.f_fan_duty.setText(f"Ventoinha Radiador: {latest['fan_duty_pct']:.0f} %")
         if "inj_pulse_width" in latest:
             self.f_inj_pw.setText(f"Tempo de Injeção: {latest['inj_pulse_width']:.2f} ms")
         if "ac_pressure_kpa" in latest:
