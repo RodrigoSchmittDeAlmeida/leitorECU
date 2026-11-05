@@ -140,7 +140,7 @@ def decode_cell(k: int, a: int, b: int) -> Optional[Tuple[float, str]]:
 
 def extract_block(resp, group: int) -> Optional[bytes]:
     """Procura ``61 GG`` na resposta do ELM (sem headers) e devolve TODAS as células completas."""
-    joined = "".join(resp.data_lines())
+    joined = "".join(resp.data_lines()).replace(" ", "").upper()
     header = f"61{group:02X}"
     idx = joined.find(header)
     while idx != -1 and idx % 2:

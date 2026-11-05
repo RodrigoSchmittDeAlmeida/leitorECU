@@ -10,7 +10,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QSettings, Qt, QThread, QTimer
-from PyQt6.QtGui import QAction, QFont
+from PyQt6.QtGui import QAction, QFont, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
                              QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
                              QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
@@ -570,8 +570,27 @@ class MainWindow(QMainWindow):
         cards.setSpacing(4)
         self.cards: Dict[str, ValueCard] = {}
         card_channels = [(k, ch) for k, ch in CHANNELS.items() if getattr(ch, "card", True)]
+        
+        card_tooltips = {
+            "rpm": "Rotações por minuto do motor (RPM)\nNormal em lenta: 800 - 950 rpm.",
+            "map": "Pressão absoluta no coletor de admissão (MAP em kPa)\nVácuo em lenta: 28 - 38 kPa | Plena carga (WOT): ~95 - 101 kPa.",
+            "advance": "Ponto de avanço de ignição em graus (°APMT)\nValores negativos indicam retardo por detonação.",
+            "tps": "Posição angular da borboleta de aceleração (%)\n0% em marcha lenta | 100% em aceleração total.",
+            "load": "Carga calculada do motor (%)\nProporcional ao fluxo de ar e esforço exigido.",
+            "speed": "Velocidade instantânea do veículo reportada pela ECU (km/h).",
+            "battery": "Tensão da bateria e alternador (V)\nIdeal com motor ligado: 13,8 V a 14,4 V.",
+            "lambda_v": "Tensão da Sonda Lambda 1 (Pré-Catalisador)\nDeve oscilar entre 0,1 V e 0,9 V em malha fechada (Closed Loop).",
+            "lambda2_v": "Tensão da Sonda Lambda 2 (Pós-Catalisador)\nDeve permanecer estável entre 0,60 V e 0,75 V se o catalisador estiver eficiente.",
+            "lambda_trim": "Correção instantânea da mistura pela sonda (%).",
+            "stft": "Ajuste de combustível de curto prazo (Short Term Fuel Trim)\nOscila em torno de 0% (faixa normal: ±5%).",
+            "ltft": "Ajuste de combustível de longo prazo (Long Term Fuel Trim)\nAdaptação contínua da injeção (faixa normal: -10% a +10%).",
+            "ect": "Temperatura do líquido de arrefecimento do motor (°C)\nFaixa ideal de trabalho: 85 °C a 100 °C.",
+            "iat": "Temperatura do ar admitido no coletor (°C)\nMedido pelo sensor T-MAP.",
+        }
+
         for i, (k, ch) in enumerate(card_channels):
             card = ValueCard(ch, COLORS.get(k))
+            card.setToolTip(card_tooltips.get(k, ch.label))
             self.cards[k] = card
             cards.addWidget(card, i // 7, i % 7)
         root.addLayout(cards)
@@ -640,6 +659,13 @@ class MainWindow(QMainWindow):
         chb.addStretch()
         chb.addWidget(self.ch_count_lbl)
         chl.addLayout(chb)
+
+        # Barra de busca/filtro instantâneo de canais (UX Design)
+        self.ch_search = QLineEdit()
+        self.ch_search.setPlaceholderText("🔍 Filtrar canais por nome, código ou descrição...")
+        self.ch_search.setClearButtonEnabled(True)
+        self.ch_search.textChanged.connect(self._filter_channels_table)
+        chl.addWidget(self.ch_search)
         self.ch_table = QTableWidget(0, 4)
         self.ch_table.setHorizontalHeaderLabels(["Canal", "Descrição", "Valor", "Idade (s)"])
         self.ch_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
@@ -687,6 +713,14 @@ class MainWindow(QMainWindow):
         quit_act.setShortcut("Ctrl+Q")
         quit_act.triggered.connect(self.close)
         self.addAction(quit_act)
+
+        # Atalhos de teclado ergonômicos (UX Design Guidelines)
+        QShortcut(QKeySequence(Qt.Key.Key_Space), self, activated=self.freeze_btn.toggle)
+        QShortcut(QKeySequence("Ctrl+R"), self, activated=self.rec_btn.toggle)
+        QShortcut(QKeySequence("Ctrl+D"), self, activated=self.decel_btn.toggle)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self._clear_plots)
+        QShortcut(QKeySequence("F5"), self, activated=lambda: self._request("read_dtc"))
+
         self._mode_changed(self.mode.currentIndex())
         self._set_dtc_enabled(False)
 
@@ -972,6 +1006,24 @@ class MainWindow(QMainWindow):
                 item_age = self.ch_table.item(row, 3)
                 if item_age:
                     item_age.setText(age_str)
+
+        # Se houver filtro ativo, aplica às linhas atualizadas
+        if hasattr(self, "ch_search") and self.ch_search.text().strip():
+            self._filter_channels_table(self.ch_search.text())
+
+    def _filter_channels_table(self, query: str):
+        """Filtra as linhas da tabela de canais em tempo real (UX)."""
+        q = query.strip().lower()
+        for r in range(self.ch_table.rowCount()):
+            if not q:
+                self.ch_table.setRowHidden(r, False)
+                continue
+            item_k = self.ch_table.item(r, 0)
+            item_desc = self.ch_table.item(r, 1)
+            t_k = item_k.text().lower() if item_k else ""
+            t_desc = item_desc.text().lower() if item_desc else ""
+            match = (q in t_k) or (q in t_desc)
+            self.ch_table.setRowHidden(r, not match)
 
     def _on_channels(self, new_channels: dict):
         self.dyn_info.update(new_channels)

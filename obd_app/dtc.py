@@ -100,6 +100,42 @@ def describe(code: str) -> str:
     return DTC_DESCRIPTIONS.get(code, "Descrição não cadastrada (consulte o manual)")
 
 
+def parse_dtcs_hex(raw_hex: str) -> List[Tuple[str, str]]:
+    """Decodifica string hexadecimal no formato Modo 03 em [(código, descrição)]."""
+    codes = []
+    clean = raw_hex.replace(" ", "").upper()
+    idx = clean.find("43")
+    payload = clean[idx + 2:] if idx != -1 else clean
+    for i in range(0, len(payload) - 3, 4):
+        c = payload[i:i + 4]
+        if len(c) == 4 and c != "0000":
+            code = decode_dtc(c)
+            if code not in [k for k, _ in codes]:
+                codes.append((code, describe(code)))
+    return codes
+
+
+def parse_kwp_dtcs_hex(raw_hex: str) -> List[Tuple[str, str]]:
+    """Decodifica string hexadecimal no formato VAG KWP2000 Serviço 18 em [(código, descrição)]."""
+    codes = []
+    clean = raw_hex.replace(" ", "").upper()
+    idx = clean.find("58")
+    payload = clean[idx + 2:] if idx != -1 else clean
+    if len(payload) >= 2:
+        try:
+            n_dtcs = int(payload[:2], 16)
+        except ValueError:
+            n_dtcs = len(payload[2:]) // 6
+        data = payload[2:]
+        for i in range(n_dtcs):
+            chunk = data[i * 6: i * 6 + 4]
+            if len(chunk) == 4 and chunk != "0000":
+                code = decode_dtc(chunk)
+                if code not in [k for k, _ in codes]:
+                    codes.append((code, describe(code)))
+    return codes
+
+
 def parse_mil(data: bytes) -> Tuple[bool, int]:
     """PID 0101: byte A bit7 = MIL (luz de injeção), bits 0-6 = qtde de DTCs."""
     return bool(data[0] & 0x80), data[0] & 0x7F

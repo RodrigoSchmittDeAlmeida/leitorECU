@@ -25,6 +25,12 @@ python main.py          # normal
 python main.py --demo   # já abre no modo simulador
 ```
 
+## Testes Automatizados (pytest)
+Para rodar a suite completa de 28 testes unitários e de integração:
+```powershell
+pytest tests/ -v
+```
+
 ## Conectando o Vgate iCar Pro BLE 4.0
 1. Plugue o adaptador na tomada OBD (embaixo do painel, lado do motorista) e **ligue a ignição**.
 2. **NÃO pareie** o adaptador nas configurações de Bluetooth do Windows (BLE conecta direto pelo app).

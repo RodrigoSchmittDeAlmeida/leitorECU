@@ -98,25 +98,49 @@ O Ford Ka de 3ª geração (B562) utiliza barramento CAN de alta velocidade (HS-
 
 ---
 
-## 4. Arquitetura do Software
+## 4. Arquitetura do Software & Princípios SOLID
+
+A base de código foi arquitetada seguindo rigorosamente os princípios **SOLID**:
+- **S (Single Responsibility)**: Separação estrita entre camada física (`transports.py`), protocolo AT (`elm327.py`), estratégias veiculares (`protocols/`), orquestrador assíncrono (`worker.py`) e visualização (`ui/`).
+- **O (Open/Closed)**: Aberto para extensão, fechado para modificação. Adicionar um novo veículo (ex: Fiat Firefly, GM Onix) exige apenas criar uma nova classe herdando de `BaseVehicleStrategy`, sem tocar no loop do worker.
+- **L (Liskov Substitution)**: Todas as estratégias veiculares e transportes físicos implementam interfaces polimórficas (`IVehicleStrategy`, `ITransport`) e podem ser substituídas de forma intercambiável.
+- **I (Interface Segregation)**: Interfaces enxutas e focadas (`ITransport`, `IDataLogger`, `IDetector`, `IVehicleStrategy`) evitando acoplamento desnecessário.
+- **D (Dependency Inversion)**: O orquestrador `ObdWorker` depende de abstrações (`IVehicleStrategy` e `ITransport`), injetadas via Factory.
 
 ```
 leitorECU/
 ├── main.py                     # Entry point do aplicativo Qt (--demo para simulador)
-├── requirements.txt            # Dependências (PyQt6, pyqtgraph, numpy, bleak)
+├── requirements.txt            # Dependências (PyQt6, pyqtgraph, numpy, bleak, pytest)
 ├── README.md                   # Manual de usuário e guia rápido
 ├── AGENTS.md                   # Este arquivo (contexto de engenharia completo)
 ├── .gitignore                  # Exclusão de pycache, logs e arquivos temporários
 ├── cache/                      # Cache local de blocos suportados por ECU (JSON)
 │   └── vag_blocos_032906032AJ.json
+├── tests/                      # Suite completa de testes automatizados (pytest)
+│   ├── conftest.py             # Configuração e fixtures compartilhadas
+│   ├── test_pids.py            # Fórmulas Modo 01 e independência de Sonda 1 e 2
+│   ├── test_ford.py            # DIDs UDS Ford (BCM, ABS, PCM Sigma 1.5 DOHC, IPC, EPAS)
+│   ├── test_vag.py             # Fórmulas VAG (0x01..0x46) e blocos de medição
+│   ├── test_datalog.py         # Gravação CSV pt-BR (;) e colunas dinâmicas
+│   ├── test_detector.py        # Detector de Cut-Off e desaceleração
+│   ├── test_dtc.py             # Parser de DTCs (Modo 03 e Serviço 18)
+│   ├── test_strategies.py      # Testes de estratégias e polimorfismo SOLID
+│   └── test_ui_smoke.py        # Testes de conformidade de UX e resolução 1080p
 └── obd_app/
     ├── __init__.py
+    ├── interfaces.py           # Protocolos e interfaces abstratas (SOLID: DIP/ISP)
+    ├── protocols/              # Estratégias de comunicação veicular (SOLID: OCP/LSP)
+    │   ├── __init__.py         # Registry e factory de estratégias
+    │   ├── base.py             # BaseVehicleStrategy (Template Method)
+    │   ├── vag.py              # VagKwpStrategy (VW ME7.5.30 KWP2000)
+    │   ├── ford.py             # FordHsCanStrategy (Ford Ka+ 2016 HS-CAN)
+    │   └── generic.py          # GenericObdStrategy (OBD2 Padrão)
     ├── transports.py           # Camada de comunicação física (BLE via bleak, TCP socket, Mock)
     ├── elm327.py               # Protocolo AT ELM327, extração de payload hex e tratamento de erro
-    ├── pids.py                 # Definição de canais fixos, PIDs Modo 01 e fórmulas VAG
-    ├── vag.py                  # Módulo genérico de blocos VAG (tabela de 70+ fórmulas k, cache JSON)
-    ├── ford.py                 # Módulo de diagnóstico Ford HS-CAN 500k e DIDs Modo 22 UDS
-    ├── worker.py               # QThread principal: handshake, autodiscovery, polling e DTC
+    ├── pids.py                 # Definição de canais fixos, PIDs Modo 01 e fórmulas
+    ├── vag.py                  # Fórmulas universais VAG KWP2000 e cache de blocos
+    ├── ford.py                 # Mapeamento de DIDs Ford HS-CAN 500k e decodificadores
+    ├── worker.py               # QThread orquestradora: ciclo de vida, reconexão e sinais
     ├── datalog.py              # CsvLogger com colunas dinâmicas (Excel pt-BR) e SeriesBuffer
     ├── detector.py             # Detector em tempo real de desaceleração, cut-off e falhas
     ├── dtc.py                  # Parser e descritor de DTCs (Modo 03 e KWP Serviço 18)

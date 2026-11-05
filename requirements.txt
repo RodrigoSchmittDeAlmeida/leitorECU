@@ -2,3 +2,4 @@ PyQt6>=6.6
 pyqtgraph>=0.13.7
 numpy>=1.26
 bleak>=0.22
+pytest>=8.0

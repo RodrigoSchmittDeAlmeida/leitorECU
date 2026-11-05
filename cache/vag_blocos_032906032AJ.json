@@ -76,36 +76,36 @@
    ""
   ],
   "g003_c1": [
-   "Bloco 003.1 RPM",
-   ""
+   "Bloco 003.1 RPM [rpm]",
+   "rpm"
   ],
   "g003_c2": [
-   "Bloco 003.2 Pressão coletor",
-   ""
+   "Bloco 003.2 Pressão coletor [mbar]",
+   "mbar"
   ],
   "g003_c3": [
-   "Bloco 003.3 Borboleta",
-   ""
+   "Bloco 003.3 Borboleta [°]",
+   "°"
   ],
   "g003_c4": [
-   "Bloco 003.4 Avanço",
-   ""
+   "Bloco 003.4 Avanço [°]",
+   "°"
   ],
   "g004_c1": [
-   "Bloco 004.1 RPM",
-   ""
+   "Bloco 004.1 RPM [V]",
+   "V"
   ],
   "g004_c2": [
-   "Bloco 004.2 Bateria",
-   ""
+   "Bloco 004.2 Bateria [°C]",
+   "°C"
   ],
   "g004_c3": [
-   "Bloco 004.3 Temp. motor",
-   ""
+   "Bloco 004.3 Temp. motor [°C]",
+   "°C"
   ],
   "g004_c4": [
-   "Bloco 004.4 Temp. ar",
-   ""
+   "Bloco 004.4 Temp. ar [rpm]",
+   "rpm"
   ],
   "g005_c1": [
    "Bloco 005.1 RPM",
@@ -268,36 +268,36 @@
    ""
   ],
   "g032_c1": [
-   "Bloco 032.1 Adaptação lambda lenta",
-   ""
+   "Bloco 032.1 Adaptação lambda lenta [%]",
+   "%"
   ],
   "g032_c2": [
-   "Bloco 032.2 Adaptação lambda parcial",
-   ""
+   "Bloco 032.2 Adaptação lambda parcial [%]",
+   "%"
   ],
   "g032_c3": [
-   "Bloco 032.3",
-   ""
+   "Bloco 032.3 [rpm]",
+   "rpm"
   ],
   "g032_c4": [
-   "Bloco 032.4",
-   ""
+   "Bloco 032.4 [rpm]",
+   "rpm"
   ],
   "g033_c1": [
-   "Bloco 033.1 Correção sonda (STFT)",
-   ""
+   "Bloco 033.1 Correção sonda (STFT) [%]",
+   "%"
   ],
   "g033_c2": [
-   "Bloco 033.2 Sonda 1 (tensão)",
-   ""
+   "Bloco 033.2 Sonda 1 (tensão) [V]",
+   "V"
   ],
   "g033_c3": [
-   "Bloco 033.3",
-   ""
+   "Bloco 033.3 [rpm]",
+   "rpm"
   ],
   "g033_c4": [
-   "Bloco 033.4",
-   ""
+   "Bloco 033.4 [rpm]",
+   "rpm"
   ],
   "g034_c1": [
    "Bloco 034.1 RPM",
