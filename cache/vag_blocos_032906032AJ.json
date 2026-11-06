@@ -62,20 +62,202 @@
   60,
   61,
   62,
+  63,
+  64,
+  65,
   66,
+  67,
+  68,
+  69,
   70,
+  71,
+  72,
+  73,
+  75,
+  76,
+  77,
+  78,
+  79,
+  80,
+  81,
+  82,
+  83,
+  84,
+  85,
   86,
+  87,
+  88,
+  89,
+  90,
+  91,
+  92,
+  93,
+  94,
+  95,
+  96,
+  97,
+  98,
   99,
   100,
   101,
+  102,
+  103,
+  104,
+  105,
+  106,
   107,
+  108,
+  109,
   110,
-  120
+  111,
+  112,
+  113,
+  114,
+  115,
+  116,
+  117,
+  118,
+  119,
+  120,
+  121,
+  122,
+  123,
+  124,
+  125,
+  126,
+  127,
+  128,
+  129,
+  146,
+  148
  ],
  "unsupported": [
   11,
+  74,
+  130,
+  131,
+  132,
+  133,
+  134,
+  135,
+  136,
+  137,
+  138,
+  139,
+  140,
+  141,
+  142,
+  143,
+  144,
+  145,
+  147,
+  149,
+  150,
+  151,
+  152,
+  153,
+  154,
+  155,
+  156,
+  157,
+  158,
   159,
-  217
+  160,
+  161,
+  162,
+  163,
+  164,
+  165,
+  166,
+  167,
+  168,
+  169,
+  170,
+  171,
+  172,
+  173,
+  174,
+  175,
+  176,
+  177,
+  178,
+  179,
+  180,
+  181,
+  182,
+  183,
+  184,
+  185,
+  186,
+  187,
+  188,
+  189,
+  190,
+  191,
+  192,
+  193,
+  194,
+  195,
+  196,
+  197,
+  198,
+  199,
+  200,
+  201,
+  202,
+  203,
+  204,
+  205,
+  206,
+  207,
+  208,
+  209,
+  210,
+  211,
+  212,
+  213,
+  214,
+  215,
+  216,
+  217,
+  218,
+  219,
+  220,
+  221,
+  222,
+  223,
+  224,
+  225,
+  226,
+  227,
+  228,
+  229,
+  230,
+  231,
+  232,
+  233,
+  234,
+  235,
+  236,
+  237,
+  238,
+  239,
+  240,
+  241,
+  242,
+  243,
+  244,
+  245,
+  246,
+  247,
+  248,
+  249,
+  250,
+  251,
+  252,
+  253,
+  254,
+  255
  ],
  "cells": {
   "g001_c1": [
@@ -247,36 +429,36 @@
    "%"
   ],
   "g020_c1": [
-   "Bloco 020.1 Retardo detonação cil. 1",
-   ""
+   "Bloco 020.1 Retardo detonação cil. 1 [°KW]",
+   "°KW"
   ],
   "g020_c2": [
-   "Bloco 020.2 Retardo detonação cil. 2",
-   ""
+   "Bloco 020.2 Retardo detonação cil. 2 [°KW]",
+   "°KW"
   ],
   "g020_c3": [
-   "Bloco 020.3 Retardo detonação cil. 3",
-   ""
+   "Bloco 020.3 Retardo detonação cil. 3 [°KW]",
+   "°KW"
   ],
   "g020_c4": [
-   "Bloco 020.4 Retardo detonação cil. 4",
-   ""
+   "Bloco 020.4 Retardo detonação cil. 4 [°KW]",
+   "°KW"
   ],
   "g022_c1": [
-   "Bloco 022.1 RPM",
-   ""
+   "Bloco 022.1 RPM [rpm]",
+   "rpm"
   ],
   "g022_c2": [
-   "Bloco 022.2 Carga",
-   ""
+   "Bloco 022.2 Carga [%]",
+   "%"
   ],
   "g022_c3": [
-   "Bloco 022.3 Retardo cil. 1",
-   ""
+   "Bloco 022.3 Retardo cil. 1 [°KW]",
+   "°KW"
   ],
   "g022_c4": [
-   "Bloco 022.4 Retardo cil. 2",
-   ""
+   "Bloco 022.4 Retardo cil. 2 [°KW]",
+   "°KW"
   ],
   "g023_c1": [
    "Bloco 023.1 RPM [rpm]",
@@ -311,52 +493,52 @@
    "V"
   ],
   "g028_c1": [
-   "Bloco 028.1",
-   ""
+   "Bloco 028.1 [rpm]",
+   "rpm"
   ],
   "g028_c2": [
-   "Bloco 028.2",
-   ""
+   "Bloco 028.2 [%]",
+   "%"
   ],
   "g028_c3": [
-   "Bloco 028.3",
-   ""
+   "Bloco 028.3 [°C]",
+   "°C"
   ],
   "g028_c4": [
-   "Bloco 028.4",
-   ""
+   "Bloco 028.4 [cod]",
+   "cod"
   ],
   "g030_c1": [
-   "Bloco 030.1",
-   ""
+   "Bloco 030.1 [bits]",
+   "bits"
   ],
   "g030_c2": [
-   "Bloco 030.2",
-   ""
+   "Bloco 030.2 [bits]",
+   "bits"
   ],
   "g030_c3": [
-   "Bloco 030.3",
-   ""
+   "Bloco 030.3 [bits]",
+   "bits"
   ],
   "g030_c4": [
    "Bloco 030.4",
    ""
   ],
   "g031_c1": [
-   "Bloco 031.1 Sonda 1 (tensão)",
-   ""
+   "Bloco 031.1 Sonda 1 (tensão) [V]",
+   "V"
   ],
   "g031_c2": [
-   "Bloco 031.2 Lambda especificado",
-   ""
+   "Bloco 031.2 Lambda especificado [λ]",
+   "λ"
   ],
   "g031_c3": [
    "Bloco 031.3",
    ""
   ],
   "g031_c4": [
-   "Bloco 031.4",
-   ""
+   "Bloco 031.4 [%]",
+   "%"
   ],
   "g032_c1": [
    "Bloco 032.1 Adaptação lambda lenta [%]",
@@ -391,136 +573,136 @@
    "°C"
   ],
   "g034_c1": [
-   "Bloco 034.1 RPM",
-   ""
+   "Bloco 034.1 RPM [rpm]",
+   "rpm"
   ],
   "g034_c2": [
-   "Bloco 034.2 Temp. catalisador (modelo)",
-   ""
+   "Bloco 034.2 Temp. catalisador (modelo) [°C]",
+   "°C"
   ],
   "g034_c3": [
-   "Bloco 034.3",
-   ""
+   "Bloco 034.3 [s]",
+   "s"
   ],
   "g034_c4": [
-   "Bloco 034.4",
-   ""
+   "Bloco 034.4 [cod]",
+   "cod"
   ],
   "g036_c1": [
-   "Bloco 036.1",
-   ""
+   "Bloco 036.1 [V]",
+   "V"
   ],
   "g036_c2": [
-   "Bloco 036.2",
-   ""
+   "Bloco 036.2 [°C]",
+   "°C"
   ],
   "g036_c3": [
-   "Bloco 036.3",
-   ""
+   "Bloco 036.3 [λ]",
+   "λ"
   ],
   "g036_c4": [
-   "Bloco 036.4",
-   ""
+   "Bloco 036.4 [cod]",
+   "cod"
   ],
   "g037_c1": [
-   "Bloco 037.1",
-   ""
+   "Bloco 037.1 [%]",
+   "%"
   ],
   "g037_c2": [
-   "Bloco 037.2",
-   ""
+   "Bloco 037.2 [V]",
+   "V"
   ],
   "g037_c3": [
-   "Bloco 037.3",
-   ""
+   "Bloco 037.3 [V]",
+   "V"
   ],
   "g037_c4": [
-   "Bloco 037.4",
-   ""
+   "Bloco 037.4 [cod]",
+   "cod"
   ],
   "g041_c1": [
-   "Bloco 041.1",
-   ""
+   "Bloco 041.1 [raw58]",
+   "raw58"
   ],
   "g041_c2": [
-   "Bloco 041.2",
-   ""
+   "Bloco 041.2 [cod]",
+   "cod"
   ],
   "g041_c3": [
    "Bloco 041.3",
    ""
   ],
   "g041_c4": [
-   "Bloco 041.4",
-   ""
+   "Bloco 041.4 [cod]",
+   "cod"
   ],
   "g043_c1": [
-   "Bloco 043.1",
-   ""
+   "Bloco 043.1 [rpm]",
+   "rpm"
   ],
   "g043_c2": [
-   "Bloco 043.2",
-   ""
+   "Bloco 043.2 [°C]",
+   "°C"
   ],
   "g043_c3": [
-   "Bloco 043.3",
-   ""
+   "Bloco 043.3 [V]",
+   "V"
   ],
   "g043_c4": [
-   "Bloco 043.4",
-   ""
+   "Bloco 043.4 [cod]",
+   "cod"
   ],
   "g046_c1": [
-   "Bloco 046.1",
-   ""
+   "Bloco 046.1 [rpm]",
+   "rpm"
   ],
   "g046_c2": [
-   "Bloco 046.2",
-   ""
+   "Bloco 046.2 [°C]",
+   "°C"
   ],
   "g046_c3": [
-   "Bloco 046.3",
-   ""
+   "Bloco 046.3 [°C]",
+   "°C"
   ],
   "g046_c4": [
-   "Bloco 046.4",
-   ""
+   "Bloco 046.4 [cod]",
+   "cod"
   ],
   "g047_c1": [
    "Bloco 047.1 [cont]",
    "cont"
   ],
   "g050_c1": [
-   "Bloco 050.1 RPM real",
-   ""
+   "Bloco 050.1 RPM real [rpm]",
+   "rpm"
   ],
   "g050_c2": [
-   "Bloco 050.2 RPM especificada",
-   ""
+   "Bloco 050.2 RPM especificada [rpm]",
+   "rpm"
   ],
   "g050_c3": [
-   "Bloco 050.3",
-   ""
+   "Bloco 050.3 [cod]",
+   "cod"
   ],
   "g050_c4": [
-   "Bloco 050.4",
-   ""
+   "Bloco 050.4 [cod]",
+   "cod"
   ],
   "g051_c1": [
-   "Bloco 051.1",
-   ""
+   "Bloco 051.1 [rpm]",
+   "rpm"
   ],
   "g051_c2": [
-   "Bloco 051.2",
-   ""
+   "Bloco 051.2 [rpm]",
+   "rpm"
   ],
   "g051_c3": [
-   "Bloco 051.3",
-   ""
+   "Bloco 051.3 [cont]",
+   "cont"
   ],
   "g051_c4": [
-   "Bloco 051.4",
-   ""
+   "Bloco 051.4 [V]",
+   "V"
   ],
   "g052_c1": [
    "Bloco 052.1 [rpm]",
@@ -555,52 +737,52 @@
    "%"
   ],
   "g054_c1": [
-   "Bloco 054.1 RPM",
-   ""
+   "Bloco 054.1 RPM [rpm]",
+   "rpm"
   ],
   "g054_c2": [
-   "Bloco 054.2",
-   ""
+   "Bloco 054.2 [cod]",
+   "cod"
   ],
   "g054_c3": [
-   "Bloco 054.3 Pedal acelerador",
-   ""
+   "Bloco 054.3 Pedal acelerador [%]",
+   "%"
   ],
   "g054_c4": [
-   "Bloco 054.4 Borboleta",
-   ""
+   "Bloco 054.4 Borboleta [%]",
+   "%"
   ],
   "g055_c1": [
-   "Bloco 055.1",
-   ""
+   "Bloco 055.1 [rpm]",
+   "rpm"
   ],
   "g055_c2": [
-   "Bloco 055.2",
-   ""
+   "Bloco 055.2 [%]",
+   "%"
   ],
   "g055_c3": [
-   "Bloco 055.3",
-   ""
+   "Bloco 055.3 [%]",
+   "%"
   ],
   "g055_c4": [
-   "Bloco 055.4",
-   ""
+   "Bloco 055.4 [bits]",
+   "bits"
   ],
   "g056_c1": [
-   "Bloco 056.1",
-   ""
+   "Bloco 056.1 [rpm]",
+   "rpm"
   ],
   "g056_c2": [
-   "Bloco 056.2",
-   ""
+   "Bloco 056.2 [rpm]",
+   "rpm"
   ],
   "g056_c3": [
-   "Bloco 056.3",
-   ""
+   "Bloco 056.3 [%]",
+   "%"
   ],
   "g056_c4": [
-   "Bloco 056.4",
-   ""
+   "Bloco 056.4 [bits]",
+   "bits"
   ],
   "g057_c1": [
    "Bloco 057.1 [rpm]",
@@ -651,196 +833,1092 @@
    "%"
   ],
   "g060_c1": [
-   "Bloco 060.1 Borboleta sensor 1",
-   ""
+   "Bloco 060.1 Borboleta sensor 1 [%]",
+   "%"
   ],
   "g060_c2": [
-   "Bloco 060.2 Borboleta sensor 2",
-   ""
+   "Bloco 060.2 Borboleta sensor 2 [%]",
+   "%"
   ],
   "g060_c3": [
-   "Bloco 060.3",
-   ""
+   "Bloco 060.3 [cont]",
+   "cont"
   ],
   "g060_c4": [
-   "Bloco 060.4",
-   ""
+   "Bloco 060.4 [cod]",
+   "cod"
   ],
   "g061_c1": [
-   "Bloco 061.1",
-   ""
+   "Bloco 061.1 [rpm]",
+   "rpm"
   ],
   "g061_c2": [
    "Bloco 061.2",
    ""
   ],
   "g061_c3": [
-   "Bloco 061.3",
-   ""
+   "Bloco 061.3 [%]",
+   "%"
   ],
   "g061_c4": [
-   "Bloco 061.4",
-   ""
+   "Bloco 061.4 [bits]",
+   "bits"
   ],
   "g062_c1": [
-   "Bloco 062.1 Borboleta sensor 1",
-   ""
+   "Bloco 062.1 Borboleta sensor 1 [%]",
+   "%"
   ],
   "g062_c2": [
-   "Bloco 062.2 Borboleta sensor 2",
-   ""
+   "Bloco 062.2 Borboleta sensor 2 [%]",
+   "%"
   ],
   "g062_c3": [
-   "Bloco 062.3 Pedal sensor 1",
-   ""
+   "Bloco 062.3 Pedal sensor 1 [%]",
+   "%"
   ],
   "g062_c4": [
-   "Bloco 062.4 Pedal sensor 2",
-   ""
+   "Bloco 062.4 Pedal sensor 2 [%]",
+   "%"
+  ],
+  "g064_c1": [
+   "Bloco 064.1 [V]",
+   "V"
+  ],
+  "g064_c2": [
+   "Bloco 064.2 [V]",
+   "V"
+  ],
+  "g064_c3": [
+   "Bloco 064.3 [V]",
+   "V"
+  ],
+  "g064_c4": [
+   "Bloco 064.4 [V]",
+   "V"
   ],
   "g066_c1": [
-   "Bloco 066.1",
-   ""
+   "Bloco 066.1 [km/h]",
+   "km/h"
   ],
   "g066_c2": [
-   "Bloco 066.2",
-   ""
+   "Bloco 066.2 [bits]",
+   "bits"
   ],
   "g066_c3": [
    "Bloco 066.3",
    ""
   ],
   "g066_c4": [
-   "Bloco 066.4",
-   ""
+   "Bloco 066.4 [bits]",
+   "bits"
   ],
   "g070_c1": [
-   "Bloco 070.1 Válvula EVAP (purga)",
-   ""
+   "Bloco 070.1 Válvula EVAP (purga) [%]",
+   "%"
   ],
   "g070_c2": [
-   "Bloco 070.2 Desvio reg. lambda EVAP",
-   ""
+   "Bloco 070.2 Desvio reg. lambda EVAP [%]",
+   "%"
   ],
   "g070_c3": [
-   "Bloco 070.3 Fator reg. EVAP",
-   ""
+   "Bloco 070.3 Fator reg. EVAP [%]",
+   "%"
   ],
   "g070_c4": [
-   "Bloco 070.4 Status teste EVAP",
+   "Bloco 070.4 Status teste EVAP [cod]",
+   "cod"
+  ],
+  "g071_c1": [
+   "Bloco 071.1 [rpm]",
+   "rpm"
+  ],
+  "g071_c2": [
+   "Bloco 071.2 [%]",
+   "%"
+  ],
+  "g071_c3": [
+   "Bloco 071.3 [cont]",
+   "cont"
+  ],
+  "g071_c4": [
+   "Bloco 071.4 [cont]",
+   "cont"
+  ],
+  "g075_c5": [
+   "Bloco 075.5 [rpm]",
+   "rpm"
+  ],
+  "g075_c6": [
+   "Bloco 075.6 [λ]",
+   "λ"
+  ],
+  "g075_c7": [
+   "Bloco 075.7 [%]",
+   "%"
+  ],
+  "g075_c8": [
+   "Bloco 075.8 [bits]",
+   "bits"
+  ],
+  "g076_c5": [
+   "Bloco 076.5 [%]",
+   "%"
+  ],
+  "g076_c6": [
+   "Bloco 076.6 [cont]",
+   "cont"
+  ],
+  "g076_c7": [
+   "Bloco 076.7 [bits]",
+   "bits"
+  ],
+  "g076_c8": [
+   "Bloco 076.8 [cod]",
+   "cod"
+  ],
+  "g077_c7": [
+   "Bloco 077.7 [°C]",
+   "°C"
+  ],
+  "g078_c5": [
+   "Bloco 078.5 [V]",
+   "V"
+  ],
+  "g078_c6": [
+   "Bloco 078.6 [λ]",
+   "λ"
+  ],
+  "g078_c7": [
+   "Bloco 078.7 [%]",
+   "%"
+  ],
+  "g078_c8": [
+   "Bloco 078.8 [bits]",
+   "bits"
+  ],
+  "g079_c5": [
+   "Bloco 079.5 [V]",
+   "V"
+  ],
+  "g079_c6": [
+   "Bloco 079.6 [λ]",
+   "λ"
+  ],
+  "g079_c7": [
+   "Bloco 079.7 [s]",
+   "s"
+  ],
+  "g079_c8": [
+   "Bloco 079.8 [bits]",
+   "bits"
+  ],
+  "g080_c7": [
+   "Bloco 080.7 [mbar]",
+   "mbar"
+  ],
+  "g080_c8": [
+   "Bloco 080.8 [bits]",
+   "bits"
+  ],
+  "g081_c1": [
+   "Bloco 081.1 [raw5F]",
+   "raw5F"
+  ],
+  "g081_c10": [
+   "Bloco 081.10",
    ""
+  ],
+  "g081_c11": [
+   "Bloco 081.11 [WSC]",
+   "WSC"
+  ],
+  "g081_c12": [
+   "Bloco 081.12 [WSC]",
+   "WSC"
+  ],
+  "g081_c13": [
+   "Bloco 081.13",
+   ""
+  ],
+  "g081_c14": [
+   "Bloco 081.14",
+   ""
+  ],
+  "g081_c15": [
+   "Bloco 081.15 [raw58]",
+   "raw58"
+  ],
+  "g081_c16": [
+   "Bloco 081.16 [λ]",
+   "λ"
+  ],
+  "g081_c17": [
+   "Bloco 081.17 [V]",
+   "V"
+  ],
+  "g081_c18": [
+   "Bloco 081.18 [bits]",
+   "bits"
+  ],
+  "g081_c2": [
+   "Bloco 081.2 [V]",
+   "V"
+  ],
+  "g081_c3": [
+   "Bloco 081.3 [V]",
+   "V"
+  ],
+  "g081_c4": [
+   "Bloco 081.4 [raw55]",
+   "raw55"
+  ],
+  "g081_c5": [
+   "Bloco 081.5 [raw54]",
+   "raw54"
+  ],
+  "g081_c6": [
+   "Bloco 081.6",
+   ""
+  ],
+  "g081_c7": [
+   "Bloco 081.7 [mbar]",
+   "mbar"
+  ],
+  "g081_c8": [
+   "Bloco 081.8 [raw57]",
+   "raw57"
+  ],
+  "g081_c9": [
+   "Bloco 081.9 [raw5A]",
+   "raw5A"
+  ],
+  "g082_c1": [
+   "Bloco 082.1 [raw5F]",
+   "raw5F"
+  ],
+  "g082_c10": [
+   "Bloco 082.10",
+   ""
+  ],
+  "g082_c11": [
+   "Bloco 082.11 [s]",
+   "s"
+  ],
+  "g082_c12": [
+   "Bloco 082.12 [s]",
+   "s"
+  ],
+  "g082_c13": [
+   "Bloco 082.13 [s]",
+   "s"
+  ],
+  "g082_c14": [
+   "Bloco 082.14 [rawC8]",
+   "rawC8"
+  ],
+  "g082_c15": [
+   "Bloco 082.15 [raw85]",
+   "raw85"
+  ],
+  "g082_c16": [
+   "Bloco 082.16 [°C]",
+   "°C"
+  ],
+  "g082_c2": [
+   "Bloco 082.2",
+   ""
+  ],
+  "g082_c3": [
+   "Bloco 082.3",
+   ""
+  ],
+  "g082_c4": [
+   "Bloco 082.4",
+   ""
+  ],
+  "g082_c5": [
+   "Bloco 082.5",
+   ""
+  ],
+  "g082_c6": [
+   "Bloco 082.6",
+   ""
+  ],
+  "g082_c7": [
+   "Bloco 082.7",
+   ""
+  ],
+  "g082_c8": [
+   "Bloco 082.8",
+   ""
+  ],
+  "g082_c9": [
+   "Bloco 082.9",
+   ""
+  ],
+  "g083_c5": [
+   "Bloco 083.5 [rpm]",
+   "rpm"
+  ],
+  "g083_c6": [
+   "Bloco 083.6 [°C]",
+   "°C"
+  ],
+  "g083_c7": [
+   "Bloco 083.7 [°C]",
+   "°C"
+  ],
+  "g083_c8": [
+   "Bloco 083.8 [cod]",
+   "cod"
+  ],
+  "g084_c5": [
+   "Bloco 084.5 [°C]",
+   "°C"
+  ],
+  "g084_c6": [
+   "Bloco 084.6 [°C]",
+   "°C"
+  ],
+  "g084_c7": [
+   "Bloco 084.7 [°C]",
+   "°C"
+  ],
+  "g084_c8": [
+   "Bloco 084.8 [s]",
+   "s"
+  ],
+  "g085_c5": [
+   "Bloco 085.5 [V]",
+   "V"
+  ],
+  "g085_c6": [
+   "Bloco 085.6 [°C]",
+   "°C"
+  ],
+  "g085_c7": [
+   "Bloco 085.7 [g/s]",
+   "g/s"
+  ],
+  "g085_c8": [
+   "Bloco 085.8 [°C]",
+   "°C"
   ],
   "g086_c1": [
-   "Bloco 086.1 Readiness Bits 1",
-   ""
+   "Bloco 086.1 Readiness Bits 1 [bits]",
+   "bits"
   ],
   "g086_c2": [
-   "Bloco 086.2 Readiness Bits 2",
-   ""
+   "Bloco 086.2 Readiness Bits 2 [bits]",
+   "bits"
   ],
   "g086_c3": [
-   "Bloco 086.3 Readiness Bits 3",
-   ""
+   "Bloco 086.3 Readiness Bits 3 [bits]",
+   "bits"
   ],
   "g086_c4": [
-   "Bloco 086.4 Readiness Bits 4",
-   ""
+   "Bloco 086.4 Readiness Bits 4 [bits]",
+   "bits"
+  ],
+  "g087_c1": [
+   "Bloco 087.1 [bits]",
+   "bits"
+  ],
+  "g087_c2": [
+   "Bloco 087.2 [bits]",
+   "bits"
+  ],
+  "g087_c3": [
+   "Bloco 087.3 [bits]",
+   "bits"
+  ],
+  "g087_c4": [
+   "Bloco 087.4 [bits]",
+   "bits"
+  ],
+  "g088_c1": [
+   "Bloco 088.1 [bits]",
+   "bits"
+  ],
+  "g088_c2": [
+   "Bloco 088.2 [bits]",
+   "bits"
+  ],
+  "g088_c3": [
+   "Bloco 088.3 [bits]",
+   "bits"
+  ],
+  "g089_c1": [
+   "Bloco 089.1 [cont]",
+   "cont"
+  ],
+  "g089_c2": [
+   "Bloco 089.2 [cod]",
+   "cod"
+  ],
+  "g089_c5": [
+   "Bloco 089.5 [g/s]",
+   "g/s"
+  ],
+  "g089_c6": [
+   "Bloco 089.6 [g/s]",
+   "g/s"
+  ],
+  "g089_c7": [
+   "Bloco 089.7 [%]",
+   "%"
+  ],
+  "g089_c8": [
+   "Bloco 089.8 [bits]",
+   "bits"
+  ],
+  "g090_c5": [
+   "Bloco 090.5 [mbar]",
+   "mbar"
+  ],
+  "g090_c6": [
+   "Bloco 090.6 [%]",
+   "%"
+  ],
+  "g090_c7": [
+   "Bloco 090.7 [%]",
+   "%"
+  ],
+  "g090_c8": [
+   "Bloco 090.8 [bits]",
+   "bits"
+  ],
+  "g091_c5": [
+   "Bloco 091.5 [%]",
+   "%"
+  ],
+  "g091_c6": [
+   "Bloco 091.6 [%]",
+   "%"
+  ],
+  "g091_c7": [
+   "Bloco 091.7 [%]",
+   "%"
+  ],
+  "g091_c8": [
+   "Bloco 091.8 [bits]",
+   "bits"
+  ],
+  "g092_c5": [
+   "Bloco 092.5 [%]",
+   "%"
+  ],
+  "g092_c6": [
+   "Bloco 092.6 [%]",
+   "%"
+  ],
+  "g092_c7": [
+   "Bloco 092.7 [mbar]",
+   "mbar"
+  ],
+  "g092_c8": [
+   "Bloco 092.8 [bits]",
+   "bits"
+  ],
+  "g093_c5": [
+   "Bloco 093.5 [λ]",
+   "λ"
+  ],
+  "g093_c6": [
+   "Bloco 093.6 [λ]",
+   "λ"
+  ],
+  "g093_c7": [
+   "Bloco 093.7 [V]",
+   "V"
+  ],
+  "g093_c8": [
+   "Bloco 093.8 [bits]",
+   "bits"
+  ],
+  "g094_c5": [
+   "Bloco 094.5 [rpm]",
+   "rpm"
+  ],
+  "g094_c6": [
+   "Bloco 094.6 [%]",
+   "%"
+  ],
+  "g094_c8": [
+   "Bloco 094.8 [bits]",
+   "bits"
+  ],
+  "g095_c5": [
+   "Bloco 095.5 [λ]",
+   "λ"
+  ],
+  "g095_c6": [
+   "Bloco 095.6 [λ]",
+   "λ"
+  ],
+  "g095_c7": [
+   "Bloco 095.7 [°C]",
+   "°C"
+  ],
+  "g095_c8": [
+   "Bloco 095.8 [bits]",
+   "bits"
+  ],
+  "g096_c5": [
+   "Bloco 096.5 [%]",
+   "%"
+  ],
+  "g096_c6": [
+   "Bloco 096.6 [%]",
+   "%"
+  ],
+  "g096_c7": [
+   "Bloco 096.7 [°C]",
+   "°C"
+  ],
+  "g096_c8": [
+   "Bloco 096.8 [°C]",
+   "°C"
+  ],
+  "g097_c5": [
+   "Bloco 097.5 [%]",
+   "%"
+  ],
+  "g097_c6": [
+   "Bloco 097.6 [%]",
+   "%"
+  ],
+  "g097_c7": [
+   "Bloco 097.7 [mbar]",
+   "mbar"
+  ],
+  "g097_c8": [
+   "Bloco 097.8 [bits]",
+   "bits"
+  ],
+  "g098_c5": [
+   "Bloco 098.5 [°C]",
+   "°C"
+  ],
+  "g098_c6": [
+   "Bloco 098.6 [°C]",
+   "°C"
+  ],
+  "g098_c7": [
+   "Bloco 098.7 [g/s]",
+   "g/s"
+  ],
+  "g098_c8": [
+   "Bloco 098.8 [°C]",
+   "°C"
   ],
   "g099_c1": [
-   "Bloco 099.1 RPM",
-   ""
+   "Bloco 099.1 RPM [rpm]",
+   "rpm"
   ],
   "g099_c2": [
-   "Bloco 099.2 Temp. motor",
-   ""
+   "Bloco 099.2 Temp. motor [°C]",
+   "°C"
   ],
   "g099_c3": [
-   "Bloco 099.3 Correção lambda (STFT)",
-   ""
+   "Bloco 099.3 Correção lambda (STFT) [%]",
+   "%"
   ],
   "g099_c4": [
-   "Bloco 099.4 Status regulação lambda",
-   ""
+   "Bloco 099.4 Status regulação lambda [cod]",
+   "cod"
+  ],
+  "g099_c5": [
+   "Bloco 099.5 [%]",
+   "%"
+  ],
+  "g099_c6": [
+   "Bloco 099.6 [%]",
+   "%"
+  ],
+  "g099_c7": [
+   "Bloco 099.7 [°C]",
+   "°C"
+  ],
+  "g099_c8": [
+   "Bloco 099.8 [bits]",
+   "bits"
   ],
   "g100_c1": [
-   "Bloco 100.1 Bits diagnóstico 1",
-   ""
+   "Bloco 100.1 Bits diagnóstico 1 [bits]",
+   "bits"
   ],
   "g100_c2": [
-   "Bloco 100.2 Temp. motor",
-   ""
+   "Bloco 100.2 Temp. motor [°C]",
+   "°C"
   ],
   "g100_c3": [
-   "Bloco 100.3 Tempo ciclo",
-   ""
+   "Bloco 100.3 Tempo ciclo [s]",
+   "s"
   ],
   "g100_c4": [
-   "Bloco 100.4 Bits diagnóstico 2",
-   ""
+   "Bloco 100.4 Bits diagnóstico 2 [bits]",
+   "bits"
+  ],
+  "g100_c5": [
+   "Bloco 100.5 [%]",
+   "%"
+  ],
+  "g100_c6": [
+   "Bloco 100.6 [%]",
+   "%"
+  ],
+  "g100_c7": [
+   "Bloco 100.7 [%]",
+   "%"
+  ],
+  "g100_c8": [
+   "Bloco 100.8 [%]",
+   "%"
   ],
   "g101_c1": [
-   "Bloco 101.1 RPM",
-   ""
+   "Bloco 101.1 RPM [rpm]",
+   "rpm"
   ],
   "g101_c2": [
-   "Bloco 101.2 Carga",
-   ""
+   "Bloco 101.2 Carga [%]",
+   "%"
   ],
   "g101_c3": [
-   "Bloco 101.3 Tempo injeção",
-   ""
+   "Bloco 101.3 Tempo injeção [ms]",
+   "ms"
   ],
   "g101_c4": [
-   "Bloco 101.4 Status injeção",
-   ""
+   "Bloco 101.4 Status injeção [mbar]",
+   "mbar"
+  ],
+  "g101_c5": [
+   "Bloco 101.5 [mbar]",
+   "mbar"
+  ],
+  "g101_c6": [
+   "Bloco 101.6 [mbar]",
+   "mbar"
+  ],
+  "g101_c7": [
+   "Bloco 101.7 [mbar]",
+   "mbar"
+  ],
+  "g101_c8": [
+   "Bloco 101.8 [bits]",
+   "bits"
+  ],
+  "g102_c1": [
+   "Bloco 102.1 [rpm]",
+   "rpm"
+  ],
+  "g102_c2": [
+   "Bloco 102.2 [°C]",
+   "°C"
+  ],
+  "g102_c3": [
+   "Bloco 102.3 [°C]",
+   "°C"
+  ],
+  "g102_c4": [
+   "Bloco 102.4 [ms]",
+   "ms"
+  ],
+  "g102_c5": [
+   "Bloco 102.5 [cont]",
+   "cont"
+  ],
+  "g102_c6": [
+   "Bloco 102.6 [cont]",
+   "cont"
+  ],
+  "g102_c7": [
+   "Bloco 102.7 [°C]",
+   "°C"
+  ],
+  "g102_c8": [
+   "Bloco 102.8 [bits]",
+   "bits"
+  ],
+  "g103_c5": [
+   "Bloco 103.5 [%]",
+   "%"
+  ],
+  "g103_c6": [
+   "Bloco 103.6 [%]",
+   "%"
+  ],
+  "g103_c7": [
+   "Bloco 103.7 [%]",
+   "%"
+  ],
+  "g103_c8": [
+   "Bloco 103.8 [bits]",
+   "bits"
+  ],
+  "g104_c1": [
+   "Bloco 104.1 [°C]",
+   "°C"
+  ],
+  "g104_c2": [
+   "Bloco 104.2 [%]",
+   "%"
+  ],
+  "g104_c3": [
+   "Bloco 104.3 [%]",
+   "%"
+  ],
+  "g104_c4": [
+   "Bloco 104.4 [%]",
+   "%"
+  ],
+  "g104_c5": [
+   "Bloco 104.5 [λ]",
+   "λ"
+  ],
+  "g104_c6": [
+   "Bloco 104.6 [λ]",
+   "λ"
+  ],
+  "g104_c7": [
+   "Bloco 104.7 [λ]",
+   "λ"
+  ],
+  "g104_c8": [
+   "Bloco 104.8 [bits]",
+   "bits"
+  ],
+  "g105_c1": [
+   "Bloco 105.1 [rpm]",
+   "rpm"
+  ],
+  "g105_c2": [
+   "Bloco 105.2 [%]",
+   "%"
+  ],
+  "g105_c3": [
+   "Bloco 105.3 [°C]",
+   "°C"
+  ],
+  "g105_c4": [
+   "Bloco 105.4 [cod]",
+   "cod"
+  ],
+  "g105_c5": [
+   "Bloco 105.5 [°C]",
+   "°C"
+  ],
+  "g105_c6": [
+   "Bloco 105.6 [°C]",
+   "°C"
+  ],
+  "g105_c7": [
+   "Bloco 105.7 [rpm]",
+   "rpm"
+  ],
+  "g105_c8": [
+   "Bloco 105.8 [bits]",
+   "bits"
+  ],
+  "g106_c5": [
+   "Bloco 106.5 [cont]",
+   "cont"
+  ],
+  "g106_c6": [
+   "Bloco 106.6 [cont]",
+   "cont"
+  ],
+  "g106_c7": [
+   "Bloco 106.7 [cont]",
+   "cont"
+  ],
+  "g106_c8": [
+   "Bloco 106.8 [bits]",
+   "bits"
   ],
   "g107_c1": [
-   "Bloco 107.1 RPM",
-   ""
+   "Bloco 107.1 RPM [rpm]",
+   "rpm"
   ],
   "g107_c2": [
-   "Bloco 107.2 Correção lambda",
-   ""
+   "Bloco 107.2 Correção lambda [%]",
+   "%"
   ],
   "g107_c3": [
    "Bloco 107.3 Adaptação mistura",
    ""
   ],
   "g107_c4": [
-   "Bloco 107.4 Status regulação",
-   ""
+   "Bloco 107.4 Status regulação [cod]",
+   "cod"
+  ],
+  "g107_c5": [
+   "Bloco 107.5 [cont]",
+   "cont"
+  ],
+  "g107_c8": [
+   "Bloco 107.8 [bits]",
+   "bits"
+  ],
+  "g108_c1": [
+   "Bloco 108.1 [%]",
+   "%"
+  ],
+  "g108_c2": [
+   "Bloco 108.2 [%]",
+   "%"
+  ],
+  "g108_c3": [
+   "Bloco 108.3 [cod]",
+   "cod"
+  ],
+  "g108_c4": [
+   "Bloco 108.4 [cod]",
+   "cod"
+  ],
+  "g108_c5": [
+   "Bloco 108.5 [bits]",
+   "bits"
+  ],
+  "g108_c6": [
+   "Bloco 108.6 [bits]",
+   "bits"
+  ],
+  "g108_c7": [
+   "Bloco 108.7 [bits]",
+   "bits"
+  ],
+  "g108_c8": [
+   "Bloco 108.8 [bits]",
+   "bits"
+  ],
+  "g109_c1": [
+   "Bloco 109.1 [λ]",
+   "λ"
+  ],
+  "g109_c2": [
+   "Bloco 109.2 [λ]",
+   "λ"
+  ],
+  "g109_c3": [
+   "Bloco 109.3 [%]",
+   "%"
+  ],
+  "g109_c4": [
+   "Bloco 109.4 [cod]",
+   "cod"
   ],
   "g110_c1": [
-   "Bloco 110.1 RPM",
-   ""
+   "Bloco 110.1 RPM [rpm]",
+   "rpm"
   ],
   "g110_c2": [
-   "Bloco 110.2 Temp. motor",
-   ""
+   "Bloco 110.2 Temp. motor [°C]",
+   "°C"
   ],
   "g110_c3": [
-   "Bloco 110.3 Tempo injeção",
-   ""
+   "Bloco 110.3 Tempo injeção [ms]",
+   "ms"
   ],
   "g110_c4": [
-   "Bloco 110.4 Correção carga / AF Álcool",
-   ""
+   "Bloco 110.4 Correção carga / AF Álcool [%]",
+   "%"
+  ],
+  "g112_c5": [
+   "Bloco 112.5 [cont]",
+   "cont"
+  ],
+  "g112_c6": [
+   "Bloco 112.6 [bits]",
+   "bits"
+  ],
+  "g112_c7": [
+   "Bloco 112.7 [bits]",
+   "bits"
+  ],
+  "g112_c8": [
+   "Bloco 112.8 [bits]",
+   "bits"
+  ],
+  "g113_c5": [
+   "Bloco 113.5 [cont]",
+   "cont"
+  ],
+  "g113_c6": [
+   "Bloco 113.6 [g/s]",
+   "g/s"
+  ],
+  "g113_c7": [
+   "Bloco 113.7 [°C]",
+   "°C"
+  ],
+  "g113_c8": [
+   "Bloco 113.8 [°C]",
+   "°C"
+  ],
+  "g114_c5": [
+   "Bloco 114.5 [%]",
+   "%"
+  ],
+  "g114_c6": [
+   "Bloco 114.6 [%]",
+   "%"
+  ],
+  "g114_c7": [
+   "Bloco 114.7 [%]",
+   "%"
+  ],
+  "g114_c8": [
+   "Bloco 114.8 [%]",
+   "%"
+  ],
+  "g115_c5": [
+   "Bloco 115.5 [rpm]",
+   "rpm"
+  ],
+  "g115_c6": [
+   "Bloco 115.6 [rpm]",
+   "rpm"
+  ],
+  "g115_c7": [
+   "Bloco 115.7 [°C]",
+   "°C"
+  ],
+  "g115_c8": [
+   "Bloco 115.8 [°C]",
+   "°C"
+  ],
+  "g116_c6": [
+   "Bloco 116.6 [bits]",
+   "bits"
+  ],
+  "g116_c7": [
+   "Bloco 116.7 [°KW]",
+   "°KW"
+  ],
+  "g116_c8": [
+   "Bloco 116.8 [cont]",
+   "cont"
+  ],
+  "g117_c5": [
+   "Bloco 117.5 [bits]",
+   "bits"
+  ],
+  "g117_c6": [
+   "Bloco 117.6 [bits]",
+   "bits"
+  ],
+  "g117_c7": [
+   "Bloco 117.7 [bits]",
+   "bits"
   ],
   "g120_c1": [
-   "Bloco 120.1 RPM",
-   ""
+   "Bloco 120.1 RPM [rpm]",
+   "rpm"
   ],
   "g120_c2": [
-   "Bloco 120.2 Torque especificado",
-   ""
+   "Bloco 120.2 Torque especificado [Nm]",
+   "Nm"
   ],
   "g120_c3": [
-   "Bloco 120.3 Torque real motor",
-   ""
+   "Bloco 120.3 Torque real motor [Nm]",
+   "Nm"
   ],
   "g120_c4": [
-   "Bloco 120.4 Status ASR/Torque",
+   "Bloco 120.4 Status ASR/Torque [cod]",
+   "cod"
+  ],
+  "g120_c5": [
+   "Bloco 120.5 [bits]",
+   "bits"
+  ],
+  "g121_c6": [
+   "Bloco 121.6 [bits]",
+   "bits"
+  ],
+  "g121_c7": [
+   "Bloco 121.7 [bits]",
+   "bits"
+  ],
+  "g121_c8": [
+   "Bloco 121.8 [bits]",
+   "bits"
+  ],
+  "g122_c1": [
+   "Bloco 122.1 [rpm]",
+   "rpm"
+  ],
+  "g122_c2": [
+   "Bloco 122.2 [Nm]",
+   "Nm"
+  ],
+  "g122_c3": [
+   "Bloco 122.3 [Nm]",
+   "Nm"
+  ],
+  "g122_c4": [
+   "Bloco 122.4 [cod]",
+   "cod"
+  ],
+  "g125_c3": [
+   "Bloco 125.3 [cod]",
+   "cod"
+  ],
+  "g128_c1": [
+   "Bloco 128.1",
    ""
+  ],
+  "g128_c2": [
+   "Bloco 128.2 [mg/h]",
+   "mg/h"
+  ],
+  "g128_c3": [
+   "Bloco 128.3 [mg/h]",
+   "mg/h"
+  ],
+  "g128_c4": [
+   "Bloco 128.4 [Nm]",
+   "Nm"
+  ],
+  "g128_c5": [
+   "Bloco 128.5 [mg/h]",
+   "mg/h"
+  ],
+  "g128_c6": [
+   "Bloco 128.6",
+   ""
+  ],
+  "g129_c1": [
+   "Bloco 129.1 [°]",
+   "°"
+  ],
+  "g129_c2": [
+   "Bloco 129.2 [°]",
+   "°"
+  ],
+  "g146_c1": [
+   "Bloco 146.1",
+   ""
+  ],
+  "g146_c2": [
+   "Bloco 146.2 [mg/h]",
+   "mg/h"
+  ],
+  "g146_c3": [
+   "Bloco 146.3 [mg/h]",
+   "mg/h"
+  ],
+  "g148_c1": [
+   "Bloco 148.1 [mg/h]",
+   "mg/h"
+  ],
+  "g148_c2": [
+   "Bloco 148.2 [s]",
+   "s"
+  ],
+  "g148_c3": [
+   "Bloco 148.3 [mbar]",
+   "mbar"
   ]
  }
 }

@@ -76,6 +76,25 @@ def test_detector_vacuum_time_skew_rejection():
     assert len(alarms_sync) == 1, "Leitura síncrona com anomalia real deveria ter disparado alarme!"
 
 
+def test_detector_reacceleration_no_false_cut_off_alarm():
+    """Garante que reaceleração (TPS > 15%, ex: 16%) encerra o episódio sem disparar FALHA DE CUT-OFF."""
+    det = DecelDetector()
+    # 1. Inicia desaceleração de 3200 -> 2400 rpm com TPS 2.0%
+    det.update(10.0, {"rpm": 3200.0, "tps": 2.0, "map": 28.0}, {"rpm": 10.0, "tps": 10.0, "map": 10.0})
+    det.update(10.5, {"rpm": 2400.0, "tps": 2.0, "map": 25.0, "lambda_v": 0.02},
+               {"rpm": 10.5, "tps": 10.5, "map": 10.5, "lambda_v": 10.5})
+    assert det.in_decel
+
+    # 2. Condutor pisa no acelerador (TPS vai a 16.0%, sonda sobe para 0.75V)
+    evs = det.update(11.0, {"rpm": 2500.0, "tps": 16.0, "map": 60.0, "lambda_v": 0.75},
+                     {"rpm": 11.0, "tps": 11.0, "map": 11.0, "lambda_v": 11.0})
+    assert not det.in_decel, "Deveria ter encerrado desaceleração por reaceleração!"
+    alarms_rich = [e for e in evs if "FALHA DE CUT-OFF" in e.message]
+    assert len(alarms_rich) == 0, f"Disparou falso alarme de cut-off na reaceleração: {alarms_rich}"
+    info_end = [e for e in evs if "reaceleração" in e.message]
+    assert len(info_end) == 1, "Deveria registrar término por reaceleração!"
+
+
 def test_detector_critical_retard_atdc_alert():
     """Garante que avanço negativo extremo (< -8.0°, ex: -19.0°) gera alerta de retardo crítico ATDC."""
     det = DecelDetector()

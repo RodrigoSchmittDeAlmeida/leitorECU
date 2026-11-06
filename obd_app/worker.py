@@ -202,6 +202,8 @@ class ObdWorker(QThread):
                 self.strategy.read_dtcs(self.elm, self)
             elif cmd == "clear_dtc":
                 self.strategy.clear_dtcs(self.elm, self)
+            elif cmd == "reset_adaptation":
+                self.strategy.reset_adaptation(self.elm, self)
             elif cmd in ("scan_vag", "scan_ford", "scan_all"):
                 self.strategy.scan_all(self.elm, self)
             elif cmd in ("reconnect_vag", "force_vag_kwp"):

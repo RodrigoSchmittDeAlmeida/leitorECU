@@ -45,6 +45,10 @@ class BaseVehicleStrategy(ABC, IVehicleStrategy):
         """Limpeza de códigos de falha (DTC)."""
         raise NotImplementedError
 
+    def reset_adaptation(self, elm: Any, worker: Any) -> None:
+        """Reset de valores aprendidos / adaptação de combustível (default: clear_dtcs)."""
+        self.clear_dtcs(elm, worker)
+
     def scan_all(self, elm: Any, worker: Any) -> None:
         """Varredura opcional de blocos ou DIDs (default: no-op)."""
         worker.log.emit("Varredura avançada não aplicável a este perfil.")

@@ -79,3 +79,88 @@ def test_pscm_epas_steering():
     assert res["steering_driver_torque"] == 1.50
     assert res["steering_motor_current"] == 4.0
 
+
+def test_ford_strategy_module_filtering_and_offline():
+    """Testa se o filtro de hardware ATCRA e detecção de módulos offline funcionam."""
+    from obd_app.elm327 import ElmResponse
+    from obd_app.protocols.ford import FordHsCanStrategy
+
+    strategy = FordHsCanStrategy()
+    sent_commands = []
+
+    class MockElm:
+        def command(self, cmd, timeout=None):
+            sent_commands.append(cmd)
+            if cmd == "0100":
+                return ElmResponse(cmd, lines=["4100BE3FA813"])
+            if cmd.startswith("22404C"):  # BCM retorna NO DATA
+                return ElmResponse(cmd, lines=["NO DATA"], error="NO DATA")
+            if cmd.startswith("222B00"):  # ABS responde
+                return ElmResponse(cmd, lines=["622B001388138813881388"])
+            return ElmResponse(cmd, lines=["OK"])
+
+        def query_pid(self, cmd):
+            return self.command(cmd)
+
+    class MockWorker:
+        def __init__(self):
+            self.emitted = []
+            self.logs = []
+            self._running = True
+        def _emit(self, d):
+            self.emitted.append(d)
+        @property
+        def log(self):
+            class LogSig:
+                def __init__(self, outer):
+                    self.outer = outer
+                def emit(self, msg):
+                    self.outer.logs.append(msg)
+            return LogSig(self)
+        @property
+        def status(self):
+            class StatSig:
+                def emit(self, *a): pass
+            return StatSig()
+        @property
+        def channels(self):
+            class ChanSig:
+                def emit(self, *a): pass
+            return ChanSig()
+        @property
+        def info(self):
+            class InfoSig:
+                def emit(self, *a): pass
+            return InfoSig()
+
+    elm = MockElm()
+    worker = MockWorker()
+
+    strategy.initialize(elm, worker)
+    # Garante que ATCRA foi enviado na inicialização
+    assert "ATCRA7E8" in sent_commands
+
+    # Testa mudança de alvo para ABS 760 -> RX 768
+    strategy._set_target(elm, "760", "768")
+    assert "ATSH760" in sent_commands
+    assert "ATCRA768" in sent_commands
+    assert "ATFCSH760" in sent_commands
+
+    # Simula 3 falhas no BCM (726)
+    for _ in range(3):
+        strategy._query_did(elm, worker, "726", "404C", _dec_bcm_doors)
+
+    # BCM deve ter sido marcado como offline
+    assert strategy._module_offline.get("bcm") is True
+    # Qualquer consulta subsequente ao BCM deve retornar None imediatamente sem enviar comando
+    cmds_before = len(sent_commands)
+    res = strategy._query_did(elm, worker, "726", "404C", _dec_bcm_doors)
+    assert res is None
+    assert len(sent_commands) == cmds_before  # NENHUM comando foi enviado ao ELM!
+
+    # No ciclo 60, a estratégia reseta módulos offline e tenta comunicar novamente com o BCM
+    cmds_before_60 = len(sent_commands)
+    strategy.poll_cycle(elm, worker, cycle=60, decel_mode=False)
+    # Garante que novas tentativas foram feitas para o BCM
+    assert any("22404C" in cmd for cmd in sent_commands[cmds_before_60:])
+

@@ -190,6 +190,24 @@ def _dec_pcm_ac(d: bytes) -> Dict[str, float]:
     return res
 
 
+def _dec_pcm_ac_press(d: bytes) -> Dict[str, float]:
+    """Pressão do refrigerante do ar condicionado Ford (DID 220323 / 220202)."""
+    if len(d) >= 2:
+        val = float((d[0] << 8) | d[1])
+        kpa = val if val > 20.0 else val * 350.0
+        return {"ac_pressure_kpa": kpa}
+    elif len(d) == 1:
+        return {"ac_pressure_kpa": float(d[0]) * 10.0}
+    return {}
+
+
+def _dec_pcm_ac_clutch(d: bytes) -> Dict[str, float]:
+    """Status da embreagem do compressor do A/C (DID 220325)."""
+    if len(d) >= 1:
+        return {"ac_clutch": 1.0 if (d[0] & 0x01) else 0.0}
+    return {}
+
+
 def _dec_pcm_flex(d: bytes) -> Dict[str, float]:
     """Porcentagem calculada de etanol no tanque de combustível (DID 221608)."""
     if len(d) >= 1:
@@ -252,6 +270,26 @@ def _dec_pscm_steering(d: bytes) -> Dict[str, float]:
     if len(d) >= 5:
         res["steering_motor_current"] = float(d[4]) * 0.5  # Amperes
     return res
+
+
+def _dec_pscm_angle(d: bytes) -> Dict[str, float]:
+    """Ângulo do volante EPAS Ford Fiesta/Ka (DID 223301 / 221E00)."""
+    if len(d) >= 2:
+        ang = (d[0] << 8) | d[1]
+        if ang > 32767:
+            ang -= 65536
+        return {"steering_wheel_angle": ang * 0.1}
+    return {}
+
+
+def _dec_pscm_torque(d: bytes) -> Dict[str, float]:
+    """Torque aplicado no volante pelo motorista (DID 223200)."""
+    if len(d) >= 2:
+        trq = (d[0] << 8) | d[1]
+        if trq > 32767:
+            trq -= 65536
+        return {"steering_driver_torque": trq * 0.01}
+    return {}
 
 
 # Dicionário de DIDs Ford suportados

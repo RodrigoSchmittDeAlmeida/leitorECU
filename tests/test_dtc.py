@@ -29,3 +29,20 @@ def test_parse_kwp_dtcs():
     assert len(codes) == 2
     assert codes[0][0] == "P0133"
     assert codes[1][0] == "P0300"
+
+
+def test_dtc_descriptions_and_heuristics():
+    """Garante que códigos Ford, U, C, B e heurísticas possuem descrição clara."""
+    from obd_app.dtc import describe
+
+    # Ford específico
+    assert "incompleto" in describe("P1000").lower()
+    # Módulo com prefixo
+    assert "velocidade" in describe("[ABS] C0031").lower()
+    assert "direção elétrica" in describe("[PSCM] U0420").lower()
+    assert "a/c" in describe("P0532").lower()
+    # Heurística para código não tabelado
+    desc_u = describe("U0999")
+    assert "comunicação" in desc_u.lower()
+    desc_c = describe("C0999")
+    assert "chassi" in desc_c.lower()

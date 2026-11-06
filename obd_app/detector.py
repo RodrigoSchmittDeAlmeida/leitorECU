@@ -115,7 +115,22 @@ class DecelDetector:
             return ev
 
         # ---- dentro do episódio
-        if fresh("lambda_v"):
+        reaccel = tps is not None and tps > c.tps_max
+        if reaccel:
+            dur = t - self.t_start
+            lam = f"sonda máx {self.max_lambda:.2f} V / mín {self.min_lambda:.2f} V" if self.max_lambda is not None else "sem leitura de sonda"
+            adv = f"avanço mín {self.min_adv:.1f}°" if self.min_adv is not None else "sem leitura de avanço"
+            if self.rich_alerted or self.adv_alerted:
+                level, verdict = "warn", "COM ANOMALIAS"
+            elif self.min_lambda is not None and self.min_lambda <= c.lambda_lean_ok:
+                level, verdict = "ok", "Cut-Off OK"
+            else:
+                level, verdict = "info", "Cut-Off não confirmado"
+            ev.append(Event(t, level, f"Fim da desaceleração (reaceleração, {dur:.1f}s): {verdict} — {lam}, {adv}"))
+            self.in_decel = False
+            return ev
+
+        if fresh("lambda_v") and (tps is None or tps <= c.tps_max):
             lv = latest["lambda_v"]
             self.max_lambda = lv if self.max_lambda is None else max(self.max_lambda, lv)
             self.min_lambda = lv if self.min_lambda is None else min(self.min_lambda, lv)
@@ -133,10 +148,9 @@ class DecelDetector:
                                 f"AVANÇO NEGATIVO em desaceleração: {adv:.1f}° (< {c.advance_min:.0f}°) "
                                 f"a {rpm:.0f} RPM — retardo excessivo / combustão no escape"))
 
-        reaccel = tps is not None and tps >= c.tps_max + 3
-        if rpm <= c.rpm_end or reaccel or t - self.t_start > c.max_duration:
+        if rpm <= c.rpm_end or t - self.t_start > c.max_duration:
             dur = t - self.t_start
-            why = "reaceleração" if reaccel else ("chegou à lenta" if rpm <= c.rpm_end else "tempo máximo")
+            why = "chegou à lenta" if rpm <= c.rpm_end else "tempo máximo"
             lam = f"sonda máx {self.max_lambda:.2f} V / mín {self.min_lambda:.2f} V" if self.max_lambda is not None else "sem leitura de sonda"
             adv = f"avanço mín {self.min_adv:.1f}°" if self.min_adv is not None else "sem leitura de avanço"
             if self.rich_alerted or self.adv_alerted:

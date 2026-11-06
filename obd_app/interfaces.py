@@ -99,6 +99,10 @@ class IVehicleStrategy(Protocol):
         """Limpa códigos de falha do(s) módulo(s)."""
         ...
 
+    def reset_adaptation(self, elm: Any, worker: Any) -> None:
+        """Executa procedimento de reset de adaptação / valores aprendidos (Canal 00)."""
+        ...
+
     def scan_all(self, elm: Any, worker: Any) -> None:
         """Varre blocos ou DIDs suportados pela ECU."""
         ...

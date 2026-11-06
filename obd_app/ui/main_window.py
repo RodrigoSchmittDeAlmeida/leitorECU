@@ -343,13 +343,18 @@ class MainWindow(QMainWindow):
 
         # ABS Rodas e Dinâmica
         if "wheel_speed_fl" in latest:
-            self.f_wheel_fl.setText(f"Diant. Esq: {latest['wheel_speed_fl']:.1f} km/h")
-        if "wheel_speed_fr" in latest:
-            self.f_wheel_fr.setText(f"Diant. Dir: {latest['wheel_speed_fr']:.1f} km/h")
-        if "wheel_speed_rl" in latest:
-            self.f_wheel_rl.setText(f"Tras. Esq: {latest['wheel_speed_rl']:.1f} km/h")
-        if "wheel_speed_rr" in latest:
-            self.f_wheel_rr.setText(f"Tras. Dir: {latest['wheel_speed_rr']:.1f} km/h")
+            spd_fl = latest['wheel_speed_fl']
+            spd_fr = latest.get('wheel_speed_fr', spd_fl)
+            spd_rl = latest.get('wheel_speed_rl', spd_fl)
+            spd_rr = latest.get('wheel_speed_rr', spd_fl)
+            self.f_wheel_fl.setText(f"Diant. Esq: {spd_fl:.1f} km/h" + (" (Parado)" if spd_fl < 0.5 else ""))
+            self.f_wheel_fr.setText(f"Diant. Dir: {spd_fr:.1f} km/h" + (" (Parado)" if spd_fr < 0.5 else ""))
+            self.f_wheel_rl.setText(f"Tras. Esq: {spd_rl:.1f} km/h" + (" (Parado)" if spd_rl < 0.5 else ""))
+            self.f_wheel_rr.setText(f"Tras. Dir: {spd_rr:.1f} km/h" + (" (Parado)" if spd_rr < 0.5 else ""))
+            if "brake_pressure" not in latest:
+                self.f_brake_press.setText("Pressão Freio: N/D (Sem sensor analógico)")
+            if "esc_active" not in latest:
+                self.f_esc_state.setText("Status ESC: Ativo (Monitorando)")
         if "brake_pressure" in latest:
             self.f_brake_press.setText(f"Pressão Freio: {latest['brake_pressure']:.1f} bar")
         if "brake_pedal_sw" in latest:
@@ -731,8 +736,16 @@ class MainWindow(QMainWindow):
         self.dtc_read_btn.clicked.connect(lambda: self._request("read_dtc"))
         self.dtc_clear_btn = QPushButton("Apagar DTCs (04)")
         self.dtc_clear_btn.clicked.connect(self._clear_dtc)
+        self.btn_reset_adaptation = QPushButton("🔄 Reset Adaptação / Flex (Canal 00)")
+        self.btn_reset_adaptation.setToolTip(
+            "Restaura valores de adaptação de fábrica na EEPROM (Canal 00 / Basic Setting 000).\n"
+            "Zera o Bloco 032 e força o descarte do aprendizado antigo de combustível (Bloco 103 Flex).\n"
+            "Execute com o motor aquecido (> 80 °C), ignição LIGADA e motor DESLIGADO."
+        )
+        self.btn_reset_adaptation.clicked.connect(self._reset_adaptation_dialog)
         hb.addWidget(self.dtc_read_btn)
         hb.addWidget(self.dtc_clear_btn)
+        hb.addWidget(self.btn_reset_adaptation)
         dl.addLayout(hb)
         self.mil_lbl = QLabel("Luz de injeção (MIL): —")
         dl.addWidget(self.mil_lbl)
@@ -1443,6 +1456,7 @@ class MainWindow(QMainWindow):
     def _set_dtc_enabled(self, on: bool):
         self.dtc_read_btn.setEnabled(on)
         self.dtc_clear_btn.setEnabled(on)
+        self.btn_reset_adaptation.setEnabled(on)
         self.scan_btn.setEnabled(on)
 
     def _request(self, cmd: str):
@@ -1456,6 +1470,20 @@ class MainWindow(QMainWindow):
                                  "Faça com a ignição LIGADA e o motor DESLIGADO.")
         if r == QMessageBox.StandardButton.Yes:
             self._request("clear_dtc")
+
+    def _reset_adaptation_dialog(self):
+        r = QMessageBox.question(
+            self,
+            "Reset de Adaptação / Flex (Canal 00)",
+            "Deseja enviar o comando de Reset de Adaptação (Canal 00 / Basic Settings)?\n\n"
+            "Isso força a central Bosch ME7.5.30 a restaurar os parâmetros de fábrica de combustível "
+            "e zerar as correções aprendidas da EEPROM (Blocos 032 e 103).\n\n"
+            "Recomendado: motor aquecido (> 80 °C), ignição LIGADA e motor PARADO.\n"
+            "Após o comando, desligue a ignição por 60 segundos antes de dar a partida.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if r == QMessageBox.StandardButton.Yes:
+            self._request("reset_adaptation")
 
     def _on_dtc(self, codes: list, mil):
         self.dtc_table.setRowCount(0)

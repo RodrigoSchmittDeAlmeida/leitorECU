@@ -240,6 +240,40 @@ class VagKwpStrategy(BaseVehicleStrategy):
         elm.command("14FF00", 6.0)
         self.read_dtcs(elm, worker)
 
+    def reset_adaptation(self, elm: Any, worker: Any) -> None:
+        """Procedimento de Reset de Adaptação / Flex (Canal 00 / Basic Settings) na ME7.5.30."""
+        worker.log.emit("Iniciando procedimento de Reset de Adaptação / Flex na Bosch ME7.5.30...")
+        worker.status.emit("connecting", "Enviando comandos de Reset de Adaptação (Canal 00)...")
+
+        # 1. Limpa códigos de falha e memória volátil de diagnóstico
+        r1 = elm.command("14FF00", 6.0)
+        worker.log.emit(f"> 14FF00 (Clear DTCs / RAM) -> {' '.join(r1.lines) or r1.error or 'OK'}")
+
+        # 2. Basic Setting Grupo 000 (Ajuste Básico Canal 00 - restaura defaults de fábrica na EEPROM)
+        r2 = elm.command("2800", 5.0)
+        worker.log.emit(f"> 2800 (Ajuste Básico Grupo 000) -> {' '.join(r2.lines) or r2.error or 'OK'}")
+
+        # 3. Start Routine 0000 (Start Routine Canal 00)
+        r3 = elm.command("31010000", 5.0)
+        worker.log.emit(f"> 31010000 (Routine Reset Canal 00) -> {' '.join(r3.lines) or r3.error or 'OK'}")
+
+        # 4. Consulta Bloco 032 para atualizar cards e log
+        time.sleep(0.4)
+        r_trim = elm.query_pid("2120")
+        if r_trim.ok:
+            data = extract_payload(r_trim, 0x21, 0x20, 6)
+            if data:
+                pdef = PIDS.get(0x2120)
+                if pdef:
+                    try:
+                        vals = pdef.decode(data)
+                        worker._emit(vals)
+                    except Exception:
+                        pass
+        worker.info.emit("Comandos de Reset de Adaptação (Canal 00) enviados à ECU com sucesso!")
+        worker.status.emit("connected", "Conectado — Reset de Adaptação concluído")
+        self.read_dtcs(elm, worker)
+
     def scan_all(self, elm: Any, worker: Any) -> None:
         groups = [g for g in self.VAG_GROUPS if g not in self.vag_unsupported]
         n = len(groups)
