@@ -60,7 +60,10 @@ class DecelDetector:
             return k in latest and t - stamp.get(k, -1e9) <= c.freshness
 
         # --- Diagnóstico Contínuo 1: Conflito de Carga / Vácuo Baixo / Ar Falso (ME7.5.30 Baixa RPM)
-        if fresh("rpm") and fresh("map") and (fresh("tps") or "tps" in latest):
+        # Exige que 'map' e 'tps' tenham sido atualizados no mesmo pacote síncrono (< 0.05s de diferença),
+        # evitando falsos positivos por time-skew quando o Bloco 002 (sem TPS) atualiza o MAP e o pedal foi acionado.
+        if (fresh("rpm") and fresh("map") and (fresh("tps") or "tps" in latest)
+                and abs(stamp.get("map", 0.0) - stamp.get("tps", -99.0)) < 0.05):
             rpm_val = latest["rpm"]
             tps_val = latest.get("tps", 0.0)
             map_val = latest["map"]

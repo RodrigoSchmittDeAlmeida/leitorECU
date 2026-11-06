@@ -560,7 +560,8 @@ class MainWindow(QMainWindow):
         self.extras_chk.setChecked(True)
         self.extras_chk.toggled.connect(self._apply_worker_flags)
         self.bg_scan_chk = QCheckBox("Varredura Extras")
-        self.bg_scan_chk.setToolTip("Varre blocos e DIDs secundários em segundo plano.\nDesmarque para taxa máxima (Hz) nos canais primários.")
+        self.bg_scan_chk.setToolTip("Varre blocos e DIDs desconhecidos em segundo plano.\n"
+                                    "Mantenha desmarcado para taxa máxima de amostragem (~3 Hz) nos canais primários.")
         self.bg_scan_chk.setChecked(False)
         self.bg_scan_chk.toggled.connect(self._bg_scan_toggled)
         self.fast_chk = QCheckBox("Resposta rápida")
@@ -782,6 +783,7 @@ class MainWindow(QMainWindow):
         if addr:
             self.ble_dev.addItem(f"{name}  [{addr}]" if name else addr, addr)
         self.extras_chk.setChecked(s.value("extras", "true") == "true")
+        self.bg_scan_chk.setChecked(s.value("bg_scan", "false") == "true")
         self.fast_chk.setChecked(s.value("fast", "false") == "true")
 
     def _save_settings(self):
@@ -793,6 +795,7 @@ class MainWindow(QMainWindow):
         s.setValue("ble_addr", self._ble_address())
         s.setValue("ble_name", self.ble_dev.currentText().split("  [")[0] if self.ble_dev.currentData() else "")
         s.setValue("extras", "true" if self.extras_chk.isChecked() else "false")
+        s.setValue("bg_scan", "true" if self.bg_scan_chk.isChecked() else "false")
         s.setValue("fast", "true" if self.fast_chk.isChecked() else "false")
 
     # ============================================================ conexão

@@ -7,27 +7,58 @@
   4,
   5,
   6,
+  7,
+  8,
+  9,
   10,
+  12,
+  13,
   14,
   15,
+  16,
+  17,
+  18,
+  19,
   20,
+  21,
   22,
+  23,
+  24,
+  25,
+  26,
+  27,
   28,
+  29,
   30,
   31,
   32,
   33,
   34,
+  35,
   36,
   37,
+  38,
+  39,
+  40,
   41,
+  42,
   43,
+  44,
+  45,
   46,
+  47,
+  48,
+  49,
   50,
   51,
+  52,
+  53,
   54,
   55,
   56,
+  57,
+  58,
+  59,
   60,
   61,
   62,
@@ -48,36 +79,36 @@
  ],
  "cells": {
   "g001_c1": [
-   "Bloco 001.1 RPM",
-   ""
+   "Bloco 001.1 RPM [rpm]",
+   "rpm"
   ],
   "g001_c2": [
-   "Bloco 001.2 Temp. motor",
-   ""
+   "Bloco 001.2 Temp. motor [°C]",
+   "°C"
   ],
   "g001_c3": [
-   "Bloco 001.3 Correção lambda",
-   ""
+   "Bloco 001.3 Correção lambda [%]",
+   "%"
   ],
   "g001_c4": [
-   "Bloco 001.4 Cond. ajuste básico",
-   ""
+   "Bloco 001.4 Cond. ajuste básico [bits]",
+   "bits"
   ],
   "g002_c1": [
-   "Bloco 002.1 RPM",
-   ""
+   "Bloco 002.1 RPM [rpm]",
+   "rpm"
   ],
   "g002_c2": [
-   "Bloco 002.2 Carga",
-   ""
+   "Bloco 002.2 Carga [%]",
+   "%"
   ],
   "g002_c3": [
-   "Bloco 002.3 Tempo injeção",
-   ""
+   "Bloco 002.3 Tempo injeção [ms]",
+   "ms"
   ],
   "g002_c4": [
-   "Bloco 002.4 Pressão coletor",
-   ""
+   "Bloco 002.4 Pressão coletor [mbar]",
+   "mbar"
   ],
   "g003_c1": [
    "Bloco 003.1 RPM [rpm]",
@@ -88,8 +119,8 @@
    "mbar"
   ],
   "g003_c3": [
-   "Bloco 003.3 Borboleta [°]",
-   "°"
+   "Bloco 003.3 Borboleta [%]",
+   "%"
   ],
   "g003_c4": [
    "Bloco 003.4 Avanço [°]",
@@ -124,72 +155,96 @@
    "km/h"
   ],
   "g005_c4": [
-   "Bloco 005.4 Estado operação [bits]",
-   "bits"
+   "Bloco 005.4 Estado operação [cod]",
+   "cod"
   ],
   "g006_c1": [
-   "Bloco 006.1 RPM",
-   ""
+   "Bloco 006.1 RPM [rpm]",
+   "rpm"
   ],
   "g006_c2": [
-   "Bloco 006.2 Carga",
-   ""
+   "Bloco 006.2 Carga [%]",
+   "%"
   ],
   "g006_c3": [
-   "Bloco 006.3 Temp. ar",
-   ""
+   "Bloco 006.3 Temp. ar [°C]",
+   "°C"
   ],
   "g006_c4": [
-   "Bloco 006.4 Correção altitude",
-   ""
+   "Bloco 006.4 Correção altitude [%]",
+   "%"
   ],
   "g010_c1": [
-   "Bloco 010.1 RPM",
-   ""
+   "Bloco 010.1 RPM [rpm]",
+   "rpm"
   ],
   "g010_c2": [
-   "Bloco 010.2 Carga",
-   ""
+   "Bloco 010.2 Carga [%]",
+   "%"
   ],
   "g010_c3": [
-   "Bloco 010.3 Borboleta",
-   ""
+   "Bloco 010.3 Borboleta [%]",
+   "%"
   ],
   "g010_c4": [
-   "Bloco 010.4 Avanço",
-   ""
+   "Bloco 010.4 Avanço [°]",
+   "°"
   ],
   "g014_c1": [
-   "Bloco 014.1 RPM",
-   ""
+   "Bloco 014.1 RPM [rpm]",
+   "rpm"
   ],
   "g014_c2": [
-   "Bloco 014.2 Carga",
-   ""
+   "Bloco 014.2 Carga [%]",
+   "%"
   ],
   "g014_c3": [
-   "Bloco 014.3 Falhas combustão total",
-   ""
+   "Bloco 014.3 Falhas combustão total [cont]",
+   "cont"
   ],
   "g014_c4": [
-   "Bloco 014.4",
-   ""
+   "Bloco 014.4 [cod]",
+   "cod"
   ],
   "g015_c1": [
-   "Bloco 015.1 Falhas cil. 1",
-   ""
+   "Bloco 015.1 Falhas cil. 1 [cont]",
+   "cont"
   ],
   "g015_c2": [
-   "Bloco 015.2 Falhas cil. 2",
-   ""
+   "Bloco 015.2 Falhas cil. 2 [cont]",
+   "cont"
   ],
   "g015_c3": [
-   "Bloco 015.3 Falhas cil. 3",
-   ""
+   "Bloco 015.3 Falhas cil. 3 [cont]",
+   "cont"
   ],
   "g015_c4": [
-   "Bloco 015.4",
-   ""
+   "Bloco 015.4 [cod]",
+   "cod"
+  ],
+  "g016_c1": [
+   "Bloco 016.1 Falhas cil. 4 [cont]",
+   "cont"
+  ],
+  "g016_c4": [
+   "Bloco 016.4 [cod]",
+   "cod"
+  ],
+  "g018_c1": [
+   "Bloco 018.1 [rpm]",
+   "rpm"
+  ],
+  "g018_c2": [
+   "Bloco 018.2 [rpm]",
+   "rpm"
+  ],
+  "g018_c3": [
+   "Bloco 018.3 [%]",
+   "%"
+  ],
+  "g018_c4": [
+   "Bloco 018.4 [%]",
+   "%"
   ],
   "g020_c1": [
    "Bloco 020.1 Retardo detonação cil. 1",
@@ -222,6 +277,38 @@
   "g022_c4": [
    "Bloco 022.4 Retardo cil. 2",
    ""
+  ],
+  "g023_c1": [
+   "Bloco 023.1 RPM [rpm]",
+   "rpm"
+  ],
+  "g023_c2": [
+   "Bloco 023.2 Carga [%]",
+   "%"
+  ],
+  "g023_c3": [
+   "Bloco 023.3 Retardo cil. 3 [°KW]",
+   "°KW"
+  ],
+  "g023_c4": [
+   "Bloco 023.4 Retardo cil. 4 [°KW]",
+   "°KW"
+  ],
+  "g026_c1": [
+   "Bloco 026.1 [V]",
+   "V"
+  ],
+  "g026_c2": [
+   "Bloco 026.2 [V]",
+   "V"
+  ],
+  "g026_c3": [
+   "Bloco 026.3 [V]",
+   "V"
+  ],
+  "g026_c4": [
+   "Bloco 026.4 [V]",
+   "V"
   ],
   "g028_c1": [
    "Bloco 028.1",
@@ -280,12 +367,12 @@
    "%"
   ],
   "g032_c3": [
-   "Bloco 032.3 [rpm]",
-   "rpm"
+   "Bloco 032.3 [%]",
+   "%"
   ],
   "g032_c4": [
-   "Bloco 032.4 [rpm]",
-   "rpm"
+   "Bloco 032.4 [V]",
+   "V"
   ],
   "g033_c1": [
    "Bloco 033.1 Correção sonda (STFT) [%]",
@@ -296,12 +383,12 @@
    "V"
   ],
   "g033_c3": [
-   "Bloco 033.3 [rpm]",
-   "rpm"
+   "Bloco 033.3 [°C]",
+   "°C"
   ],
   "g033_c4": [
-   "Bloco 033.4 [rpm]",
-   "rpm"
+   "Bloco 033.4 [°C]",
+   "°C"
   ],
   "g034_c1": [
    "Bloco 034.1 RPM",
@@ -399,6 +486,10 @@
    "Bloco 046.4",
    ""
   ],
+  "g047_c1": [
+   "Bloco 047.1 [cont]",
+   "cont"
+  ],
   "g050_c1": [
    "Bloco 050.1 RPM real",
    ""
@@ -430,6 +521,38 @@
   "g051_c4": [
    "Bloco 051.4",
    ""
+  ],
+  "g052_c1": [
+   "Bloco 052.1 [rpm]",
+   "rpm"
+  ],
+  "g052_c2": [
+   "Bloco 052.2 [rpm]",
+   "rpm"
+  ],
+  "g052_c3": [
+   "Bloco 052.3 [cod]",
+   "cod"
+  ],
+  "g052_c4": [
+   "Bloco 052.4 [%]",
+   "%"
+  ],
+  "g053_c1": [
+   "Bloco 053.1 [rpm]",
+   "rpm"
+  ],
+  "g053_c2": [
+   "Bloco 053.2 [rpm]",
+   "rpm"
+  ],
+  "g053_c3": [
+   "Bloco 053.3 [V]",
+   "V"
+  ],
+  "g053_c4": [
+   "Bloco 053.4 [%]",
+   "%"
   ],
   "g054_c1": [
    "Bloco 054.1 RPM",
@@ -478,6 +601,54 @@
   "g056_c4": [
    "Bloco 056.4",
    ""
+  ],
+  "g057_c1": [
+   "Bloco 057.1 [rpm]",
+   "rpm"
+  ],
+  "g057_c2": [
+   "Bloco 057.2 [rpm]",
+   "rpm"
+  ],
+  "g057_c3": [
+   "Bloco 057.3 [cod]",
+   "cod"
+  ],
+  "g057_c4": [
+   "Bloco 057.4 [bar]",
+   "bar"
+  ],
+  "g058_c1": [
+   "Bloco 058.1 [%]",
+   "%"
+  ],
+  "g058_c2": [
+   "Bloco 058.2 [bar]",
+   "bar"
+  ],
+  "g058_c3": [
+   "Bloco 058.3 [°C]",
+   "°C"
+  ],
+  "g058_c4": [
+   "Bloco 058.4 [bits]",
+   "bits"
+  ],
+  "g059_c1": [
+   "Bloco 059.1 [rpm]",
+   "rpm"
+  ],
+  "g059_c2": [
+   "Bloco 059.2 [rpm]",
+   "rpm"
+  ],
+  "g059_c3": [
+   "Bloco 059.3 [V]",
+   "V"
+  ],
+  "g059_c4": [
+   "Bloco 059.4 [%]",
+   "%"
   ],
   "g060_c1": [
    "Bloco 060.1 Borboleta sensor 1",
@@ -544,131 +715,131 @@
    ""
   ],
   "g070_c1": [
-   "Bloco 070.1",
+   "Bloco 070.1 Válvula EVAP (purga)",
    ""
   ],
   "g070_c2": [
-   "Bloco 070.2",
+   "Bloco 070.2 Desvio reg. lambda EVAP",
    ""
   ],
   "g070_c3": [
-   "Bloco 070.3",
+   "Bloco 070.3 Fator reg. EVAP",
    ""
   ],
   "g070_c4": [
-   "Bloco 070.4",
+   "Bloco 070.4 Status teste EVAP",
    ""
   ],
   "g086_c1": [
-   "Bloco 086.1",
+   "Bloco 086.1 Readiness Bits 1",
    ""
   ],
   "g086_c2": [
-   "Bloco 086.2",
+   "Bloco 086.2 Readiness Bits 2",
    ""
   ],
   "g086_c3": [
-   "Bloco 086.3",
+   "Bloco 086.3 Readiness Bits 3",
    ""
   ],
   "g086_c4": [
-   "Bloco 086.4",
+   "Bloco 086.4 Readiness Bits 4",
    ""
   ],
   "g099_c1": [
-   "Bloco 099.1",
+   "Bloco 099.1 RPM",
    ""
   ],
   "g099_c2": [
-   "Bloco 099.2",
+   "Bloco 099.2 Temp. motor",
    ""
   ],
   "g099_c3": [
-   "Bloco 099.3",
+   "Bloco 099.3 Correção lambda (STFT)",
    ""
   ],
   "g099_c4": [
-   "Bloco 099.4",
+   "Bloco 099.4 Status regulação lambda",
    ""
   ],
   "g100_c1": [
-   "Bloco 100.1",
+   "Bloco 100.1 Bits diagnóstico 1",
    ""
   ],
   "g100_c2": [
-   "Bloco 100.2",
+   "Bloco 100.2 Temp. motor",
    ""
   ],
   "g100_c3": [
-   "Bloco 100.3",
+   "Bloco 100.3 Tempo ciclo",
    ""
   ],
   "g100_c4": [
-   "Bloco 100.4",
+   "Bloco 100.4 Bits diagnóstico 2",
    ""
   ],
   "g101_c1": [
-   "Bloco 101.1",
+   "Bloco 101.1 RPM",
    ""
   ],
   "g101_c2": [
-   "Bloco 101.2",
+   "Bloco 101.2 Carga",
    ""
   ],
   "g101_c3": [
-   "Bloco 101.3",
+   "Bloco 101.3 Tempo injeção",
    ""
   ],
   "g101_c4": [
-   "Bloco 101.4",
+   "Bloco 101.4 Status injeção",
    ""
   ],
   "g107_c1": [
-   "Bloco 107.1",
+   "Bloco 107.1 RPM",
    ""
   ],
   "g107_c2": [
-   "Bloco 107.2",
+   "Bloco 107.2 Correção lambda",
    ""
   ],
   "g107_c3": [
-   "Bloco 107.3",
+   "Bloco 107.3 Adaptação mistura",
    ""
   ],
   "g107_c4": [
-   "Bloco 107.4",
+   "Bloco 107.4 Status regulação",
    ""
   ],
   "g110_c1": [
-   "Bloco 110.1",
+   "Bloco 110.1 RPM",
    ""
   ],
   "g110_c2": [
-   "Bloco 110.2",
+   "Bloco 110.2 Temp. motor",
    ""
   ],
   "g110_c3": [
-   "Bloco 110.3",
+   "Bloco 110.3 Tempo injeção",
    ""
   ],
   "g110_c4": [
-   "Bloco 110.4",
+   "Bloco 110.4 Correção carga / AF Álcool",
    ""
   ],
   "g120_c1": [
-   "Bloco 120.1",
+   "Bloco 120.1 RPM",
    ""
   ],
   "g120_c2": [
-   "Bloco 120.2",
+   "Bloco 120.2 Torque especificado",
    ""
   ],
   "g120_c3": [
-   "Bloco 120.3",
+   "Bloco 120.3 Torque real motor",
    ""
   ],
   "g120_c4": [
-   "Bloco 120.4",
+   "Bloco 120.4 Status ASR/Torque",
    ""
   ]
  }

@@ -84,7 +84,13 @@ class VagKwpStrategy(BaseVehicleStrategy):
         self.vag_supported |= set(cache["supported"])
         self.vag_unsupported |= set(cache["unsupported"]) - self.vag_supported
         for k, v in cache["cells"].items():
-            self.vag_cells.setdefault(k, v)
+            try:
+                g = int(k[1:4])
+                c = int(k.rsplit("_c", 1)[1])
+                unit = v[1] if len(v) > 1 else ""
+                self.vag_cells[k] = (vag.channel_label(g, c, unit), unit)
+            except Exception:
+                self.vag_cells.setdefault(k, v)
         known = self.vag_supported | self.vag_unsupported
         self._vag_queue = [g for g in self.VAG_GROUPS if g not in known]
         self._vag_pending_nodata = []
@@ -128,10 +134,11 @@ class VagKwpStrategy(BaseVehicleStrategy):
         self._mark_group(group, True)
         new: Dict[str, Tuple[str, str]] = {}
         for k, (_, unit) in cells.items():
+            cell = int(k.rsplit("_c", 1)[1])
+            lbl = vag.channel_label(group, cell, unit)
             old = self.vag_cells.get(k)
-            if old is None or old[1] != unit:
-                cell = int(k.rsplit("_c", 1)[1])
-                self.vag_cells[k] = new[k] = (vag.channel_label(group, cell, unit), unit)
+            if old is None or old[1] != unit or old[0] != lbl:
+                self.vag_cells[k] = new[k] = (lbl, unit)
         if new:
             worker.channels.emit(new)
             self._save_cache()
@@ -172,7 +179,8 @@ class VagKwpStrategy(BaseVehicleStrategy):
 
     def poll_cycle(self, elm: Any, worker: Any, cycle: int, decel_mode: bool) -> int:
         n_resp = 0
-        if decel_mode:
+        read_extras = getattr(worker, "read_extras", True)
+        if decel_mode or not read_extras:
             pids_to_query = list(self.active_fast)
         else:
             # Em todo ciclo lê os 2 blocos de alta velocidade (Bloco 003 + Bloco 033)
@@ -202,18 +210,13 @@ class VagKwpStrategy(BaseVehicleStrategy):
                         worker._emit(vals)
                         n_resp += 1
 
-        # Sondagem de blocos adicionais em background somente se habilitado pelo usuário
+        # Sondagem de blocos adicionais DESCONHECIDOS em background somente se habilitado pelo usuário
+        # e somente enquanto houver blocos na fila de descoberta (_vag_queue).
+        # Não rotaciona continuamente pelos blocos secundários já conhecidos/em cache,
+        # para preservar taxa de amostragem máxima (~3-4 Hz) no Bloco 003.
         if not decel_mode and getattr(worker, "background_scan_enabled", False):
-            active_set = {k & 0xFF for k in (self.active_fast + [0x2102, 0x2104, 0x2105, 0x2120]) if (k >> 8) == 0x21}
-            rot = sorted(self.vag_supported - active_set)
-            target_g = None
-            if self._vag_queue and (cycle % 4 != 3 or not rot):
+            if self._vag_queue and cycle % 4 == 0:
                 target_g = self._vag_queue[0]
-            elif rot:
-                target_g = rot[self._vag_rot_idx % len(rot)]
-                self._vag_rot_idx += 1
-
-            if target_g is not None:
                 if self._probe_group(elm, worker, target_g) is True:
                     n_resp += 1
 

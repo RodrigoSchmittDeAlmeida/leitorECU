@@ -119,6 +119,22 @@ KNOWN_LABELS: Dict[Tuple[int, int], str] = {
     (60, 1): "Borboleta sensor 1", (60, 2): "Borboleta sensor 2",
     (62, 1): "Borboleta sensor 1", (62, 2): "Borboleta sensor 2",
     (62, 3): "Pedal sensor 1", (62, 4): "Pedal sensor 2",
+    (70, 1): "Válvula EVAP (purga)", (70, 2): "Desvio reg. lambda EVAP",
+    (70, 3): "Fator reg. EVAP", (70, 4): "Status teste EVAP",
+    (86, 1): "Readiness Bits 1", (86, 2): "Readiness Bits 2",
+    (86, 3): "Readiness Bits 3", (86, 4): "Readiness Bits 4",
+    (99, 1): "RPM", (99, 2): "Temp. motor",
+    (99, 3): "Correção lambda (STFT)", (99, 4): "Status regulação lambda",
+    (100, 1): "Bits diagnóstico 1", (100, 2): "Temp. motor",
+    (100, 3): "Tempo ciclo", (100, 4): "Bits diagnóstico 2",
+    (101, 1): "RPM", (101, 2): "Carga",
+    (101, 3): "Tempo injeção", (101, 4): "Status injeção",
+    (107, 1): "RPM", (107, 2): "Correção lambda",
+    (107, 3): "Adaptação mistura", (107, 4): "Status regulação",
+    (110, 1): "RPM", (110, 2): "Temp. motor",
+    (110, 3): "Tempo injeção", (110, 4): "Correção carga / AF Álcool",
+    (120, 1): "RPM", (120, 2): "Torque especificado",
+    (120, 3): "Torque real motor", (120, 4): "Status ASR/Torque",
 }
 
 
