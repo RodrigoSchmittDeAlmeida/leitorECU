@@ -172,12 +172,22 @@ class VagKwpStrategy(BaseVehicleStrategy):
 
     def poll_cycle(self, elm: Any, worker: Any, cycle: int, decel_mode: bool) -> int:
         n_resp = 0
-        pids_to_query = list(self.active_fast) if decel_mode else list(self.active_normal)
+        if decel_mode:
+            pids_to_query = list(self.active_fast)
+        else:
+            # Em todo ciclo lê os 2 blocos de alta velocidade (Bloco 003 + Bloco 033)
+            # E intercala 1 dos 4 blocos complementares a cada ciclo:
+            # 0: Bloco 002 (Inj/Carga/MAP), 1: Bloco 004 (ECT/IAT/Bat), 2: Bloco 005 (Vel/Cut-Off/Estado), 3: Bloco 032 (LTFT)
+            interleaved = [0x2102, 0x2104, 0x2105, 0x2120]
+            sec_block = interleaved[cycle % len(interleaved)]
+            pids_to_query = list(self.active_fast) + [sec_block]
 
         for pcode in pids_to_query:
             if not worker._running:
                 return n_resp
-            pdef = PIDS[pcode]
+            pdef = PIDS.get(pcode)
+            if pdef is None:
+                continue
             resp = elm.query_pid(pdef.cmd)
             if resp.ok:
                 data = extract_payload(resp, pdef.mode, pdef.pid, pdef.nbytes)
@@ -192,9 +202,9 @@ class VagKwpStrategy(BaseVehicleStrategy):
                         worker._emit(vals)
                         n_resp += 1
 
-        # Sondagem de 1 bloco em background por ciclo se não estiver em desaceleração
-        if not decel_mode:
-            active_set = {k & 0xFF for k in (self.active_fast + self.active_normal) if (k >> 8) == 0x21}
+        # Sondagem de blocos adicionais em background somente se habilitado pelo usuário
+        if not decel_mode and getattr(worker, "background_scan_enabled", False):
+            active_set = {k & 0xFF for k in (self.active_fast + [0x2102, 0x2104, 0x2105, 0x2120]) if (k >> 8) == 0x21}
             rot = sorted(self.vag_supported - active_set)
             target_g = None
             if self._vag_queue and (cycle % 4 != 3 or not rot):

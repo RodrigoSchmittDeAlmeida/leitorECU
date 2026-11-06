@@ -22,6 +22,7 @@ class TransportError(Exception):
 
 class Transport:
     name = "base"
+    is_connected = True
 
     def open(self) -> None: ...
     def close(self) -> None: ...

@@ -35,9 +35,30 @@ def test_main_window_instantiation():
     # 5. Barra de busca presente na aba de canais (UX)
     assert hasattr(win, "ch_search")
 
-    # 6. Aba Ford Ka presente
+    # 6. Abas Ford Ka e Mapa 2D presentes
     tab_names = [win.tabs.tabText(i) for i in range(win.tabs.count())]
     assert any("Ford Ka" in t for t in tab_names)
+    assert any("Mapa 2D" in t for t in tab_names)
+
+    # 7. Controles de UX: Replay CSV, Limpar Picos, Badge de Protocolo e Varredura
+    assert hasattr(win, "btn_open_csv")
+    assert hasattr(win, "btn_clear_peaks")
+    assert hasattr(win, "proto_badge")
+    assert hasattr(win, "bg_scan_chk")
+
+    # 8. Peak Hold funcional no ValueCard
+    rpm_card = win.cards["rpm"]
+    rpm_card.set_value(850.0)
+    rpm_card.set_value(2500.0)
+    assert rpm_card.min_val == 850.0
+    assert rpm_card.max_val == 2500.0
+    assert "850" in rpm_card.peaks_label.text()
+    assert "2500" in rpm_card.peaks_label.text()
+
+    rpm_card.reset_peaks()
+    assert rpm_card.min_val is None
+    assert rpm_card.max_val is None
+    assert rpm_card.peaks_label.text() == ""
 
     win.close()
 

@@ -53,6 +53,7 @@ CHANNELS: Dict[str, Channel] = {
         Channel("obd_std", "Padrão OBD (011C)", "id", "{:.0f}", card=False),
         Channel("dist_mil", "Dist. c/ MIL (0121)", "km", "{:.0f}", card=False),
         Channel("fuel_type", "Tipo Combustível (0151)", "id", "{:.0f}", card=False),
+        Channel("inj_ms", "Tempo de Injeção", "ms", "{:.2f}", card=False),
     )
 }
 
@@ -98,47 +99,15 @@ def _dec_lambda_wb_i(d: bytes) -> Dict[str, Optional[float]]:
     return {"lambda_v": eq}
 
 
+from .vag import decode_cell
+
+
 def decode_vag_cell(k: int, a: int, b: int) -> Tuple[Optional[float], str]:
-    """Decodifica uma célula de 3 bytes (fórmula k, byte A, byte B) de Bloco de Medição VW KWP2000."""
-    if k == 0x01:
-        return 0.2 * a * b, "rpm"
-    if k in (0x02, 0x03):
-        return 0.002 * a * b, "%"
-    if k == 0x04:
-        return abs(b - 127) * 0.01 * a * (-1.0 if b < 127 else 1.0), "deg"
-    if k == 0x05:
-        return a * (b - 100) * 0.1, "C"
-    if k in (0x06, 0x15):
-        return 0.001 * a * b, "V"
-    if k == 0x07:
-        return 0.01 * a * b, "km/h"
-    if k == 0x08:
-        return 0.1 * a * b, ""
-    if k == 0x09:
-        return (b - 127) * 0.02 * a, "deg"
-    if k == 0x0B:
-        return 0.0001 * a * (b - 128) + 1.0, "lambda"
-    if k == 0x0E:
-        return 0.005 * a * b, "bar"
-    if k == 0x0F:
-        return 0.01 * a * b, "ms"
-    if k == 0x12:
-        return 0.04 * a * b, "mbar"
-    if k == 0x14:
-        return a * (b - 128) / 128.0, "%"
-    if k == 0x16:
-        return 0.001 * a * b, "ms"
-    if k == 0x17:
-        return (b / 256.0) * a, "%"
-    if k == 0x1B:
-        return (b - 128) * 0.01 * a, "deg"
-    if k == 0x21:
-        return 100.0 if a == 0 else (100.0 * b / a), "%"
-    if k == 0x2B:
-        return 0.1 * a * b, "V"
-    if k == 0x3B:
-        return ((a * 256) + b) / 32768.0, "lambda"
-    return None, ""
+    """Decodifica uma célula de 3 bytes (fórmula k, byte A, byte B) usando vag.py como fonte única."""
+    r = decode_cell(k, a, b)
+    if r is None:
+        return None, ""
+    return r
 
 
 def _dec_vag_group33(d: bytes) -> Dict[str, Optional[float]]:
@@ -149,9 +118,9 @@ def _dec_vag_group33(d: bytes) -> Dict[str, Optional[float]]:
     if v1 is not None and u1 == "%":
         out["lambda_trim"] = v1
         out["stft"] = v1
-    elif v1 is not None and u1 in ("V", "lambda"):
+    elif v1 is not None and u1 in ("V", "lambda", "λ"):
         out["lambda_v"] = v1
-    if v2 is not None and u2 in ("V", "lambda"):
+    if v2 is not None and u2 in ("V", "lambda", "λ"):
         out["lambda_v"] = v2
     elif v2 is not None and u2 == "%" and "stft" not in out:
         out["lambda_trim"] = v2
@@ -186,12 +155,12 @@ def _dec_vag_group01(d: bytes) -> Dict[str, Optional[float]]:
         v3, u3 = decode_vag_cell(d[6], d[7], d[8])
         if v1 is not None and u1 == "rpm":
             out["rpm"] = v1
-        if v2 is not None and u2 == "C":
+        if v2 is not None and u2 in ("°C", "C"):
             out["ect"] = v2
         if v3 is not None and u3 == "%":
             out["lambda_trim"] = v3
             out["stft"] = v3
-        elif v3 is not None and u3 in ("V", "lambda"):
+        elif v3 is not None and u3 in ("V", "lambda", "λ"):
             out["lambda_v"] = v3
     return out
 
@@ -202,11 +171,14 @@ def _dec_vag_group02(d: bytes) -> Dict[str, Optional[float]]:
     if len(d) >= 12:
         v1, u1 = decode_vag_cell(d[0], d[1], d[2])
         v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
         v4, u4 = decode_vag_cell(d[9], d[10], d[11])
         if v1 is not None and u1 == "rpm":
             out["rpm"] = v1
         if v2 is not None and u2 == "%":
             out["load"] = v2
+        if v3 is not None and "ms" in u3:
+            out["inj_ms"] = v3
         if v4 is not None and u4 == "mbar":
             out["map"] = v4 / 10.0  # mbar -> kPa
     return out
@@ -226,7 +198,7 @@ def _dec_vag_group03(d: bytes) -> Dict[str, Optional[float]]:
             out["map"] = v2 / 10.0  # mbar -> kPa
         if v3 is not None and u3 == "%":
             out["tps"] = v3
-        if v4 is not None and u4 == "deg":
+        if v4 is not None and u4 in ("°", "deg", "°KW"):
             out["advance"] = v4
     return out
 
@@ -243,15 +215,15 @@ def _dec_vag_group04(d: bytes) -> Dict[str, Optional[float]]:
             out["rpm"] = v1
         if v2 is not None and u2 == "V":
             out["battery"] = v2
-        if v3 is not None and u3 == "C":
+        if v3 is not None and u3 in ("°C", "C"):
             out["ect"] = v3
-        if v4 is not None and u4 == "C":
+        if v4 is not None and u4 in ("°C", "C"):
             out["iat"] = v4
     return out
 
 
 def _dec_vag_group05(d: bytes) -> Dict[str, Optional[float]]:
-    """Bloco VW 005 (comando 2105): C1 = RPM, C2 = Carga (%), C3 = Velocidade (km/h)."""
+    """Bloco VW 005 (comando 2105): C1 = RPM, C2 = Carga (%), C3 = Velocidade (km/h), C4 = Estado de Operação."""
     out: Dict[str, Optional[float]] = {}
     if len(d) >= 9:
         v1, u1 = decode_vag_cell(d[0], d[1], d[2])
@@ -263,6 +235,16 @@ def _dec_vag_group05(d: bytes) -> Dict[str, Optional[float]]:
             out["load"] = v2
         if v3 is not None and u3 == "km/h":
             out["speed"] = v3
+    if len(d) >= 12:
+        # Célula 4: Estado de Operação da ME7.5 (bits de Lenta, Parcial, WOT, Cut-Off / Schubabschaltung)
+        # Mapeamento para fuel_sys1 padrão SAE: Cut-Off = 1.0, Malha Fechada = 2.0, Enriquecimento/WOT = 4.0
+        b4 = d[11]
+        if (b4 & 0x08) or (b4 & 0x80):
+            out["fuel_sys1"] = 1.0  # Cut-Off / Schubabschaltung
+        elif b4 & 0x04:
+            out["fuel_sys1"] = 4.0  # WOT / Enriquecimento Plena Carga
+        else:
+            out["fuel_sys1"] = 2.0  # Lenta / Parcial / Malha Fechada
     return out
 
 

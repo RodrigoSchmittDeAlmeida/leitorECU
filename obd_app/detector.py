@@ -32,6 +32,15 @@ class DecelDetector:
         self.cfg = cfg or DetectorConfig()
         self.rpm_hist: Deque[Tuple[float, float]] = deque()
         self.in_decel = False
+        self._last_vacuum_alert: float = -1e9
+        self._last_atdc_alert: float = -1e9
+        self._reset_episode()
+
+    def reset(self) -> None:
+        self.rpm_hist.clear()
+        self.in_decel = False
+        self._last_vacuum_alert = -1e9
+        self._last_atdc_alert = -1e9
         self._reset_episode()
 
     def _reset_episode(self):
@@ -49,6 +58,38 @@ class DecelDetector:
 
         def fresh(k):
             return k in latest and t - stamp.get(k, -1e9) <= c.freshness
+
+        # --- Diagnóstico Contínuo 1: Conflito de Carga / Vácuo Baixo / Ar Falso (ME7.5.30 Baixa RPM)
+        if fresh("rpm") and fresh("map") and (fresh("tps") or "tps" in latest):
+            rpm_val = latest["rpm"]
+            tps_val = latest.get("tps", 0.0)
+            map_val = latest["map"]
+            if rpm_val < 1900.0 and tps_val < 8.0 and map_val > 60.0:
+                if t - self._last_vacuum_alert >= 2.0:
+                    self._last_vacuum_alert = t
+                    ev.append(Event(t, "alarm",
+                                    f"CARGA ANORMAL COM BORBOLETA FECHADA: MAP em {map_val:.1f} kPa "
+                                    f"com TPS {tps_val:.1f}% a {rpm_val:.0f} RPM"))
+
+        # --- Diagnóstico Contínuo 2: Retardo Crítico ATDC (Avanço Negativo / Pipoco no Escape)
+        if fresh("advance"):
+            adv_val = latest["advance"]
+            if adv_val < -8.0:
+                if t - self._last_atdc_alert >= 2.0:
+                    self._last_atdc_alert = t
+                    f_sys = latest.get("fuel_sys1")
+                    lv = latest.get("lambda_v")
+                    if f_sys == 2.0 or (lv is not None and lv > 0.35):
+                        malha_str = "malha fechada sem Cut-Off"
+                    elif f_sys == 1.0 or (lv is not None and lv <= 0.15):
+                        malha_str = "Cut-Off ativo / Open Loop"
+                    else:
+                        malha_str = "malha não confirmada"
+                    map_str = f", MAP {latest['map']:.1f} kPa" if fresh("map") else ""
+                    rpm_str = f" a {latest['rpm']:.0f} RPM" if fresh("rpm") else ""
+                    ev.append(Event(t, "alarm",
+                                    f"RETARDO CRÍTICO ATDC: avanço em {adv_val:.1f}°{map_str}{rpm_str} "
+                                    f"— {malha_str} (risco de pipoco e vibração)"))
 
         if not fresh("rpm"):
             return ev

@@ -75,7 +75,7 @@ def test_strategy_factory():
 
 def test_ford_strategy_polling():
     """Testa ciclo de polling da estratégia Ford Ka+ (HS-CAN 500k)."""
-    transport = MockTransport()
+    transport = MockTransport(kline_latency=0.0)
     transport.open()
     elm = ELM327(transport)
     worker = DummyWorker()
@@ -98,7 +98,7 @@ def test_ford_strategy_polling():
 
 def test_vag_strategy_polling():
     """Testa ciclo de polling da estratégia VAG KWP2000 (VW Gol G5)."""
-    transport = MockTransport()
+    transport = MockTransport(kline_latency=0.0)
     transport.open()
     elm = ELM327(transport)
     worker = DummyWorker()

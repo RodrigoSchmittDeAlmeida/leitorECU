@@ -8,19 +8,26 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, runtime
 class ITransport(Protocol):
     """Interface abstrata para transportes físicos (BLE, TCP, Serial, Mock)."""
 
-    def connect(self) -> None:
+    def open(self) -> None:
         ...
 
-    def disconnect(self) -> None:
+    def close(self) -> None:
         ...
 
     def write(self, data: bytes) -> None:
         ...
 
-    def read(self, timeout: float = 1.0) -> bytes:
+    def read_some(self, size: int = 4096, timeout: float = 1.0) -> bytes:
+        ...
+
+    def read_until_prompt(self, timeout: float = 2.0) -> Tuple[bytes, bool]:
         ...
 
     def flush_input(self) -> None:
+        ...
+
+    @property
+    def name(self) -> str:
         ...
 
     @property
@@ -51,14 +58,13 @@ class IDataLogger(Protocol):
 
 @runtime_checkable
 class IDetector(Protocol):
-    """Interface abstrata para detecção de eventos e cut-off."""
+    """Interface abstrata para detecção de eventos, anomalias e cut-off."""
 
     @property
     def in_decel(self) -> bool:
         ...
 
-    def feed(self, t: float, rpm: Optional[float], tps: Optional[float], mp: Optional[float],
-             lam: Optional[float], adv: Optional[float]) -> Optional[Any]:
+    def update(self, t: float, latest: Dict[str, float], stamp: Dict[str, float]) -> List[Any]:
         ...
 
     def reset(self) -> None:

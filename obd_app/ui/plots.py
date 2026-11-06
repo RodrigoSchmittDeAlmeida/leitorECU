@@ -24,6 +24,7 @@ class DualAxisPlot(pg.PlotWidget):
         self.pi.hideButtons()
         self.legend = self.pi.addLegend(offset=(8, 4), labelTextColor="#cfd8dc", brush=(15, 17, 21, 180))
         self.vb2 = None
+        self._markers = []
         if right_label:
             self.vb2 = pg.ViewBox()
             self.pi.showAxis("right")
@@ -58,7 +59,29 @@ class DualAxisPlot(pg.PlotWidget):
         (self.vb2 if right and self.vb2 is not None else self.pi).addItem(line)
         return line
 
-    def add_marker(self, color: str) -> pg.InfiniteLine:
-        line = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(color, width=1.5, style=Qt.PenStyle.DotLine))
+    def add_marker(self, x: float, color: str = "#ff5252", label: str | None = None) -> pg.InfiniteLine:
+        line = pg.InfiniteLine(pos=x, angle=90, movable=False,
+                               pen=pg.mkPen(color, width=1.5, style=Qt.PenStyle.DotLine),
+                               label=label, labelOpts={"color": color, "position": 0.85, "rotateAxis": (1, 0)})
+        self.pi.addItem(line)
+        self._markers.append(line)
+        return line
+
+    def add_crosshair(self, color: str = "#ffffff") -> pg.InfiniteLine:
+        line = pg.InfiniteLine(angle=90, movable=False,
+                               pen=pg.mkPen(color, width=1.2, style=Qt.PenStyle.DashLine))
         self.pi.addItem(line)
         return line
+
+    def clear_markers(self) -> None:
+        for m in self._markers:
+            try:
+                self.pi.removeItem(m)
+            except Exception:
+                pass
+        self._markers.clear()
+
+    def set_replay_mode(self, enabled: bool) -> None:
+        self.pi.setMouseEnabled(x=enabled, y=True)
+        if self.vb2 is not None:
+            self.vb2.setMouseEnabled(x=enabled, y=True)

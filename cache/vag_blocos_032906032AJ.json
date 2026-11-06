@@ -41,7 +41,11 @@
   110,
   120
  ],
- "unsupported": [],
+ "unsupported": [
+  11,
+  159,
+  217
+ ],
  "cells": {
   "g001_c1": [
    "Bloco 001.1 RPM",
@@ -92,36 +96,36 @@
    "°"
   ],
   "g004_c1": [
-   "Bloco 004.1 RPM [V]",
-   "V"
+   "Bloco 004.1 RPM [rpm]",
+   "rpm"
   ],
   "g004_c2": [
-   "Bloco 004.2 Bateria [°C]",
-   "°C"
+   "Bloco 004.2 Bateria [V]",
+   "V"
   ],
   "g004_c3": [
    "Bloco 004.3 Temp. motor [°C]",
    "°C"
   ],
   "g004_c4": [
-   "Bloco 004.4 Temp. ar [rpm]",
-   "rpm"
+   "Bloco 004.4 Temp. ar [°C]",
+   "°C"
   ],
   "g005_c1": [
-   "Bloco 005.1 RPM",
-   ""
+   "Bloco 005.1 RPM [rpm]",
+   "rpm"
   ],
   "g005_c2": [
-   "Bloco 005.2 Carga",
-   ""
+   "Bloco 005.2 Carga [%]",
+   "%"
   ],
   "g005_c3": [
-   "Bloco 005.3 Velocidade",
-   ""
+   "Bloco 005.3 Velocidade [km/h]",
+   "km/h"
   ],
   "g005_c4": [
-   "Bloco 005.4 Estado operação",
-   ""
+   "Bloco 005.4 Estado operação [bits]",
+   "bits"
   ],
   "g006_c1": [
    "Bloco 006.1 RPM",

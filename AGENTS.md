@@ -234,7 +234,34 @@ O `CsvLogger` ([`obd_app/datalog.py`](file:///c:/Users/rsaho/Desktop/leitorECU3/
 
 ---
 
-## 7. Diretrizes para Agentes e Futuras Modificações
+## 8. Arquitetura Refatorada (SOLID, Replay & Diagnóstico Avançado)
+
+### 8.1 Unificação de Decodificadores e Telemetria ME7.5.30
+* **Fonte Única (`vag.py`)**: `decode_vag_cell` em `pids.py` delega diretamente para `decode_cell` de `vag.py`, eliminando duplicatas de fórmulas.
+* **Tempo de Injeção Real (`inj_ms`)**: Bloco 002 (Célula 3) decodificado e mapeado para o canal `inj_ms` em `CHANNELS`.
+* **Status de Malha VAG (`fuel_sys1`)**: Bloco 005 (Célula 4) decodificado bit a bit: Cut-Off/Schubabschaltung (`1.0`), Malha Fechada (`2.0`), WOT/Plena Carga (`4.0`).
+* **Multi-frame sem Deslocamento**: `vag.extract_block()` e `elm327.py` tratam repetições de prefixos de frame (`0:`, `1:`) e cabeçalhos `61 GG`, prevenindo corrupção de unidades no cache JSON.
+* **Rotação Inteligente Linha K**: Em cada ciclo normal lê `active_fast` (003 e 033) e intercala 002, 004, 005 e 032 a cada 4 ciclos, dobrando a taxa de amostragem útil (Hz). Varredura de blocos secundários desativada por padrão e controlada por checkbox na UI.
+
+### 8.2 Proteção contra Fallback Silencioso & Badge de Protocolo
+* Emissão do sinal `protocol_mode_changed(name, is_fallback)` para badge visual (`[VAG KWP2000 Nativo]` em verde vs `[Fallback ISO 9141-2]` em laranja).
+* Botão `🔄 Forçar VAG KWP` para recuperação sem reiniciar o app.
+
+### 8.3 Diagnóstico de Anomalias (Detector ME7.5.30)
+* **Conflito de Carga / Vácuo Baixo**: `rpm < 1900`, `tps < 8%`, `map > 60 kPa` -> alerta imediato de travamento de dashpot ou ar falso.
+* **Retardo Crítico ATDC**: `advance < -8.0°` (ex: `-19°`) -> alerta de risco de detonação/combustão no escape.
+
+### 8.4 Modo Replay CSV & Mapa 2D (RPM × MAP)
+* **Replay de CSV**: Botão `📂 Abrir Log CSV` carrega qualquer log gravado, renderiza os gráficos completos, permite pan/zoom livre e adiciona **Crosshair sincronizado** que atualiza dinamicamente os 14 cards do topo ao mover o cursor.
+* **Mapa 2D Térmico**: Grade RPM × MAP (700 a 5500 RPM × 20 a 100 kPa) acumulando médias de Avanço de Ignição (°), STFT (%) ou Sonda Lambda (V). Coloração especial em magenta/roxo para zonas de retardo negativo (`-19°`).
+* **Peak Hold nos Cards**: Mínimo e Máximo exibidos no canto inferior esquerdo de cada ValueCard com botão `⚡ Limpar Picos`.
+
+### 8.5 Suite de Testes Automatizados (39 Testes)
+```bash
+py -3.13 -m pytest tests/ -v
+# 39 passed in ~6s (100% sucesso)
+```
+
 
 Ao realizar modificações ou expansões no código:
 

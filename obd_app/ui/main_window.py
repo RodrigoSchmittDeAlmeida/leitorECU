@@ -1,9 +1,11 @@
 """Janela principal: conexão, cards, gráficos sincronizados, eventos, DTCs e gravação CSV."""
 from __future__ import annotations
 
+import csv
 import html
 import os
 import time
+from bisect import bisect_left
 from datetime import datetime
 from typing import Dict, List, Tuple
 
@@ -16,14 +18,16 @@ from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QF
                              QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
                              QVBoxLayout, QWidget)
 
-from .. import ford
+from .. import ford, vag
 from ..ble_scan import BleScanWorker
 from ..datalog import CsvLogger, SeriesBuffer
 from ..detector import DecelDetector, Event
+from ..ford import FORD_CHANNELS_INFO
 from ..pids import CHANNELS, DYNAMIC_INFO
 from ..transports import BleTransport, MockTransport, TcpTransport
 from ..worker import (PROFILE_FORD_KA, PROFILE_GENERIC, PROFILE_VW_GOL,
                       VEHICLE_PROFILES, ObdWorker)
+from .map2d import Map2DWidget
 from .plots import WINDOW_S, DualAxisPlot
 from .style import COLORS, STYLE
 from .widgets import ValueCard
@@ -67,6 +71,9 @@ class MainWindow(QMainWindow):
         self.markers: List[Tuple[float, list]] = []
         self.frame = 0
         self.n_events = 0
+        self._replay_mode = False
+        self._replay_times: List[float] = []
+        self._replay_records: List[Dict[str, float]] = []
         # canais fora de CHANNELS (blocos VAG gGGG_cN, PIDs extras): {chave: (descrição, unidade)}
         self.dyn_info: Dict[str, Tuple[str, str]] = {}
         self._ch_rows: Dict[str, int] = {}
@@ -507,6 +514,17 @@ class MainWindow(QMainWindow):
         self.connect_btn.setMinimumWidth(95)
         self.connect_btn.clicked.connect(self._toggle_connect)
         cl.addWidget(self.connect_btn)
+
+        self.proto_badge = QLabel("VAG KWP2000 Nativo", objectName="protoBadge")
+        self.proto_badge.setProperty("fallback", "false")
+        cl.addWidget(self.proto_badge)
+
+        self.btn_reconnect_vag = QPushButton("🔄 Forçar VAG KWP")
+        self.btn_reconnect_vag.setToolTip("Força a reconexão pelo protocolo VAG KWP2000 Nativo (Bloco 003 Síncrono)")
+        self.btn_reconnect_vag.setEnabled(False)
+        self.btn_reconnect_vag.clicked.connect(self._force_reconnect_vag)
+        cl.addWidget(self.btn_reconnect_vag)
+
         self.status_lbl = QLabel("Desconectado")
         self.status_lbl.setStyleSheet("color:#9aa4b2;")
         cl.addWidget(self.status_lbl, 1)
@@ -515,10 +533,18 @@ class MainWindow(QMainWindow):
         # ---------------- controles
         ctl = QHBoxLayout()
         ctl.setContentsMargins(0, 0, 0, 0)
-        ctl.setSpacing(6)
+        ctl.setSpacing(5)
+        self.btn_open_csv = QPushButton("📂 Abrir Log CSV")
+        self.btn_open_csv.setToolTip("Carrega um arquivo CSV gravado para replay e análise ponto a ponto.")
+        self.btn_open_csv.clicked.connect(self._open_csv_replay)
+
+        self.btn_clear_peaks = QPushButton("⚡ Limpar Picos")
+        self.btn_clear_peaks.setToolTip("Zera os valores de pico (Mínimo e Máximo) de todos os cards.")
+        self.btn_clear_peaks.clicked.connect(self._clear_all_peaks)
+
         self.decel_btn = QPushButton("⚡ Desaceleração", objectName="decel")
         self.decel_btn.setCheckable(True)
-        self.decel_btn.setMinimumWidth(110)
+        self.decel_btn.setMinimumWidth(100)
         self.decel_btn.setToolTip("Lê apenas RPM, MAP, Avanço, TPS e Sonda (pausa ECT/STFT/LTFT)\n"
                                   "para aumentar a taxa de amostragem e capturar Cut-Off / Dashpot.")
         self.decel_btn.toggled.connect(self._decel_toggled)
@@ -533,6 +559,10 @@ class MainWindow(QMainWindow):
         self.extras_chk.setToolTip("Lê todos os PIDs da central (carga, velocidade, IAT, malha fechada, bateria)")
         self.extras_chk.setChecked(True)
         self.extras_chk.toggled.connect(self._apply_worker_flags)
+        self.bg_scan_chk = QCheckBox("Varredura Extras")
+        self.bg_scan_chk.setToolTip("Varre blocos e DIDs secundários em segundo plano.\nDesmarque para taxa máxima (Hz) nos canais primários.")
+        self.bg_scan_chk.setChecked(False)
+        self.bg_scan_chk.toggled.connect(self._bg_scan_toggled)
         self.fast_chk = QCheckBox("Resposta rápida")
         self.fast_chk.setToolTip("Envia '010C1' em vez de '010C': o ELM327 não espera timeout após a resposta.\n"
                                  "Aumenta bastante a taxa; desative se o adaptador responder '?' ou NO DATA.")
@@ -552,10 +582,10 @@ class MainWindow(QMainWindow):
             "Use 'Pausar Linha K' ou 'Suave' quando estiver parado e 'Máxima' quando for gravar o teste."
         )
         self.cadence_cb.currentIndexChanged.connect(self._apply_worker_flags)
-        for w in (self.decel_btn, self.rec_btn, self.freeze_btn, clear_btn):
+        for w in (self.btn_open_csv, self.btn_clear_peaks, self.decel_btn, self.rec_btn, self.freeze_btn, clear_btn):
             ctl.addWidget(w)
-        ctl.addSpacing(6)
-        for w in (self.cadence_cb, self.extras_chk, self.fast_chk, self.raw_chk):
+        ctl.addSpacing(4)
+        for w in (self.cadence_cb, self.extras_chk, self.bg_scan_chk, self.fast_chk, self.raw_chk):
             ctl.addWidget(w)
         ctl.addStretch()
         self.rate_lbl = QLabel("0.0 resp/s | 0.0 ciclos/s")
@@ -627,9 +657,23 @@ class MainWindow(QMainWindow):
         self.p3.add_hline(-10, "#ffc107", label="-10%")
         for p in (self.p1, self.p2, self.p3):
             pl.addWidget(p)
+
+        self.crosshair_p1 = self.p1.add_crosshair("#ffffff")
+        self.crosshair_p2 = self.p2.add_crosshair("#ffffff")
+        self.crosshair_p3 = self.p3.add_crosshair("#ffffff")
+        for ch in (self.crosshair_p1, self.crosshair_p2, self.crosshair_p3):
+            ch.setVisible(False)
+
+        self.p1.scene().sigMouseMoved.connect(self._on_plot_mouse_moved)
+        self.p2.scene().sigMouseMoved.connect(self._on_plot_mouse_moved)
+        self.p3.scene().sigMouseMoved.connect(self._on_plot_mouse_moved)
+
         split.addWidget(plots_w)
 
         tabs = QTabWidget()
+        # Mapa 2D RPM x MAP (Análise Térmica / Calibração)
+        self.map2d = Map2DWidget()
+        tabs.addTab(self.map2d, "🗺️ Mapa 2D (RPM × MAP)")
         # Ford Ka+ (Módulos & Conforto)
         self.ford_tab = self._build_ford_tab()
         tabs.addTab(self.ford_tab, "🚗 Ford Ka+ (Conforto & Módulos)")
@@ -797,6 +841,8 @@ class MainWindow(QMainWindow):
             self._stop_worker()
 
     def _start_worker(self):
+        if self._replay_mode:
+            self._exit_replay_mode()
         mode = self.mode.currentIndex()
         if mode == MODE_WIFI:
             transport = TcpTransport(self.ip.text().strip(), self.port.value(), timeout=2.0)
@@ -833,6 +879,7 @@ class MainWindow(QMainWindow):
         self.worker.dtc_result.connect(self._on_dtc)
         self.worker.info.connect(self._on_info)
         self.worker.channels.connect(self._on_channels)
+        self.worker.protocol_mode_changed.connect(self._on_protocol_mode_changed)
         self.worker.finished.connect(self._worker_finished)
         self._apply_worker_flags()
         self.worker.decel_mode = self.decel_btn.isChecked()
@@ -840,6 +887,7 @@ class MainWindow(QMainWindow):
         self.mode.setEnabled(False)
         self.wifi_box.setEnabled(False)
         self.ble_box.setEnabled(False)
+        self.btn_reconnect_vag.setEnabled(True)
         self.connect_btn.setText("Desconectar")
         self.console.appendPlainText(f"===== {datetime.now():%H:%M:%S} conectando ({transport.name} - {VEHICLE_PROFILES.get(veh_profile)}) =====")
         self.worker.start(QThread.Priority.HighPriority)
@@ -859,14 +907,40 @@ class MainWindow(QMainWindow):
         self.mode.setEnabled(True)
         self.wifi_box.setEnabled(True)
         self.ble_box.setEnabled(True)
+        self.btn_reconnect_vag.setEnabled(False)
+        self.proto_badge.setText("Desconectado")
+        self.proto_badge.setProperty("fallback", "false")
+        self.proto_badge.style().unpolish(self.proto_badge)
+        self.proto_badge.style().polish(self.proto_badge)
         self._set_dtc_enabled(False)
         self.rate_lbl.setText("0.0 resp/s | 0.0 ciclos/s")
 
     def _on_status(self, state: str, msg: str):
-        color = {"connected": "#69f0ae", "connecting": "#ffc107", "error": "#ff5252"}.get(state, "#9aa4b2")
+        color = {"connected": "#69f0ae", "connecting": "#ffc107", "error": "#ff5252", "warning": "#ff9100"}.get(state, "#9aa4b2")
         self.status_lbl.setStyleSheet(f"color:{color}; font-weight:bold;")
         self.status_lbl.setText(msg)
         self._set_dtc_enabled(state == "connected")
+
+    def _on_protocol_mode_changed(self, mode_name: str, is_fallback: bool):
+        self.proto_badge.setText(mode_name)
+        self.proto_badge.setProperty("fallback", "true" if is_fallback else "false")
+        self.proto_badge.style().unpolish(self.proto_badge)
+        self.proto_badge.style().polish(self.proto_badge)
+        self.btn_reconnect_vag.setEnabled(is_fallback or self.vehicle_cb.currentIndex() == 0)
+
+    def _force_reconnect_vag(self):
+        if self.worker:
+            self.statusBar().showMessage("Forçando reconexão ao protocolo VAG KWP2000 Nativo...", 8000)
+            self.worker.request("force_vag_kwp")
+
+    def _bg_scan_toggled(self, checked: bool):
+        if self.worker:
+            self.worker.background_scan_enabled = checked
+
+    def _clear_all_peaks(self):
+        for card in self.cards.values():
+            card.reset_peaks()
+        self.statusBar().showMessage("Picos (Mínimo/Máximo) de todos os cards foram redefinidos.", 4000)
 
     def _on_info(self, msg: str):
         self.statusBar().showMessage(msg, 10000)
@@ -878,6 +952,7 @@ class MainWindow(QMainWindow):
     def _apply_worker_flags(self):
         if self.worker:
             self.worker.read_extras = self.extras_chk.isChecked()
+            self.worker.background_scan_enabled = self.bg_scan_chk.isChecked()
             self.worker.fast_reply = self.fast_chk.isChecked()
             self.worker.raw_log = self.raw_chk.isChecked()
             idx = self.cadence_cb.currentIndex()
@@ -898,6 +973,8 @@ class MainWindow(QMainWindow):
             buf = self.buffers.get(k)
             if buf is not None:
                 buf.append(t, v)
+        if "rpm" in self.latest and "map" in self.latest:
+            self.map2d.add_sample(self.latest["rpm"], self.latest["map"], self.latest)
         events = self.detector.update(t, self.latest, self.stamp)
         ev_text = " | ".join(e.message for e in events)
         if self.logger.active:
@@ -924,11 +1001,16 @@ class MainWindow(QMainWindow):
             c.setData([], [])
         for _, lines in self.markers:
             for p, ln in zip((self.p1, self.p2, self.p3), lines):
-                p.pi.removeItem(ln)
+                try:
+                    p.pi.removeItem(ln)
+                except Exception:
+                    pass
         self.markers.clear()
 
     # ============================================================ render 30 FPS
     def _render(self):
+        if self._replay_mode:
+            return
         self.frame += 1
         now = time.monotonic() - self.t0
         if not self.freeze_btn.isChecked():
@@ -1108,20 +1190,41 @@ class MainWindow(QMainWindow):
                 self.rec_btn.blockSignals(False)
                 return
             try:
-                extra_headers = {}
-                for k in self.latest:
+                extra_headers: Dict[str, str] = {}
+                # 1. Pré-registra canais dinâmicos do Modo 01 (SAE J1979)
+                for k, (label, unit) in DYNAMIC_INFO.items():
                     if k not in CHANNELS:
-                        if k in self.dyn_info:
-                            label, unit = self.dyn_info[k]
+                        extra_headers[k] = f"{label} [{unit}]" if unit else label
+
+                # 2. Pré-registra todos os canais do Ford HS-CAN / UDS
+                for k, (label, unit) in FORD_CHANNELS_INFO.items():
+                    if k not in CHANNELS and k not in extra_headers:
+                        extra_headers[k] = f"{label} [{unit}]" if unit else label
+
+                # 3. Pré-registra blocos VAG KWP2000 do cache JSON da ME7.5.30
+                try:
+                    ecu_id = getattr(self.worker.strategy, "ecu_id", "") if self.worker else ""
+                    cached = vag.load_cache(ecu_id or "032906032AJ")
+                    for k, (label, unit) in cached.get("cells", {}).items():
+                        if k not in CHANNELS and k not in extra_headers:
                             extra_headers[k] = f"{label} [{unit}]" if unit else label
-                        elif k in DYNAMIC_INFO:
-                            label, unit = DYNAMIC_INFO[k]
+                except Exception:
+                    pass
+
+                # 4. Metadados da estratégia ativa e canais conhecidos
+                if self.worker and hasattr(self.worker, "strategy"):
+                    for k, (label, unit) in self.worker.strategy.get_channels_info().items():
+                        if k not in CHANNELS and k not in extra_headers:
                             extra_headers[k] = f"{label} [{unit}]" if unit else label
-                        else:
-                            extra_headers[k] = k
+
                 for k, (label, unit) in self.dyn_info.items():
                     if k not in CHANNELS and k not in extra_headers:
                         extra_headers[k] = f"{label} [{unit}]" if unit else label
+
+                for k in self.latest:
+                    if k not in CHANNELS and k not in extra_headers:
+                        extra_headers[k] = k
+
                 self.logger.start(path, extra=extra_headers)
             except OSError as e:
                 QMessageBox.critical(self, "Log", f"Não foi possível criar o arquivo:\n{e}")
@@ -1134,6 +1237,204 @@ class MainWindow(QMainWindow):
                 self.logger.stop()
                 self.statusBar().showMessage(f"Log salvo: {path} ({rows} linhas)", 10000)
             self.rec_btn.setText("⏺ Gravar Log")
+
+    # ============================================================ Replay & Análise CSV
+    def _exit_replay_mode(self):
+        self._replay_mode = False
+        self.p1.set_replay_mode(False)
+        self.p2.set_replay_mode(False)
+        self.p3.set_replay_mode(False)
+        self.crosshair_p1.setVisible(False)
+        self.crosshair_p2.setVisible(False)
+        self.crosshair_p3.setVisible(False)
+        self.p1.clear_markers()
+        self.p2.clear_markers()
+        self.p3.clear_markers()
+        self._clear_plots()
+
+    def _open_csv_replay(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Abrir Log CSV para Replay e Análise", "logs", "CSV (*.csv)")
+        if not path:
+            return
+        self._load_csv_file(path)
+
+    def _load_csv_file(self, path: str):
+        if self.connect_btn.isChecked():
+            self.connect_btn.setChecked(False)
+            self._toggle_connect(False)
+
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                first_lines = [f.readline() for _ in range(5)]
+                if not first_lines:
+                    return
+                delim = ";" if ";" in first_lines[0] else ","
+                f.seek(0)
+                reader = csv.reader(f, delimiter=delim)
+                header = next(reader)
+                rows = list(reader)
+        except Exception as e:
+            QMessageBox.critical(self, "Erro ao abrir CSV", f"Falha ao ler arquivo CSV:\n{e}")
+            return
+
+        if not rows:
+            QMessageBox.warning(self, "CSV Vazio", "O arquivo selecionado não contém dados de telemetria.")
+            return
+
+        h_norm = [c.strip().lower() for c in header]
+        t_col = -1
+        for cand in ("tempo_s", "t_s", "time_s", "timestamp_s"):
+            if cand in h_norm:
+                t_col = h_norm.index(cand)
+                break
+        if t_col == -1 and len(h_norm) > 1:
+            t_col = 1
+
+        col_keys = {}
+        for idx, col in enumerate(h_norm):
+            clean_k = col.split("[")[0].split("(")[0].strip()
+            if clean_k in CHANNELS:
+                col_keys[idx] = clean_k
+            elif "rpm" in clean_k:
+                col_keys[idx] = "rpm"
+            elif "map" in clean_k:
+                col_keys[idx] = "map"
+            elif "avanço" in clean_k or "adv" in clean_k:
+                col_keys[idx] = "advance"
+            elif "tps" in clean_k or "borboleta" in clean_k:
+                col_keys[idx] = "tps"
+            elif "sonda 1" in clean_k or clean_k == "lambda_v":
+                col_keys[idx] = "lambda_v"
+            elif "sonda 2" in clean_k or clean_k == "lambda2_v":
+                col_keys[idx] = "lambda2_v"
+            elif "stft" in clean_k:
+                col_keys[idx] = "stft"
+            elif "ltft" in clean_k:
+                col_keys[idx] = "ltft"
+            elif "ect" in clean_k:
+                col_keys[idx] = "ect"
+            elif "iat" in clean_k:
+                col_keys[idx] = "iat"
+            elif "carga" in clean_k or "load" in clean_k:
+                col_keys[idx] = "load"
+            elif "velocidade" in clean_k or "speed" in clean_k:
+                col_keys[idx] = "speed"
+            elif "bateria" in clean_k or "battery" in clean_k:
+                col_keys[idx] = "battery"
+            else:
+                col_keys[idx] = clean_k
+
+        self._clear_plots()
+        self.map2d.clear_data()
+        self._clear_all_peaks()
+        self.detector.reset()
+
+        self._replay_times.clear()
+        self._replay_records.clear()
+
+        self._replay_mode = True
+        self.p1.set_replay_mode(True)
+        self.p2.set_replay_mode(True)
+        self.p3.set_replay_mode(True)
+        self.crosshair_p1.setVisible(True)
+        self.crosshair_p2.setVisible(True)
+        self.crosshair_p3.setVisible(True)
+
+        t_data: Dict[str, List[float]] = {k: [] for k in PLOTTED}
+        v_data: Dict[str, List[float]] = {k: [] for k in PLOTTED}
+
+        for row in rows:
+            if not row or len(row) <= t_col:
+                continue
+            try:
+                t_str = row[t_col].replace(",", ".")
+                t_val = float(t_str)
+            except ValueError:
+                continue
+
+            record = {}
+            for col_idx, key in col_keys.items():
+                if col_idx < len(row):
+                    cell = row[col_idx].strip().replace(",", ".")
+                    if cell:
+                        try:
+                            record[key] = float(cell)
+                        except ValueError:
+                            pass
+
+            self._replay_times.append(t_val)
+            self._replay_records.append(record)
+
+            for k in PLOTTED:
+                if k in record:
+                    t_data[k].append(t_val)
+                    v_data[k].append(record[k])
+
+            events = self.detector.update(t_val, record, {k: t_val for k in record})
+            for e in events:
+                self._add_event(e)
+                if e.level == "alarm":
+                    self.p1.add_marker(e.t, "#ff1744", label="Falha")
+                    self.p2.add_marker(e.t, "#ff1744", label="Falha")
+                    self.p3.add_marker(e.t, "#ff1744")
+
+            if "rpm" in record and "map" in record:
+                self.map2d.add_sample(record["rpm"], record["map"], record)
+
+        for k in PLOTTED:
+            if t_data[k]:
+                self.curves[k].setData(t_data[k], v_data[k])
+
+        max_t = self._replay_times[-1] if self._replay_times else 30.0
+        self.p1.pi.setXRange(0, max_t, padding=0.01)
+        self.p2.pi.setXRange(0, max_t, padding=0.01)
+        self.p3.pi.setXRange(0, max_t, padding=0.01)
+
+        filename = os.path.basename(path)
+        self.statusBar().showMessage(f"Replay CSV: {filename} carregado ({len(self._replay_records)} amostras, 0 a {max_t:.1f}s). Arraste o mouse sobre os gráficos para inspecionar.", 15000)
+        self.status_lbl.setText(f"Modo Replay: {filename}")
+        self.status_lbl.setStyleSheet("color: #40c4ff; font-weight: bold;")
+        self.tabs.setCurrentWidget(self.map2d)
+
+        if self._replay_records:
+            self._update_replay_cards(self._replay_times[0])
+
+    def _on_plot_mouse_moved(self, pos):
+        if not self._replay_mode or not self._replay_times:
+            return
+        mouse_point = self.p1.pi.vb.mapSceneToView(pos)
+        t_cur = mouse_point.x()
+        self.crosshair_p1.setPos(t_cur)
+        self.crosshair_p2.setPos(t_cur)
+        self.crosshair_p3.setPos(t_cur)
+        self._update_replay_cards(t_cur)
+
+    def _update_replay_cards(self, t_cur: float):
+        if not self._replay_times:
+            return
+        idx = bisect_left(self._replay_times, t_cur)
+        if idx >= len(self._replay_records):
+            idx = len(self._replay_records) - 1
+        elif idx > 0 and abs(self._replay_times[idx - 1] - t_cur) < abs(self._replay_times[idx] - t_cur):
+            idx = idx - 1
+
+        rec = self._replay_records[idx]
+        actual_t = self._replay_times[idx]
+
+        for k, card in self.cards.items():
+            if k in rec:
+                card.set_value(rec[k])
+                card.set_state("normal")
+            else:
+                card.set_state("stale")
+
+        if "rpm" in rec and "map" in rec:
+            cur_key = self.map2d.metrics[self.map2d.cur_metric_idx][1]
+            cur_fmt = self.map2d.metrics[self.map2d.cur_metric_idx][2]
+            v_str = cur_fmt.format(rec[cur_key]) if cur_key in rec else "--"
+            self.map2d.active_info.setText(f"Ponto: {rec['rpm']:.0f} RPM × {rec['map']:.0f} kPa | Valor: {v_str} (t={actual_t:.2f}s)")
+
+        self.statusBar().showMessage(f"Replay CSV: t = {actual_t:.2f} s | Registro {idx + 1}/{len(self._replay_records)}")
 
     # ============================================================ DTC e Diagnóstico
     def _set_dtc_enabled(self, on: bool):

@@ -41,6 +41,7 @@ class ObdWorker(QThread):
     dtc_result = pyqtSignal(list, object)          # compatibilidade legada: [(código, desc)], (mil, count)
     info = pyqtSignal(str)                         # notificações humanas na status bar
     channels = pyqtSignal(dict)                    # canais conhecidos {chave: (rótulo, unidade)}
+    protocol_mode_changed = pyqtSignal(str, bool)  # (modo_descritivo, is_fallback)
 
     MAX_CONSEC_ERRORS = 12
 
@@ -55,6 +56,7 @@ class ObdWorker(QThread):
 
         self._running = True
         self.decel_mode = False
+        self.background_scan_enabled = False
         self.read_extras = True
         self.fast_reply = False
         self.raw_log = False
@@ -125,11 +127,21 @@ class ObdWorker(QThread):
         if not ok:
             # Fallback automático para OBD2 Genérico se a estratégia específica falhar
             if self.vehicle_profile != PROFILE_GENERIC:
-                self.log.emit("Handshake específico falhou. Tentando protocolo OBD2 Genérico...")
+                self.log.emit("⚠️ Handshake específico falhou! Acionando Fallback ISO 9141-2 / OBD2 Genérico...")
                 self.strategy = get_vehicle_strategy(PROFILE_GENERIC)
                 ok = self.strategy.initialize(self.elm, self)
+                if ok:
+                    self.protocol_mode_changed.emit("Fallback ISO 9141-2 (Modo 01 Assíncrono)", True)
+                    self.status.emit("warning", "Fallback ISO 9141-2 (Modo 01 Assíncrono) — VAG KWP2000 falhou")
             if not ok:
                 raise TransportError("ECU não respondeu ao handshake inicial. Ligue a ignição.")
+        else:
+            if self.strategy.profile_id == PROFILE_VW_GOL:
+                self.protocol_mode_changed.emit("VAG KWP2000 Nativo (Bloco 003 Síncrono)", False)
+            elif self.strategy.profile_id == PROFILE_FORD_KA:
+                self.protocol_mode_changed.emit("Ford HS-CAN 500k (PCM + BCM + ABS)", False)
+            else:
+                self.protocol_mode_changed.emit(self.strategy.display_name, False)
 
         # Emite metadados de canais iniciais da estratégia
         info_channels = self.strategy.get_channels_info()
@@ -192,6 +204,11 @@ class ObdWorker(QThread):
                 self.strategy.clear_dtcs(self.elm, self)
             elif cmd in ("scan_vag", "scan_ford", "scan_all"):
                 self.strategy.scan_all(self.elm, self)
+            elif cmd in ("reconnect_vag", "force_vag_kwp"):
+                self.log.emit("Forçando reconexão ao protocolo VAG KWP2000 Nativo...")
+                self.vehicle_profile = PROFILE_VW_GOL
+                self.strategy = get_vehicle_strategy(PROFILE_VW_GOL)
+                self._reinit_bus()
 
     def _reinit_bus(self) -> None:
         self.log.emit("Muitos erros consecutivos — reinicializando barramento...")

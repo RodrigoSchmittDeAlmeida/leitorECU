@@ -26,7 +26,7 @@ python main.py --demo   # já abre no modo simulador
 ```
 
 ## Testes Automatizados (pytest)
-Para rodar a suite completa de 28 testes unitários e de integração:
+Para rodar a suite completa de 39 testes unitários e de integração:
 ```powershell
 pytest tests/ -v
 ```
@@ -44,14 +44,17 @@ pytest tests/ -v
 ## Recursos
 | Recurso | Onde |
 |---|---|
-| Cards (RPM, MAP, Avanço, TPS, Sonda V, correção, STFT, LTFT, ECT + extras) | topo — amarelo/vermelho para trims > ±10/20%, sonda travada, ECT alta |
+| Cards (RPM, MAP, Avanço, TPS, Sonda V, correção, STFT, LTFT, ECT + extras) | topo — peak hold (mín/máx), amarelo/vermelho para anomalias, tooltip educativo |
+| ⚡ Limpar Picos | botão na barra de ferramentas para zerar os valores de pico dos 14 cards |
+| 🗺️ Mapa 2D (RPM × MAP) | aba dedicada com matriz térmica acumulada (Avanço, STFT, Sonda 1) para flagrar retardo (-19°) |
+| 📂 Replay & Análise CSV | botão para abrir logs gravados: gráficos completos, zoom livre e **Crosshair sincronizado** |
 | Gráficos sincronizados (últimos 30 s) | centro: Ar/Giro, Combustão/Mistura (ref. 0,45 V e 0,70 V), Correção |
 | ⚡ Prioridade de Desaceleração | lê só 010C/010B/010E/0111/0114 ou Bloco 003+033 (~1,6× a 2× mais amostras por sensor) |
 | Resposta rápida (sufixo 1) | envia `010C1`: o ELM não espera timeout — costuma dobrar a taxa no iCar Pro (modo OBD2) |
-| ⏺ Gravar Log | CSV `;` com vírgula decimal (abre direto no Excel pt-BR), timestamp em ms e todos os canais dinâmicos |
-| Aba "Todos os Canais" | visualização em tempo real de todas as células e blocos de medição lidos da central |
+| ⏺ Gravar Log | CSV `;` com vírgula decimal (abre direto no Excel pt-BR), timestamp em ms e todos os canais pré-registrados |
+| Aba "Todos os Canais" | visualização em tempo real de todas as células e blocos com busca/filtro instantâneo |
 | 🔎 Varredura de Blocos VAG | botão na aba Todos os Canais para varrer e catalogar todos os blocos suportados da ECU |
-| Detector de Cut-Off | aba Eventos + marcador vertical nos gráficos |
+| Detector de Anomalias | detecta falha de Cut-Off, vácuo baixo com borboleta fechada e retardo crítico ATDC (-19°) |
 | DTCs | aba Códigos de Falha: ler (03/Serviço 18), apagar (04/Serviço 14), status da luz de injeção |
 | Console ELM327 | aba Console (marque “Console bruto” para ver todos os TX/RX) |
 

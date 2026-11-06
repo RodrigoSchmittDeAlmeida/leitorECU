@@ -34,7 +34,12 @@ QFrame#card[state="warn"] { border-color: #ffc107; background: #3a3214; }
 QFrame#card[state="alarm"] { border-color: #ff1744; background: #3d1418; }
 QFrame#card[state="stale"] { border-color: #2c323b; background: #17191d; }
 QLabel#cardTitle { color: #9aa4b2; font-size: 8.5pt; font-weight: bold; background: transparent; }
-QLabel#cardValue { font-size: 15pt; font-weight: bold; background: transparent; }
+QLabel#cardValue { font-size: 15pt; font-weight: bold; background: transparent; font-family: 'Consolas', 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
 QLabel#cardUnit { color: #78909c; font-size: 8pt; margin-bottom: 2px; background: transparent; }
 QLabel#cardNote { color: #ffab40; font-size: 7.5pt; font-weight: bold; background: transparent; }
+QLabel#cardPeaks { color: #78909c; font-size: 7.5pt; background: transparent; font-family: 'Consolas', 'JetBrains Mono', monospace; }
+QLabel#protoBadge { padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 8pt; }
+QLabel#protoBadge[fallback="true"] { background: #e65100; color: #ffffff; }
+QLabel#protoBadge[fallback="false"] { background: #1b5e20; color: #a5d6a7; border: 1px solid #2e7d32; }
+
 """

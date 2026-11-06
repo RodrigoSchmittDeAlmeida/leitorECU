@@ -139,20 +139,40 @@ def decode_cell(k: int, a: int, b: int) -> Optional[Tuple[float, str]]:
 
 
 def extract_block(resp, group: int) -> Optional[bytes]:
-    """Procura ``61 GG`` na resposta do ELM (sem headers) e devolve TODAS as células completas."""
-    joined = "".join(resp.data_lines()).replace(" ", "").upper()
+    """Procura ``61 GG`` na resposta do ELM e devolve TODAS as células completas,
+    removendo prefixos de frame (ex: 0:, 1:) e repetições de cabeçalho 61 GG em multi-frame KWP2000."""
     header = f"61{group:02X}"
-    idx = joined.find(header)
-    while idx != -1 and idx % 2:
-        idx = joined.find(header, idx + 1)
-    if idx == -1:
+    dlines = resp.data_lines()
+    payload_hex = ""
+    found = False
+
+    for raw_line in dlines:
+        line_clean = raw_line.replace(" ", "").upper()
+        # Remove eventuais prefixos de linha/frame como "0:", "1:", "01:"
+        line_clean = re.sub(r"^[0-9A-F]{1,2}:", "", line_clean)
+        if not found:
+            idx = line_clean.find(header)
+            while idx != -1 and idx % 2:
+                idx = line_clean.find(header, idx + 1)
+            if idx != -1:
+                found = True
+                payload_hex += line_clean[idx + 4:]
+        else:
+            # Em multi-frame KWP2000, linhas subsequentes podem repetir o cabeçalho 61 GG
+            if line_clean.startswith(header):
+                payload_hex += line_clean[len(header):]
+            else:
+                payload_hex += line_clean
+
+    if not found or not payload_hex:
         return None
-    hexdata = joined[idx + 4:]
-    n = (len(hexdata) // 6) * 6
+
+    # Cada célula VAG tem exatamente 3 bytes = 6 dígitos hexadecimais
+    n = (len(payload_hex) // 6) * 6
     if n == 0:
         return None
     try:
-        return bytes.fromhex(hexdata[:n])
+        return bytes.fromhex(payload_hex[:n])
     except ValueError:
         return None
 

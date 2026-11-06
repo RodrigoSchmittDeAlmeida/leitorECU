@@ -8,7 +8,7 @@ from typing import Callable, List, Optional
 
 from .transports import Transport, TransportError
 
-_HEX_LINE = re.compile(r"^[0-9A-Fa-f ]+$")
+_HEX_LINE = re.compile(r"^(?:[0-9A-Fa-f]{1,2}:)?[0-9A-Fa-f ]+$")
 
 # Sequência de handshake para Bosch ME7.5.30 (K-Line, KWP2000 VAG / ISO 9141-2)
 INIT_SEQUENCE = [
@@ -34,7 +34,13 @@ class ElmResponse:
         return self.error is None
 
     def data_lines(self) -> List[str]:
-        return [l.replace(" ", "").upper() for l in self.lines if _HEX_LINE.match(l)]
+        cleaned: List[str] = []
+        for l in self.lines:
+            s = l.strip()
+            if _HEX_LINE.match(s):
+                s = re.sub(r"^[0-9A-Fa-f]{1,2}:\s*", "", s)
+                cleaned.append(s.replace(" ", "").upper())
+        return cleaned
 
 
 def classify(lines: List[str], prompt: bool) -> Optional[str]:
