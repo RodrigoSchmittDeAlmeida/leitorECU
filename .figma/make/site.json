@@ -1,0 +1,10 @@
+{
+  "description": "Automates project initialization and deployment verification for Figma-based applications. Streamlines bootstrap setup, validates deployment configurations, and manages preview environments while flagging critical issues to users.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

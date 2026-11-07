@@ -1,17 +1,16 @@
 """Aba de Mapa 2D de Calibração e Diagnóstico (RPM × MAP).
 
-Matriz interativa que acumula a média de Avanço (°), STFT (%), Sonda (V), Injeção (ms),
-Bateria (V) ou Etanol (%) em cada faixa de rotação e carga, com seleção direta por guias
-visíveis na tela (sem setas de rolagem) e ajuste integral dentro do container.
+Matriz interativa que acumula a média de Avanço (°), STFT (%) ou Sonda (V) em cada
+faixa de rotação e carga, permitindo visualizar com precisão buracos de retardo (-19°)
+ou desvios de malha de combustível tanto em tempo real quanto em replay de CSV.
 """
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
-from PyQt6.QtWidgets import (QButtonGroup, QComboBox, QHBoxLayout, QHeaderView, QLabel,
-                             QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem,
-                             QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QHeaderView, QLabel,
+                             QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 RPM_BINS = [700, 1000, 1400, 1800, 2200, 2600, 3000, 3500, 4000, 4500, 5000, 5500]
 MAP_BINS = [100, 90, 80, 70, 60, 50, 40, 30, 20]  # WOT (100) no topo, Vácuo máx (20) na base
@@ -32,6 +31,7 @@ def _find_bin(val: float, bins: List[float]) -> int:
 def _color_for_value(metric: str, v: float) -> Tuple[QColor, QColor]:
     """Retorna (QColor fundo, QColor texto) em gradiente térmico."""
     if metric == "advance":
+        # Avanço de Ignição
         if v < -8.0:
             return QColor("#880e4f"), QColor("#ffffff")  # Retardo extremo (-19°), alerta roxo/magenta
         elif v < -0.5:
@@ -46,6 +46,7 @@ def _color_for_value(metric: str, v: float) -> Tuple[QColor, QColor]:
             return QColor("#00695c"), QColor("#ffffff")  # Alto avanço (azul esverdeado)
 
     elif metric == "stft":
+        # Short Term Fuel Trim (%)
         if v < -10.0:
             return QColor("#0d47a1"), QColor("#ffffff")  # Mistura muito rica sendo corrigida (azul)
         elif v < -3.0:
@@ -57,35 +58,7 @@ def _color_for_value(metric: str, v: float) -> Tuple[QColor, QColor]:
         else:
             return QColor("#b71c1c"), QColor("#ffffff")  # Mistura pobre extrema (+15%..+25%) (vermelho)
 
-    elif metric == "battery":
-        if v < 12.0:
-            return QColor("#b71c1c"), QColor("#ffffff")  # Queda severa (< 12.0 V)
-        elif v < 13.2:
-            return QColor("#f57f17"), QColor("#15181d")  # Alternador baixo / sem carga
-        elif v <= 14.6:
-            return QColor("#1b5e20"), QColor("#ffffff")  # Carga ideal (13.2 - 14.6 V)
-        else:
-            return QColor("#880e4f"), QColor("#ffffff")  # Sobretensão (> 14.6 V)
-
-    elif metric == "inj_ms":
-        if v < 1.5:
-            return QColor("#0d47a1"), QColor("#ffffff")  # Cut-off / pulso mínimo
-        elif v < 4.5:
-            return QColor("#1b5e20"), QColor("#ffffff")  # Lenta / cruzeiro leve
-        elif v < 9.0:
-            return QColor("#f57f17"), QColor("#15181d")  # Carga média
-        else:
-            return QColor("#b71c1c"), QColor("#ffffff")  # Plena carga / enriquecimento
-
-    elif metric == "flex_ethanol_pct":
-        if v < 30.0:
-            return QColor("#e65100"), QColor("#ffffff")  # Gasolina E27
-        elif v < 70.0:
-            return QColor("#f57f17"), QColor("#15181d")  # Mistura Flex intermediária
-        else:
-            return QColor("#1b5e20"), QColor("#ffffff")  # Etanol E100
-
-    else:
+    elif metric == "lambda_v":
         # Sonda Lambda (V)
         if v < 0.20:
             return QColor("#0d47a1"), QColor("#ffffff")  # Pobre / Cut-off (< 0.2 V)
@@ -95,14 +68,27 @@ def _color_for_value(metric: str, v: float) -> Tuple[QColor, QColor]:
             return QColor("#2e7d32"), QColor("#ffffff")  # Janela estequiométrica
         else:
             return QColor("#c62828"), QColor("#ffffff")  # Rica (> 0.7 V)
+    elif metric == "battery":
+        if v < 12.0 or v > 15.0:
+            return QColor("#7B1836"), QColor("#ffffff")
+        if v < 13.2:
+            return QColor("#8A6515"), QColor("#ffffff")
+        return QColor("#14603A"), QColor("#ffffff")
+    elif metric == "flex_ethanol_pct":
+        if v < 30.0:
+            return QColor("#174E78"), QColor("#ffffff")
+        if v < 70.0:
+            return QColor("#14603A"), QColor("#ffffff")
+        return QColor("#8A6515"), QColor("#ffffff")
+    else:
+        return QColor("#1D232D"), QColor("#8B98AB")
 
 
 class Map2DWidget(QWidget):
-    """Grid bidimensional RPM × MAP com guias diretas de parâmetros e ajuste fixo sem scroll."""
+    """Grid bidimensional RPM × MAP com células térmicas acumuladas."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.metrics = [
             ("Avanço (°)", "advance", "{:.1f}°"),
             ("STFT (%)", "stft", "{:+.1f}%"),
@@ -115,82 +101,54 @@ class Map2DWidget(QWidget):
         self._counts: Dict[str, Dict[Tuple[int, int], int]] = {m[1]: {} for m in self.metrics}
         self._sums: Dict[str, Dict[Tuple[int, int], float]] = {m[1]: {} for m in self.metrics}
         self._last_active_cell: Optional[Tuple[int, int]] = None
-        self.metric_buttons: List[QPushButton] = []
 
         self._build_ui()
 
     def _build_ui(self):
         vlay = QVBoxLayout(self)
-        vlay.setContentsMargins(3, 3, 3, 3)
-        vlay.setSpacing(3)
+        vlay.setContentsMargins(4, 4, 4, 4)
+        vlay.setSpacing(4)
 
-        # Linha 1: Guias visíveis lado a lado para todos os parâmetros do Mapa 2D (sem setas/dropdown)
-        guides_bar = QHBoxLayout()
-        guides_bar.setContentsMargins(0, 0, 0, 0)
-        guides_bar.setSpacing(3)
+        # Barra de ferramentas superior
+        top_bar = QHBoxLayout()
+        top_bar.setContentsMargins(0, 0, 0, 0)
 
-        self.btn_group = QButtonGroup(self)
-        self.btn_group.setExclusive(True)
+        lbl = QLabel("MÉTRICA")
+        lbl.setStyleSheet("font-weight: bold; color: #cfd8dc;")
+        top_bar.addWidget(lbl)
 
-        # Mantém cb_metric oculto e sincronizado para compatibilidade com testes/chamadores externos
-        self.cb_metric = QComboBox(self)
-        self.cb_metric.setVisible(False)
-
-        for idx, (label, _, _) in enumerate(self.metrics):
+        self.cb_metric = QComboBox()
+        for label, _, _ in self.metrics:
             self.cb_metric.addItem(label)
-            btn = QPushButton(label)
-            btn.setCheckable(True)
-            btn.setObjectName("mapGuideBtn")
-            btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-            btn.setFixedHeight(24)
-            if idx == 0:
-                btn.setChecked(True)
-            self.btn_group.addButton(btn, idx)
-            guides_bar.addWidget(btn)
-            self.metric_buttons.append(btn)
-
-        self.btn_group.idClicked.connect(self._on_guide_clicked)
         self.cb_metric.currentIndexChanged.connect(self._on_metric_changed)
-        vlay.addLayout(guides_bar)
-
-        # Linha 2: Ponto de operação atual + botão limpar
-        info_bar = QHBoxLayout()
-        info_bar.setContentsMargins(0, 0, 0, 0)
-        info_bar.setSpacing(6)
+        top_bar.addWidget(self.cb_metric)
 
         self.active_info = QLabel("Ponto de Operação: --")
-        self.active_info.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        self.active_info.setFixedHeight(22)
-        self.active_info.setStyleSheet("color: #ffd54f; font-weight: bold; font-size: 8.5pt;")
-        info_bar.addWidget(self.active_info, 1)
+        self.active_info.setStyleSheet("color: #ffd54f; font-weight: bold; margin-left: 12px;")
+        top_bar.addWidget(self.active_info)
 
-        self.btn_clear = QPushButton("Limpar Matriz")
-        self.btn_clear.setFixedHeight(22)
+        top_bar.addStretch()
+
+        self.btn_clear = QPushButton("Limpar matriz")
         self.btn_clear.clicked.connect(self.clear_data)
-        info_bar.addWidget(self.btn_clear)
-        vlay.addLayout(info_bar)
+        top_bar.addWidget(self.btn_clear)
 
-        # Grade QTableWidget 100% ajustada sem barras de rolagem
+        vlay.addLayout(top_bar)
+
+        # Grade QTableWidget
         self.table = QTableWidget(len(MAP_BINS), len(RPM_BINS))
-        self.table.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
-        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.table.setHorizontalHeaderLabels([f"{r}" for r in RPM_BINS])
+        self.table.setHorizontalHeaderLabels([str(r) for r in RPM_BINS])
         self.table.setVerticalHeaderLabels([f"{m} kPa" for m in MAP_BINS])
 
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        hh.setMinimumSectionSize(24)
-        hh.setFixedHeight(22)
         vh = self.table.verticalHeader()
         vh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        vh.setMinimumSectionSize(18)
-        vh.setFixedWidth(48)
 
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
+        # Inicializa células vazias
         for r in range(len(MAP_BINS)):
             for c in range(len(RPM_BINS)):
                 item = QTableWidgetItem("--")
@@ -201,20 +159,23 @@ class Map2DWidget(QWidget):
 
         vlay.addWidget(self.table, 1)
 
-    def _on_guide_clicked(self, idx: int):
-        if 0 <= idx < len(self.metrics):
-            self.cur_metric_idx = idx
-            self.cb_metric.blockSignals(True)
-            self.cb_metric.setCurrentIndex(idx)
-            self.cb_metric.blockSignals(False)
-            self._refresh_all_cells()
+        legend = QHBoxLayout()
+        legend.setSpacing(0)
+        for text, color in (
+            ("−20° RETARDO", "#6A174B"), ("−8°", "#9A1F45"), ("0°", "#C24A22"),
+            ("+10°", "#B88216"), ("+22° ALVO", "#17663E"), ("+45° AVANÇO", "#08716B"),
+        ):
+            swatch = QLabel(text)
+            swatch.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            swatch.setStyleSheet(
+                f"background:{color}; color:#F5F7FA; padding:3px; font-size:7pt; font-weight:bold;"
+            )
+            legend.addWidget(swatch, 1)
+        vlay.addLayout(legend)
 
     def _on_metric_changed(self, idx: int):
-        if 0 <= idx < len(self.metrics):
-            self.cur_metric_idx = idx
-            if idx < len(self.metric_buttons):
-                self.metric_buttons[idx].setChecked(True)
-            self._refresh_all_cells()
+        self.cur_metric_idx = idx
+        self._refresh_all_cells()
 
     def clear_data(self):
         for m in self.metrics:
@@ -242,7 +203,7 @@ class Map2DWidget(QWidget):
 
         cur_key = self.metrics[self.cur_metric_idx][1]
         cur_fmt = self.metrics[self.cur_metric_idx][2]
-        val_str = cur_fmt.format(latest[cur_key]) if cur_key in latest and latest[cur_key] is not None else "--"
+        val_str = cur_fmt.format(latest[cur_key]) if cur_key in latest else "--"
         self.active_info.setText(f"Ponto: {rpm:.0f} RPM × {map_kpa:.0f} kPa | Atual: {val_str}")
 
         self._update_cell(r, c)
@@ -265,7 +226,7 @@ class Map2DWidget(QWidget):
             item.setText(cur_fmt.format(avg))
             item.setForeground(fg)
             item.setBackground(bg)
-            font = QFont("Consolas", 7, QFont.Weight.Bold)
+            font = QFont("Consolas", 8, QFont.Weight.Bold)
             item.setFont(font)
         else:
             item.setText("--")

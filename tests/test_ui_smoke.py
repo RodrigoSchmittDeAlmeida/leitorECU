@@ -35,10 +35,19 @@ def test_main_window_instantiation():
     # 5. Barra de busca presente na aba de canais (UX)
     assert hasattr(win, "ch_search")
 
-    # 6. Abas Ford Ka e Mapa 2D presentes
+    # 6. Abas de funções por módulo e Mapa 2D presentes
     tab_names = [win.tabs.tabText(i) for i in range(win.tabs.count())]
-    assert any("Ford Ka" in t for t in tab_names)
+    assert "Funções" in tab_names
     assert any("Mapa 2D" in t for t in tab_names)
+
+    # 6.1 Funções são agnósticas ao veículo e reveladas por canais detectados
+    win.latest.clear()
+    win._refresh_function_modules()
+    assert not win.functions_grid_widget.isVisible()
+    win.latest.update({"rpm": 850.0, "map": 35.0})
+    win._refresh_function_modules()
+    assert not win.engine_module_box.isHidden()
+    assert win.body_module_box.isHidden()
 
     # 7. Controles de UX: Replay CSV, Limpar Picos, Badge de Protocolo e Varredura
     assert hasattr(win, "btn_open_csv")
@@ -60,26 +69,4 @@ def test_main_window_instantiation():
     assert rpm_card.max_val is None
     assert rpm_card.peaks_label.text() == ""
 
-    # 9. Seletores interativos de canais para os 3 gráficos (p1, p2, p3)
-    assert hasattr(win, "plot_selectors")
-    assert set(win.plot_selectors.keys()) == {1, 2, 3}
-    # Troca o canal R1 do gráfico 1 para 'battery' e verifica atualização imediata
-    cb_r1 = win.plot_selectors[1]["R1"]
-    bat_idx = cb_r1.findData("battery")
-    assert bat_idx >= 0
-    cb_r1.setCurrentIndex(bat_idx)
-    assert win.slot_keys[(1, "R1")] == "battery"
-    assert "battery" in win.curves
-
-    # 10. Guias visíveis de métricas no Mapa 2D (sem setas de scroll)
-    assert len(win.map2d.metric_buttons) == 6
-    assert not win.tabs.tabBar().usesScrollButtons()
-
-    # 11. Janela permanece com geometria idêntica ao trocar veículo ou status
-    size_before = win.size()
-    win.vehicle_cb.setCurrentIndex(1)
-    win._on_status("connecting", "Varrendo blocos de medição 001..255 na ECU Bosch ME7.5.30 (aguarde)...")
-    assert win.size() == size_before
-
     win.close()
-

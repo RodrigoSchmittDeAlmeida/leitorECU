@@ -1,0 +1,3 @@
+# Auto-generated during Figma make bootstrap because this project shipped no mise config.
+[tools]
+python = "3.14"
