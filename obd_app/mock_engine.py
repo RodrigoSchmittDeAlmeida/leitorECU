@@ -100,7 +100,7 @@ class MockEngine:
         if not self.protocol_ready:
             self.protocol_ready = True
             return "SEARCHING...\rBUS INIT: ...OK\r" + self._obd(cmd_clean), 0.1
-        if random.random() < 0.005:
+        if getattr(self, "enable_random_drops", False) and random.random() < 0.005:
             return "NO DATA", kline
         return self._obd(cmd_clean), 0.02
 

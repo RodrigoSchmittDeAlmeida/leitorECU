@@ -7,7 +7,9 @@ from ..interfaces import IVehicleStrategy
 from .base import BaseVehicleStrategy
 from .ford import FordHsCanStrategy
 from .generic import GenericObdStrategy
+from .kw1281 import Kw1281Strategy, PROFILE_KW1281
 from .vag import VagKwpStrategy
+from .autodiscovery import UniversalAutoDiscovery
 
 PROFILE_VW_GOL = "vw_gol_me75"
 PROFILE_FORD_KA = "ford_ka_2016_sigma"
@@ -17,6 +19,7 @@ VEHICLE_STRATEGIES: Dict[str, Type[BaseVehicleStrategy]] = {
     PROFILE_VW_GOL: VagKwpStrategy,
     PROFILE_FORD_KA: FordHsCanStrategy,
     PROFILE_GENERIC: GenericObdStrategy,
+    PROFILE_KW1281: Kw1281Strategy,
 }
 
 

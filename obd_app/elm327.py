@@ -33,6 +33,14 @@ class ElmResponse:
     def ok(self) -> bool:
         return self.error is None
 
+    def __contains__(self, item: str) -> bool:
+        if not isinstance(item, str):
+            return False
+        return item in self.raw or any(item in l for l in self.lines)
+
+    def __str__(self) -> str:
+        return self.raw
+
     def data_lines(self) -> List[str]:
         cleaned: List[str] = []
         for l in self.lines:
@@ -94,6 +102,10 @@ class ELM327:
         self.raw_log = False
         self.version = ""
         self.fast_reply = False  # sufixo '1' => ELM retorna após a 1ª resposta (mais rápido)
+
+    @property
+    def transport(self) -> Transport:
+        return self.t
 
     def command(self, cmd: str, timeout: float | None = None) -> ElmResponse:
         self.t.flush_input()

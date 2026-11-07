@@ -35,10 +35,15 @@ def test_main_window_instantiation():
     # 5. Barra de busca presente na aba de canais (UX)
     assert hasattr(win, "ch_search")
 
-    # 6. Abas de funções por módulo e Mapa 2D presentes
+    # 6. Abas de funções por módulo, Mapa 2D e Desempenho presentes
     tab_names = [win.tabs.tabText(i) for i in range(win.tabs.count())]
     assert "Funções" in tab_names
+    assert "Desempenho" in tab_names
     assert any("Mapa 2D" in t for t in tab_names)
+    assert hasattr(win, "btn_readiness")
+    assert hasattr(win, "btn_freeze_frame")
+    assert hasattr(win, "btn_export_report")
+    assert hasattr(win, "audio_alerts")
 
     # 6.1 Funções são agnósticas ao veículo e reveladas por canais detectados
     win.latest.clear()

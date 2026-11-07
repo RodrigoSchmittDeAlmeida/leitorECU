@@ -7,32 +7,34 @@ import os
 import time
 from bisect import bisect_left
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pyqtgraph as pg
 from PyQt6.QtCore import QSettings, Qt, QThread, QTimer
 from PyQt6.QtGui import QAction, QFont, QKeySequence, QShortcut
-from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
+from PyQt6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout,
                              QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
-                             QPushButton, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
+                             QPushButton, QScrollArea, QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget,
                              QVBoxLayout, QWidget)
 
 from .. import ford, vag
+from ..audio_alerts import AudioAlertManager
 from ..ble_scan import BleScanWorker
 from ..datalog import CsvLogger, SeriesBuffer
 from ..detector import DecelDetector, Event
 from ..ford import FORD_CHANNELS_INFO
 from ..pids import CHANNELS, DYNAMIC_INFO
-from ..transports import BleTransport, MockTransport, TcpTransport
-from ..worker import (PROFILE_FORD_KA, PROFILE_GENERIC, PROFILE_VW_GOL,
-                      VEHICLE_PROFILES, ObdWorker)
+from ..readiness import FreezeFrame, ReadinessReport
+from ..report_generator import export_report_to_pdf, generate_html_report
+from ..transports import BleTransport, KklSerialTransport, MockTransport, TcpTransport
+from ..worker import PROFILE_AUTO, ObdWorker
 from .map2d import Map2DWidget
 from .plots import WINDOW_S, DualAxisPlot
 from .style import COLORS, STYLE
 from .widgets import ValueCard
 
-MODE_BLE, MODE_WIFI, MODE_DEMO = 0, 1, 2
+MODE_BLE, MODE_WIFI, MODE_SERIAL, MODE_DEMO = 0, 1, 2, 3
 PLOTTED = ("rpm", "tps", "map", "lambda_v", "lambda2_v", "advance", "stft", "ltft", "battery")
 STALE_S = 3.0
 EVENT_COLORS = {"info": "#80d8ff", "warn": "#ffc107", "alarm": "#ff5252", "ok": "#69f0ae"}
@@ -41,7 +43,7 @@ EVENT_COLORS = {"info": "#80d8ff", "warn": "#ffc107", "alarm": "#ff5252", "ok": 
 class MainWindow(QMainWindow):
     def __init__(self, demo: bool = False):
         super().__init__()
-        self.setWindowTitle("Datalogger OBD2 — Bosch ME7.5.30 (VW Gol G5 1.6 Flex)")
+        self.setWindowTitle("leitorECU — Scanner & Datalogger Universal")
 
         # Ajuste adaptativo para caber 100% na tela 1920x1080 (mesmo com escala do Windows de 125% ou 150%)
         screen = QApplication.primaryScreen()
@@ -77,6 +79,14 @@ class MainWindow(QMainWindow):
         # canais fora de CHANNELS (blocos VAG gGGG_cN, PIDs extras): {chave: (descrição, unidade)}
         self.dyn_info: Dict[str, Tuple[str, str]] = {}
         self._ch_rows: Dict[str, int] = {}
+
+        self.audio_alerts = AudioAlertManager(shift_rpm=6000.0, max_ect_c=105.0)
+        self.last_readiness: Optional[ReadinessReport] = None
+        self.last_freeze_frame: Optional[FreezeFrame] = None
+        self.last_ecu_meta: Dict[str, Any] = {}
+        self.power_peak: float = 0.0
+        self.torque_peak: float = 0.0
+        self.last_battery_test: str = "Tensão estável dentro dos padrões operacionais"
 
         self._build_ui()
         self._load_settings()
@@ -257,6 +267,174 @@ class MainWindow(QMainWindow):
         self._refresh_function_modules()
         return tab
 
+    def _build_performance_tab(self) -> QWidget:
+        """Aba de cronômetro de aceleração (0-100, 402m), potência e viagem (Dragy style)."""
+        tab = QWidget()
+        lay = QVBoxLayout(tab)
+        lay.setContentsMargins(6, 6, 6, 6)
+        lay.setSpacing(6)
+
+        # Barra superior com status e botão de reset
+        top = QHBoxLayout()
+        self.perf_status_lbl = QLabel("Cronômetro Pronto — Aguardando largada (0 km/h)")
+        self.perf_status_lbl.setStyleSheet("color:#69F0AE; font-weight:bold; font-size:9pt;")
+        top.addWidget(self.perf_status_lbl)
+        top.addStretch()
+
+        self.btn_reset_perf = QPushButton("Zerar Cronômetro & Viagem")
+        self.btn_reset_perf.setToolTip("Reinicia as medições de 0-100, tempos de pista e integradores da viagem.")
+        self.btn_reset_perf.clicked.connect(self._reset_perf_and_trip)
+        top.addWidget(self.btn_reset_perf)
+        lay.addLayout(top)
+
+        grid = QGridLayout()
+        grid.setSpacing(6)
+
+        def make_box(title: str, labels: list[tuple[str, QLabel]]) -> QGroupBox:
+            box = QGroupBox(title)
+            bl = QGridLayout(box)
+            bl.setContentsMargins(6, 6, 6, 6)
+            bl.setSpacing(4)
+            for i, (name, val_lbl) in enumerate(labels):
+                lbl_name = QLabel(name)
+                lbl_name.setStyleSheet("color:#8B98AB; font-size:8pt;")
+                val_lbl.setStyleSheet("color:#E0E6ED; font-family:'Consolas','JetBrains Mono'; font-weight:bold; font-size:9pt;")
+                bl.addWidget(lbl_name, i, 0)
+                bl.addWidget(val_lbl, i, 1, Qt.AlignmentFlag.AlignRight)
+            return box
+
+        # 1. Arrancada e Aceleração (Dragy style)
+        self.lbl_p_0_60 = QLabel("-- s")
+        self.lbl_p_0_100 = QLabel("-- s")
+        self.lbl_p_80_120 = QLabel("-- s")
+        self.lbl_p_100_0 = QLabel("-- s")
+        self.lbl_p_201m = QLabel("-- s")
+        self.lbl_p_402m = QLabel("-- s")
+        self.lbl_p_g_max = QLabel("0.00 G")
+        self.lbl_p_v_max = QLabel("0.0 km/h")
+        accel_labels = [
+            ("0 a 60 km/h:", self.lbl_p_0_60),
+            ("0 a 100 km/h:", self.lbl_p_0_100),
+            ("80 a 120 km/h (Retomada):", self.lbl_p_80_120),
+            ("100 a 0 km/h (Frenagem):", self.lbl_p_100_0),
+            ("201m (1/8 milha):", self.lbl_p_201m),
+            ("402m (1/4 milha):", self.lbl_p_402m),
+            ("Aceleração Máx (G):", self.lbl_p_g_max),
+            ("Velocidade Máxima:", self.lbl_p_v_max),
+        ]
+        grid.addWidget(make_box("Cronômetro de Desempenho & Aceleração", accel_labels), 0, 0)
+
+        # 2. Dinamômetro & Potência Instantânea
+        self.lbl_p_power = QLabel("-- cv")
+        self.lbl_p_power_peak = QLabel("-- cv")
+        self.lbl_p_torque = QLabel("-- kgfm")
+        self.lbl_p_torque_peak = QLabel("-- kgfm")
+        self.lbl_p_lambda_err = QLabel("-- %")
+        self.lbl_p_ve = QLabel("-- %")
+        dyno_labels = [
+            ("Potência Instantânea:", self.lbl_p_power),
+            ("Pico de Potência:", self.lbl_p_power_peak),
+            ("Torque Instantâneo:", self.lbl_p_torque),
+            ("Pico de Torque:", self.lbl_p_torque_peak),
+            ("Desvio de Mistura (Lambda):", self.lbl_p_lambda_err),
+            ("Eficiência Volumétrica (VE):", self.lbl_p_ve),
+        ]
+        grid.addWidget(make_box("Estimador de Potência & Dinamômetro", dyno_labels), 0, 1)
+
+        # 3. Computador de Bordo e Custos
+        self.lbl_trip_fuel = QLabel("0.000 L")
+        self.lbl_trip_dist = QLabel("0.00 km")
+        self.lbl_trip_cost = QLabel("R$ 0.00")
+        self.lbl_trip_avg = QLabel("-- km/l")
+        trip_labels = [
+            ("Combustível Consumido:", self.lbl_trip_fuel),
+            ("Distância Percorrida:", self.lbl_trip_dist),
+            ("Custo Estimado (R$ 5,89/L):", self.lbl_trip_cost),
+            ("Média Geral da Viagem:", self.lbl_trip_avg),
+        ]
+        grid.addWidget(make_box("Computador de Bordo da Viagem", trip_labels), 1, 0, 1, 2)
+
+        lay.addLayout(grid)
+        return tab
+
+    def _reset_perf_and_trip(self):
+        if self.worker:
+            self.worker.perf_timer.reset()
+            self.worker.math_engine.reset_trip()
+        self.power_peak = 0.0
+        self.torque_peak = 0.0
+        self.lbl_p_0_60.setText("-- s")
+        self.lbl_p_0_100.setText("-- s")
+        self.lbl_p_80_120.setText("-- s")
+        self.lbl_p_100_0.setText("-- s")
+        self.lbl_p_201m.setText("-- s")
+        self.lbl_p_402m.setText("-- s")
+        self.lbl_p_g_max.setText("0.00 G")
+        self.lbl_p_v_max.setText("0.0 km/h")
+        self.lbl_p_power_peak.setText("-- cv")
+        self.lbl_p_torque_peak.setText("-- kgfm")
+        self.lbl_trip_fuel.setText("0.000 L")
+        self.lbl_trip_dist.setText("0.00 km")
+        self.lbl_trip_cost.setText("R$ 0.00")
+        self.lbl_trip_avg.setText("-- km/l")
+        self.perf_status_lbl.setText("Cronômetro e Viagem Zerados — Pronto!")
+        self.statusBar().showMessage("Cronômetro de desempenho e integradores da viagem foram reiniciados.", 4000)
+
+    def _update_performance_ui(self):
+        latest = self.latest
+        if not latest:
+            return
+
+        if self.worker:
+            rec = self.worker.perf_timer.record
+            if rec.time_0_60 is not None:
+                self.lbl_p_0_60.setText(f"{rec.time_0_60:.2f} s")
+            if rec.time_0_100 is not None:
+                self.lbl_p_0_100.setText(f"{rec.time_0_100:.2f} s")
+            if rec.time_80_120 is not None:
+                self.lbl_p_80_120.setText(f"{rec.time_80_120:.2f} s")
+            if rec.time_100_0 is not None:
+                self.lbl_p_100_0.setText(f"{rec.time_100_0:.2f} s")
+            if rec.time_201m is not None:
+                spd = f" @ {rec.speed_201m:.0f} km/h" if rec.speed_201m else ""
+                self.lbl_p_201m.setText(f"{rec.time_201m:.2f} s{spd}")
+            if rec.time_402m is not None:
+                spd = f" @ {rec.speed_402m:.0f} km/h" if rec.speed_402m else ""
+                self.lbl_p_402m.setText(f"{rec.time_402m:.2f} s{spd}")
+            self.lbl_p_g_max.setText(f"{rec.max_g:.2f} G")
+            self.lbl_p_v_max.setText(f"{rec.max_speed:.1f} km/h")
+
+        # Dinamômetro
+        if "power_hp" in latest:
+            pwr = latest["power_hp"]
+            self.lbl_p_power.setText(f"{pwr:.1f} cv")
+            if pwr > self.power_peak:
+                self.power_peak = pwr
+                self.lbl_p_power_peak.setText(f"{self.power_peak:.1f} cv")
+
+        if "torque_kgfm" in latest:
+            tq = latest["torque_kgfm"]
+            self.lbl_p_torque.setText(f"{tq:.1f} kgfm")
+            if tq > self.torque_peak:
+                self.torque_peak = tq
+                self.lbl_p_torque_peak.setText(f"{self.torque_peak:.1f} kgfm")
+
+        if "lambda_error_pct" in latest:
+            self.lbl_p_lambda_err.setText(f"{latest['lambda_error_pct']:+.1f} %")
+        if "volumetric_eff" in latest:
+            self.lbl_p_ve.setText(f"{latest['volumetric_eff']:.1f} %")
+
+        # Viagem
+        if "trip_fuel_liters" in latest:
+            self.lbl_trip_fuel.setText(f"{latest['trip_fuel_liters']:.3f} L")
+        if "trip_km" in latest:
+            self.lbl_trip_dist.setText(f"{latest['trip_km']:.2f} km")
+        if "trip_cost_brl" in latest:
+            self.lbl_trip_cost.setText(f"R$ {latest['trip_cost_brl']:.2f}")
+        if "trip_avg_kml" in latest:
+            kml = latest["trip_avg_kml"]
+            self.lbl_trip_avg.setText(f"{kml:.1f} km/l" if kml > 0 else "-- km/l")
+
     def _scan_vehicle_functions(self):
         if not self.worker:
             self.statusBar().showMessage("Conecte ao veículo antes de identificar os módulos.", 5000)
@@ -436,16 +614,36 @@ class MainWindow(QMainWindow):
         if "steering_motor_current" in latest:
             self.f_epas_current.setText(f"Corrente Direção: {latest['steering_motor_current']:.1f} A")
 
-    def _vehicle_changed(self, idx: int):
-        titles = {
-            0: "Datalogger OBD2 — Bosch ME7.5.30 (VW Gol G5 1.6 Flex)",
-            1: "Datalogger OBD2 — Ford Ka+ 2016 SEL 1.5 Sigma Flex (HS-CAN / Conforto BCM)",
-            2: "Datalogger OBD2 Universal",
-        }
-        self.setWindowTitle(titles.get(idx, "Datalogger OBD2"))
-        if hasattr(self, "functions_summary"):
-            profile_names = ("VW / VAG", "Ford", "OBD-II genérico")
-            self.functions_summary.setToolTip(f"Perfil ativo: {profile_names[idx]}")
+    def _on_ecu_detected(self, meta: dict):
+        self.last_ecu_meta = meta
+        display_title = meta.get("display_title", "ECU Detectada")
+        protocol = meta.get("protocol", "OBD2")
+        self.setWindowTitle(f"leitorECU — {display_title}")
+        self.proto_badge.setText(protocol)
+        self.proto_badge.setProperty("fallback", "false")
+        self.proto_badge.style().unpolish(self.proto_badge)
+        self.proto_badge.style().polish(self.proto_badge)
+        self.event_severity.setText("● INFO")
+        self.event_severity.setStyleSheet("color:#00D2FF; font-size:7.5pt; font-weight:800;")
+        self.event_ribbon_text.setText(f"Central conectada: {display_title} ({protocol})")
+
+        # Adaptação dinâmica de abas conforme capacidades descobertas
+        if meta.get("is_can"):
+            idx_fn = self.tabs.indexOf(self.functions_tab)
+            if idx_fn >= 0:
+                self.tabs.setTabText(idx_fn, "Módulos CAN (ABS / Carroceria)")
+            idx_ch = self.tabs.indexOf(self.ch_tab)
+            if idx_ch >= 0:
+                self.tabs.setTabText(idx_ch, "Canais")
+                self.scan_btn.setText("Varrer PIDs CAN")
+        else:
+            idx_fn = self.tabs.indexOf(self.functions_tab)
+            if idx_fn >= 0:
+                self.tabs.setTabText(idx_fn, "Diagnóstico Motor")
+            idx_ch = self.tabs.indexOf(self.ch_tab)
+            if idx_ch >= 0:
+                self.tabs.setTabText(idx_ch, "Blocos de Medição (001..255)")
+                self.scan_btn.setText("Varrer Blocos (001..255)")
 
     def _build_ui(self):
         central = QWidget()
@@ -460,22 +658,14 @@ class MainWindow(QMainWindow):
         cl.setContentsMargins(8, 4, 8, 4)
         cl.setSpacing(7)
 
-        self.vehicle_cb = QComboBox()
-        self.vehicle_cb.addItems([
-            "VW Gol G5 1.6 Flex (ME7.5.30)",
-            "Ford Ka+ 2016 SEL 1.5 Sigma (HS-CAN)",
-            "OBD2 Genérico / Automático",
-        ])
-        self.vehicle_cb.setFixedWidth(205)
-        self.vehicle_cb.currentIndexChanged.connect(self._vehicle_changed)
-        vehicle_lbl = QLabel("PERFIL")
-        vehicle_lbl.setStyleSheet("color:#607088; font-size:7pt; font-weight:800;")
-        cl.addWidget(vehicle_lbl)
-        cl.addWidget(self.vehicle_cb)
-
         self.mode = QComboBox()
-        self.mode.addItems(["Bluetooth BLE (Vgate iCar Pro)", "Wi-Fi (TCP)", "Demo / Simulador"])
-        self.mode.setFixedWidth(135)
+        self.mode.addItems([
+            "Bluetooth BLE (Vgate iCar Pro)",
+            "Wi-Fi (TCP)",
+            "USB Serial / KKL (COM)",
+            "Demo / Simulador",
+        ])
+        self.mode.setFixedWidth(175)
         self.mode.currentIndexChanged.connect(self._mode_changed)
         mode_lbl = QLabel("LINK")
         mode_lbl.setStyleSheet("color:#607088; font-size:7pt; font-weight:800;")
@@ -512,6 +702,34 @@ class MainWindow(QMainWindow):
         bl.addWidget(self.ble_scan_btn)
         cl.addWidget(self.ble_box)
 
+        self.serial_box = QWidget()
+        sl = QHBoxLayout(self.serial_box)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(4)
+        self.serial_port_cb = QComboBox()
+        self.serial_port_cb.setEditable(True)
+        self.serial_port_cb.setFixedWidth(115)
+        ports = KklSerialTransport.list_ports()
+        if ports:
+            for dev, desc in ports:
+                label = f"{dev} ({desc})" if desc and desc != "n/a" else dev
+                self.serial_port_cb.addItem(label, dev)
+        else:
+            self.serial_port_cb.addItem("COM1", "COM1")
+        self.serial_baud_cb = QComboBox()
+        self.serial_baud_cb.addItems([
+            "9600 (KKL / KW1281)",
+            "10400 (K-Line)",
+            "38400 (ELM327 USB)",
+            "115200 (ELM327 Rápido)",
+        ])
+        self.serial_baud_cb.setFixedWidth(125)
+        sl.addWidget(QLabel("COM"))
+        sl.addWidget(self.serial_port_cb)
+        sl.addWidget(QLabel("BAUD"))
+        sl.addWidget(self.serial_baud_cb)
+        cl.addWidget(self.serial_box)
+
         self.connect_btn = QPushButton("Conectar", objectName="connect")
         self.connect_btn.setCheckable(True)
         self.connect_btn.setFixedWidth(105)
@@ -523,13 +741,13 @@ class MainWindow(QMainWindow):
         self.connection_pill.setFixedWidth(82)
         cl.addWidget(self.connection_pill)
 
-        self.proto_badge = QLabel("VAG KWP2000 NATIVO", objectName="protoBadge")
+        self.proto_badge = QLabel("AGUARDANDO CONEXÃO", objectName="protoBadge")
         self.proto_badge.setProperty("fallback", "false")
-        self.proto_badge.setFixedWidth(137)
+        self.proto_badge.setFixedWidth(150)
         cl.addWidget(self.proto_badge)
 
-        self.btn_reconnect_vag = QPushButton("Forçar KWP")
-        self.btn_reconnect_vag.setToolTip("Força a reconexão pelo protocolo VAG KWP2000 Nativo (Bloco 003 Síncrono)")
+        self.btn_reconnect_vag = QPushButton("Forçar K-Line")
+        self.btn_reconnect_vag.setToolTip("Força a tentativa de reconexão pelo protocolo K-Line (KWP2000 / KW1281)")
         self.btn_reconnect_vag.setEnabled(False)
         self.btn_reconnect_vag.setFixedWidth(105)
         self.btn_reconnect_vag.clicked.connect(self._force_reconnect_vag)
@@ -735,6 +953,8 @@ class MainWindow(QMainWindow):
         # Mapa 2D RPM x MAP (Análise Térmica / Calibração)
         self.map2d = Map2DWidget()
         tabs.addTab(self.map2d, "Mapa 2D")
+        self.perf_tab = self._build_performance_tab()
+        tabs.addTab(self.perf_tab, "Desempenho")
         # Funções encontradas por módulo, sem acoplamento ao modelo selecionado
         self.functions_tab = self._build_functions_tab()
         self.ford_tab = self.functions_tab  # compatibilidade com integrações existentes
@@ -786,7 +1006,9 @@ class MainWindow(QMainWindow):
         dtc_w = QWidget()
         dl = QVBoxLayout(dtc_w)
         dl.setContentsMargins(4, 4, 4, 4)
-        hb = QHBoxLayout()
+        dl.setSpacing(4)
+        hb1 = QHBoxLayout()
+        hb1.setSpacing(4)
         self.dtc_read_btn = QPushButton("Ler DTCs (03)")
         self.dtc_read_btn.clicked.connect(lambda: self._request("read_dtc"))
         self.dtc_clear_btn = QPushButton("Apagar DTCs (04)")
@@ -798,10 +1020,26 @@ class MainWindow(QMainWindow):
             "Execute com o motor aquecido (> 80 °C), ignição LIGADA e motor DESLIGADO."
         )
         self.btn_reset_adaptation.clicked.connect(self._reset_adaptation_dialog)
-        hb.addWidget(self.dtc_read_btn)
-        hb.addWidget(self.dtc_clear_btn)
-        hb.addWidget(self.btn_reset_adaptation)
-        dl.addLayout(hb)
+        hb1.addWidget(self.dtc_read_btn)
+        hb1.addWidget(self.dtc_clear_btn)
+        hb1.addWidget(self.btn_reset_adaptation)
+        dl.addLayout(hb1)
+
+        hb2 = QHBoxLayout()
+        hb2.setSpacing(4)
+        self.btn_readiness = QPushButton("Monitores I/M (01)")
+        self.btn_readiness.setToolTip("Lê o status dos monitores de emissões I/M Readiness (Modo 01 PID 01).")
+        self.btn_readiness.clicked.connect(lambda: self._request("read_readiness"))
+        self.btn_freeze_frame = QPushButton("Freeze Frame (02)")
+        self.btn_freeze_frame.setToolTip("Lê os parâmetros do motor congelados no momento da falha (Modo 02).")
+        self.btn_freeze_frame.clicked.connect(lambda: self._request("read_freeze_frame"))
+        self.btn_export_report = QPushButton("Exportar Laudo (PDF)")
+        self.btn_export_report.setToolTip("Gera laudo técnico completo em PDF / HTML com DTCs, Monitores, Teste de Bateria e Telemetria.")
+        self.btn_export_report.clicked.connect(self._export_pdf_report)
+        hb2.addWidget(self.btn_readiness)
+        hb2.addWidget(self.btn_freeze_frame)
+        hb2.addWidget(self.btn_export_report)
+        dl.addLayout(hb2)
         self.mil_lbl = QLabel("Luz de injeção (MIL): —")
         dl.addWidget(self.mil_lbl)
         self.dtc_table = QTableWidget(0, 2)
@@ -856,9 +1094,12 @@ class MainWindow(QMainWindow):
         self.ip.setText(s.value("ip", "192.168.0.10"))
         self.port.setValue(int(s.value("port", 35000)))
         self.mode.setCurrentIndex(int(s.value("mode", MODE_BLE)))
-        veh_idx = int(s.value("vehicle_idx", 0))
-        self.vehicle_cb.setCurrentIndex(veh_idx)
-        self._vehicle_changed(veh_idx)
+        saved_com = s.value("serial_port", "")
+        if saved_com:
+            self.serial_port_cb.setCurrentText(saved_com)
+        saved_baud_idx = int(s.value("serial_baud_idx", 0))
+        if 0 <= saved_baud_idx < self.serial_baud_cb.count():
+            self.serial_baud_cb.setCurrentIndex(saved_baud_idx)
         addr = s.value("ble_addr", "")
         name = s.value("ble_name", "")
         if addr:
@@ -872,7 +1113,8 @@ class MainWindow(QMainWindow):
         s.setValue("ip", self.ip.text().strip())
         s.setValue("port", self.port.value())
         s.setValue("mode", self.mode.currentIndex())
-        s.setValue("vehicle_idx", self.vehicle_cb.currentIndex())
+        s.setValue("serial_port", self.serial_port_cb.currentText().strip())
+        s.setValue("serial_baud_idx", self.serial_baud_cb.currentIndex())
         s.setValue("ble_addr", self._ble_address())
         s.setValue("ble_name", self.ble_dev.currentText().split("  [")[0] if self.ble_dev.currentData() else "")
         s.setValue("extras", "true" if self.extras_chk.isChecked() else "false")
@@ -883,6 +1125,7 @@ class MainWindow(QMainWindow):
     def _mode_changed(self, idx: int):
         self.wifi_box.setVisible(idx == MODE_WIFI)
         self.ble_box.setVisible(idx == MODE_BLE)
+        self.serial_box.setVisible(idx == MODE_SERIAL)
 
     def _ble_address(self) -> str:
         data = self.ble_dev.currentData()
@@ -933,10 +1176,18 @@ class MainWindow(QMainWindow):
         elif mode == MODE_BLE:
             addr = self._ble_address()
             if not addr:
-                QMessageBox.warning(self, "BLE", "Selecione o adaptador BLE (clique em 'Procurar BLE').")
+                QMessageBox.warning(self, "BLE", "Selecione o adaptador BLE (clique em 'Buscar').")
                 self.connect_btn.setChecked(False)
                 return
             transport = BleTransport(addr, timeout=2.0)
+        elif mode == MODE_SERIAL:
+            port = self.serial_port_cb.currentData() or self.serial_port_cb.currentText().split()[0].strip()
+            baud_str = self.serial_baud_cb.currentText().split()[0].strip()
+            try:
+                baud = int(baud_str)
+            except ValueError:
+                baud = 9600
+            transport = KklSerialTransport(port=port, baudrate=baud, timeout=2.0)
         else:
             transport = MockTransport()
         self._save_settings()
@@ -951,9 +1202,7 @@ class MainWindow(QMainWindow):
             card.value.setText("--")
             card.set_state("stale", "")
         self.t0 = time.monotonic()
-        veh_map = {0: PROFILE_VW_GOL, 1: PROFILE_FORD_KA, 2: PROFILE_GENERIC}
-        veh_profile = veh_map.get(self.vehicle_cb.currentIndex(), PROFILE_VW_GOL)
-        self.worker = ObdWorker(transport, self.t0, vehicle_profile=veh_profile, parent=self)
+        self.worker = ObdWorker(transport, self.t0, vehicle_profile=PROFILE_AUTO, parent=self)
         if isinstance(transport, BleTransport):
             transport._log = self.worker.log.emit  # sinal Qt: seguro entre threads
         self.worker.sample.connect(self._on_sample)
@@ -964,16 +1213,20 @@ class MainWindow(QMainWindow):
         self.worker.info.connect(self._on_info)
         self.worker.channels.connect(self._on_channels)
         self.worker.protocol_mode_changed.connect(self._on_protocol_mode_changed)
+        self.worker.ecu_detected.connect(self._on_ecu_detected)
+        self.worker.readiness_result.connect(self._on_readiness_result)
+        self.worker.freeze_frame_result.connect(self._on_freeze_frame_result)
+        self.worker.perf_event.connect(self._on_perf_event)
         self.worker.finished.connect(self._worker_finished)
         self._apply_worker_flags()
         self.worker.decel_mode = self.decel_btn.isChecked()
-        self.vehicle_cb.setEnabled(False)
         self.mode.setEnabled(False)
         self.wifi_box.setEnabled(False)
         self.ble_box.setEnabled(False)
+        self.serial_box.setEnabled(False)
         self.btn_reconnect_vag.setEnabled(True)
         self.connect_btn.setText("Desconectar")
-        self.console.appendPlainText(f"===== {datetime.now():%H:%M:%S} conectando ({transport.name} - {VEHICLE_PROFILES.get(veh_profile)}) =====")
+        self.console.appendPlainText(f"===== {datetime.now():%H:%M:%S} conectando ({transport.name} — Auto-Discovery) =====")
         self.worker.start(QThread.Priority.HighPriority)
 
     def _stop_worker(self):
@@ -987,10 +1240,10 @@ class MainWindow(QMainWindow):
         self.connect_btn.setEnabled(True)
         self.connect_btn.setChecked(False)
         self.connect_btn.setText("Conectar")
-        self.vehicle_cb.setEnabled(True)
         self.mode.setEnabled(True)
         self.wifi_box.setEnabled(True)
         self.ble_box.setEnabled(True)
+        self.serial_box.setEnabled(True)
         self.btn_reconnect_vag.setEnabled(False)
         self.proto_badge.setText("Desconectado")
         self.proto_badge.setProperty("fallback", "false")
@@ -1021,7 +1274,7 @@ class MainWindow(QMainWindow):
         self.proto_badge.setProperty("fallback", "true" if is_fallback else "false")
         self.proto_badge.style().unpolish(self.proto_badge)
         self.proto_badge.style().polish(self.proto_badge)
-        self.btn_reconnect_vag.setEnabled(is_fallback or self.vehicle_cb.currentIndex() == 0)
+        self.btn_reconnect_vag.setEnabled(is_fallback)
 
     def _force_reconnect_vag(self):
         if self.worker:
@@ -1075,6 +1328,7 @@ class MainWindow(QMainWindow):
             self.buffers[k].append(t, v)
         if "rpm" in self.latest and "map" in self.latest:
             self.map2d.add_sample(self.latest["rpm"], self.latest["map"], self.latest)
+        self.audio_alerts.check(self.latest.get("rpm", 0.0), self.latest.get("ect"))
         events = self.detector.update(t, self.latest, self.stamp)
         ev_text = " | ".join(e.message for e in events)
         if self.logger.active:
@@ -1143,10 +1397,32 @@ class MainWindow(QMainWindow):
         for k in self.dirty:
             if k in self.cards:
                 self.cards[k].set_value(self.latest[k])
+        # Se o veículo possui apenas 1 sonda lambda, adapta dinamicamente o card lambda2_v
+        if "lambda2_v" not in self.latest and "lambda2_v" in self.cards:
+            c2 = self.cards["lambda2_v"]
+            if "inj_ms" in self.latest:
+                if c2.title.text() != "Tempo Injeção":
+                    c2.title.setText("Tempo Injeção")
+                    c2.unit.setText("ms")
+                c2.set_value(self.latest["inj_ms"])
+                c2.set_state("normal")
+            elif "inj_pulse_width" in self.latest:
+                if c2.title.text() != "Tempo Injeção":
+                    c2.title.setText("Tempo Injeção")
+                    c2.unit.setText("ms")
+                c2.set_value(self.latest["inj_pulse_width"])
+                c2.set_state("normal")
+            elif "fuel_rate_lph" in self.latest:
+                if c2.title.text() != "Consumo Inst.":
+                    c2.title.setText("Consumo Inst.")
+                    c2.unit.setText("L/h")
+                c2.set_value(self.latest["fuel_rate_lph"])
+                c2.set_state("normal")
         self.dirty.clear()
         if self.frame % 3 == 0:
             self._update_function_ui()
             self._refresh_function_modules()
+            self._update_performance_ui()
         if self.frame % 6 == 0:
             self._update_card_states(now)
             if self.logger.active:
@@ -1256,6 +1532,26 @@ class MainWindow(QMainWindow):
             elif k == "lambda_v":
                 state, note = self._lambda_state(now)
             elif k == "lambda2_v":
+                card2 = self.cards.get("lambda2_v")
+                if card2 and (k not in self.stamp or now - self.stamp[k] > 4.0) and self.latest.get("rpm", 0) > 450:
+                    if "inj_ms" in self.latest:
+                        card2.title.setText("Tempo Injeção")
+                        card2.unit.setText("ms")
+                        card2.set_value(self.latest["inj_ms"])
+                        card2.set_state("normal", "")
+                        continue
+                    elif "inj_pulse_width" in self.latest:
+                        card2.title.setText("Tempo Injeção")
+                        card2.unit.setText("ms")
+                        card2.set_value(self.latest["inj_pulse_width"])
+                        card2.set_state("normal", "")
+                        continue
+                    elif "fuel_rate_lph" in self.latest:
+                        card2.title.setText("Consumo Inst.")
+                        card2.unit.setText("L/h")
+                        card2.set_value(self.latest["fuel_rate_lph"])
+                        card2.set_state("normal", "")
+                        continue
                 state, note = self._lambda2_state(now)
             elif k == "advance" and v < -5:
                 state, note = "warn", "retardado"
@@ -1554,6 +1850,9 @@ class MainWindow(QMainWindow):
         self.dtc_read_btn.setEnabled(on)
         self.dtc_clear_btn.setEnabled(on)
         self.btn_reset_adaptation.setEnabled(on)
+        self.btn_readiness.setEnabled(on)
+        self.btn_freeze_frame.setEnabled(on)
+        self.btn_export_report.setEnabled(True)
         self.scan_btn.setEnabled(on)
         self.functions_scan_btn.setEnabled(on)
 
@@ -1596,6 +1895,136 @@ class MainWindow(QMainWindow):
             self.mil_lbl.setStyleSheet(f"color:{'#ff5252' if on else '#69f0ae'}; font-weight:bold;")
         if not codes:
             self.statusBar().showMessage("Nenhum código de falha armazenado.", 8000)
+
+    def _on_readiness_result(self, report: ReadinessReport):
+        self.last_readiness = report
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Monitores de Prontidão (I/M Readiness — Modo 01)")
+        dlg.resize(520, 480)
+        lay = QVBoxLayout(dlg)
+
+        info_lbl = QLabel(
+            f"Luz de Injeção (MIL): {'ACESA (Falha)' if report.mil_on else 'Apagada (OK)'}  |  "
+            f"DTCs Gravados: {report.dtc_count}  |  "
+            f"Monitores Prontos: {report.ready_count}/{report.supported_count}"
+        )
+        info_lbl.setStyleSheet("font-weight:bold; font-size:10pt; color:#E6EDF3; padding:4px;")
+        lay.addWidget(info_lbl)
+
+        table = QTableWidget(len(report.monitors), 2)
+        table.setHorizontalHeaderLabels(["Monitor / Sistema", "Estado"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table.setColumnWidth(1, 150)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        for r, m in enumerate(report.monitors):
+            item_name = QTableWidgetItem(m.name)
+            table.setItem(r, 0, item_name)
+            if not m.supported:
+                status_text = "Não Suportado"
+                color = "#8B98AB"
+            elif m.completed:
+                status_text = "✔ Concluído (OK)"
+                color = "#00E676"
+            else:
+                status_text = "✖ Incompleto"
+                color = "#FF9100"
+            item_status = QTableWidgetItem(status_text)
+            item_status.setForeground(pg.mkColor(color))
+            item_status.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setItem(r, 1, item_status)
+
+        lay.addWidget(table, 1)
+        btn_close = QPushButton("Fechar")
+        btn_close.clicked.connect(dlg.accept)
+        lay.addWidget(btn_close)
+        dlg.exec()
+
+    def _on_freeze_frame_result(self, ff: FreezeFrame):
+        self.last_freeze_frame = ff
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Dados Congelados da Falha (Freeze Frame — Modo 02)")
+        dlg.resize(500, 420)
+        lay = QVBoxLayout(dlg)
+
+        info_lbl = QLabel(f"DTC Causador do Congelamento: {ff.dtc}")
+        info_lbl.setStyleSheet("font-weight:bold; font-size:11pt; color:#FF5252; padding:4px;")
+        lay.addWidget(info_lbl)
+
+        table = QTableWidget(len(ff.params), 3)
+        table.setHorizontalHeaderLabels(["Sensor / Parâmetro", "Valor Congelado", "Unidade"])
+        table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        for r, (p_name, (val, unit)) in enumerate(ff.params.items()):
+            table.setItem(r, 0, QTableWidgetItem(p_name))
+            table.setItem(r, 1, QTableWidgetItem(f"{val:.1f}"))
+            table.setItem(r, 2, QTableWidgetItem(unit))
+
+        lay.addWidget(table, 1)
+        btn_close = QPushButton("Fechar")
+        btn_close.clicked.connect(dlg.accept)
+        lay.addWidget(btn_close)
+        dlg.exec()
+
+    def _export_pdf_report(self):
+        dtcs = []
+        for row in range(self.dtc_table.rowCount()):
+            c_item = self.dtc_table.item(row, 0)
+            d_item = self.dtc_table.item(row, 1)
+            if c_item and d_item:
+                dtcs.append((c_item.text(), d_item.text()))
+
+        mil_text = self.mil_lbl.text()
+
+        # Picos dos cards
+        card_peaks = {}
+        for k, card in self.cards.items():
+            card_peaks[k] = (card.peak_min, card.peak_max)
+
+        default_name = f"Laudo_Diagnostico_{datetime.now():%Y%m%d_%H%M%S}.pdf"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar Laudo de Diagnóstico Técnico",
+            default_name,
+            "Documento PDF (*.pdf);;Arquivo HTML (*.html)"
+        )
+        if not file_path:
+            return
+
+        html_code = generate_html_report(
+            ecu_meta=self.last_ecu_meta,
+            dtcs=dtcs,
+            mil_status=mil_text,
+            readiness=self.last_readiness,
+            freeze_frame=self.last_freeze_frame,
+            card_peaks=card_peaks,
+            battery_test=self.last_battery_test,
+        )
+
+        if file_path.lower().endswith(".html"):
+            try:
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(html_code)
+                QMessageBox.information(self, "Laudo Salvo", f"Laudo HTML salvo com sucesso em:\n{file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Erro ao Salvar", f"Não foi possível salvar o arquivo:\n{e}")
+        else:
+            ok = export_report_to_pdf(html_code, file_path)
+            if ok:
+                QMessageBox.information(self, "Laudo PDF Gerado", f"Laudo PDF exportado com sucesso em:\n{file_path}")
+            else:
+                QMessageBox.critical(self, "Erro", "Falha ao gerar o PDF com QTextDocument.")
+
+    def _on_perf_event(self, msg: str):
+        if hasattr(self, "perf_status_lbl"):
+            self.perf_status_lbl.setText(msg)
+        self.event_severity.setText("● PERF")
+        self.event_severity.setStyleSheet("color:#FFD700; font-size:7.5pt; font-weight:800;")
+        self.event_ribbon_text.setText(f"[Dragy/Desempenho] {msg}")
+        self.statusBar().showMessage(f"[Desempenho] {msg}", 5000)
 
     # ============================================================ fechar
     def closeEvent(self, ev):

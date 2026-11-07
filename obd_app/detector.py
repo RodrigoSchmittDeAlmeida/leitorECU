@@ -34,6 +34,9 @@ class DecelDetector:
         self.in_decel = False
         self._last_vacuum_alert: float = -1e9
         self._last_atdc_alert: float = -1e9
+        self.crank_in_progress: bool = False
+        self.min_crank_volt: Optional[float] = None
+        self.last_crank_event: float = -1e9
         self._reset_episode()
 
     def reset(self) -> None:
@@ -41,6 +44,9 @@ class DecelDetector:
         self.in_decel = False
         self._last_vacuum_alert = -1e9
         self._last_atdc_alert = -1e9
+        self.crank_in_progress = False
+        self.min_crank_volt = None
+        self.last_crank_event = -1e9
         self._reset_episode()
 
     def _reset_episode(self):
@@ -93,6 +99,33 @@ class DecelDetector:
                     ev.append(Event(t, "alarm",
                                     f"RETARDO CRÍTICO ATDC: avanço em {adv_val:.1f}°{map_str}{rpm_str} "
                                     f"— {malha_str} (risco de pipoco e vibração)"))
+
+        # --- Diagnóstico Contínuo 3: Teste de Queda de Tensão na Partida (Cranking Voltage Drop)
+        if fresh("rpm"):
+            rpm_cur = latest["rpm"]
+            volt = latest.get("battery") or latest.get("obd_pin16_v") or latest.get("ecu_volt")
+            if 50.0 <= rpm_cur <= 450.0:
+                if not self.crank_in_progress:
+                    self.crank_in_progress = True
+                    self.min_crank_volt = volt
+                elif volt is not None:
+                    self.min_crank_volt = volt if self.min_crank_volt is None else min(self.min_crank_volt, volt)
+            elif rpm_cur >= 650.0:
+                if self.crank_in_progress and (t - self.last_crank_event >= 5.0):
+                    self.crank_in_progress = False
+                    self.last_crank_event = t
+                    if self.min_crank_volt is not None:
+                        v_min = self.min_crank_volt
+                        if v_min >= 10.2:
+                            ev.append(Event(t, "ok", f"Partida do motor concluída: tensão mínima {v_min:.2f} V — Bateria e arranque EXCELENTES"))
+                        elif v_min >= 9.6:
+                            ev.append(Event(t, "info", f"Partida do motor: tensão mínima {v_min:.2f} V — Bateria NORMAL"))
+                        elif v_min >= 8.5:
+                            ev.append(Event(t, "warn", f"ATENÇÃO: Queda moderada de tensão na partida ({v_min:.2f} V) — Bateria com carga baixa"))
+                        else:
+                            ev.append(Event(t, "alarm", f"ALERTA: Queda severa de tensão na partida ({v_min:.2f} V < 9.6 V) — Bateria fraca ou aterramento deficiente!"))
+            elif rpm_cur < 40.0:
+                self.crank_in_progress = False
 
         if not fresh("rpm"):
             return ev

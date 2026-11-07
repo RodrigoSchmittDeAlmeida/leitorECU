@@ -98,8 +98,11 @@ class Map2DWidget(QWidget):
             ("Etanol (%)", "flex_ethanol_pct", "{:.0f}%"),
         ]
         self.cur_metric_idx = 0
+        self.cur_stat_idx = 0  # 0: Média, 1: Máximo, 2: Mínimo, 3: Contagem
         self._counts: Dict[str, Dict[Tuple[int, int], int]] = {m[1]: {} for m in self.metrics}
         self._sums: Dict[str, Dict[Tuple[int, int], float]] = {m[1]: {} for m in self.metrics}
+        self._mins: Dict[str, Dict[Tuple[int, int], float]] = {m[1]: {} for m in self.metrics}
+        self._maxs: Dict[str, Dict[Tuple[int, int], float]] = {m[1]: {} for m in self.metrics}
         self._last_active_cell: Optional[Tuple[int, int]] = None
 
         self._build_ui()
@@ -123,11 +126,25 @@ class Map2DWidget(QWidget):
         self.cb_metric.currentIndexChanged.connect(self._on_metric_changed)
         top_bar.addWidget(self.cb_metric)
 
+        lbl_stat = QLabel("MODO")
+        lbl_stat.setStyleSheet("font-weight: bold; color: #cfd8dc; margin-left: 8px;")
+        top_bar.addWidget(lbl_stat)
+
+        self.cb_stat = QComboBox()
+        self.cb_stat.addItems(["Média", "Máximo", "Mínimo", "Contagem (Hits)"])
+        self.cb_stat.currentIndexChanged.connect(self._on_stat_changed)
+        top_bar.addWidget(self.cb_stat)
+
         self.active_info = QLabel("Ponto de Operação: --")
         self.active_info.setStyleSheet("color: #ffd54f; font-weight: bold; margin-left: 12px;")
         top_bar.addWidget(self.active_info)
 
         top_bar.addStretch()
+
+        self.btn_copy = QPushButton("Copiar Grade")
+        self.btn_copy.setToolTip("Copia os dados da tabela no formato tabulado para colar no Excel ou TunerStudio.")
+        self.btn_copy.clicked.connect(self._copy_grid_to_clipboard)
+        top_bar.addWidget(self.btn_copy)
 
         self.btn_clear = QPushButton("Limpar matriz")
         self.btn_clear.clicked.connect(self.clear_data)
@@ -177,11 +194,42 @@ class Map2DWidget(QWidget):
         self.cur_metric_idx = idx
         self._refresh_all_cells()
 
+    def _on_stat_changed(self, idx: int):
+        self.cur_stat_idx = idx
+        self._refresh_all_cells()
+
+    def set_stat_mode(self, mode_name: str):
+        idx = self.cb_stat.findText(mode_name)
+        if idx >= 0:
+            self.cb_stat.setCurrentIndex(idx)
+            self._on_stat_changed(idx)
+
+    def export_grid_tsv(self) -> str:
+        """Retorna os dados da tabela em formato tabulado (TSV) compatível com Excel / TunerStudio."""
+        lines = []
+        lines.append("RPM / MAP\t" + "\t".join(str(r) for r in RPM_BINS))
+        for r, map_val in enumerate(MAP_BINS):
+            row_items = [f"{map_val} kPa"]
+            for c in range(len(RPM_BINS)):
+                item = self.table.item(r, c)
+                row_items.append(item.text() if item else "--")
+            lines.append("\t".join(row_items))
+        return "\n".join(lines)
+
+    def _copy_grid_to_clipboard(self):
+        """Copia os dados da tabela em formato tabulado (TSV) para a área de transferência."""
+        from PyQt6.QtWidgets import QApplication
+        text = self.export_grid_tsv()
+        QApplication.clipboard().setText(text)
+        self.active_info.setText("Tabela copiada para a área de transferência!")
+
     def clear_data(self):
         for m in self.metrics:
             k = m[1]
             self._counts[k].clear()
             self._sums[k].clear()
+            self._mins[k].clear()
+            self._maxs[k].clear()
         self._last_active_cell = None
         self.active_info.setText("Ponto de Operação: --")
         self._refresh_all_cells()
@@ -200,11 +248,16 @@ class Map2DWidget(QWidget):
                 val = latest[key]
                 self._counts[key][coord] = self._counts[key].get(coord, 0) + 1
                 self._sums[key][coord] = self._sums[key].get(coord, 0.0) + val
+                if coord not in self._mins[key] or val < self._mins[key][coord]:
+                    self._mins[key][coord] = val
+                if coord not in self._maxs[key] or val > self._maxs[key][coord]:
+                    self._maxs[key][coord] = val
 
         cur_key = self.metrics[self.cur_metric_idx][1]
         cur_fmt = self.metrics[self.cur_metric_idx][2]
         val_str = cur_fmt.format(latest[cur_key]) if cur_key in latest else "--"
-        self.active_info.setText(f"Ponto: {rpm:.0f} RPM × {map_kpa:.0f} kPa | Atual: {val_str}")
+        stat_name = self.cb_stat.currentText().split()[0]
+        self.active_info.setText(f"Ponto: {rpm:.0f} RPM × {map_kpa:.0f} kPa | Atual: {val_str} | Modo: {stat_name}")
 
         self._update_cell(r, c)
         self._last_active_cell = coord
@@ -221,9 +274,25 @@ class Map2DWidget(QWidget):
             self.table.setItem(r, c, item)
 
         if cnt > 0:
-            avg = self._sums[cur_key][coord] / cnt
-            bg, fg = _color_for_value(cur_key, avg)
-            item.setText(cur_fmt.format(avg))
+            if self.cur_stat_idx == 0:
+                # Média
+                disp_val = self._sums[cur_key][coord] / cnt
+                txt = cur_fmt.format(disp_val)
+            elif self.cur_stat_idx == 1:
+                # Máximo
+                disp_val = self._maxs[cur_key][coord]
+                txt = cur_fmt.format(disp_val)
+            elif self.cur_stat_idx == 2:
+                # Mínimo
+                disp_val = self._mins[cur_key][coord]
+                txt = cur_fmt.format(disp_val)
+            else:
+                # Contagem (Hits)
+                disp_val = float(cnt)
+                txt = str(cnt)
+
+            bg, fg = _color_for_value(cur_key, disp_val if self.cur_stat_idx != 3 else (disp_val * 2.0))
+            item.setText(txt)
             item.setForeground(fg)
             item.setBackground(bg)
             font = QFont("Consolas", 8, QFont.Weight.Bold)

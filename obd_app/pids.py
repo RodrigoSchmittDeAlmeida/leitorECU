@@ -48,6 +48,9 @@ CHANNELS: Dict[str, Channel] = {
         Channel("obd_pin16_v", "Tensão Pino 16 OBD (ATRV)", "V", "{:.2f}", card=False),
         Channel("baro", "Pressão Barométrica (0133)", "kPa", "{:.0f}", card=False),
         Channel("fuel_rate", "Consumo Instantâneo (015E)", "L/h", "{:.1f}", card=False),
+        Channel("fuel_rate_lph", "Consumo Instantâneo", "L/h", "{:.2f}", card=False),
+        Channel("fuel_econ_kml", "Economia Combustível", "km/l", "{:.1f}", card=False),
+        Channel("volumetric_eff", "Eficiência Volumétrica", "%", "{:.1f}", card=False),
         Channel("mil_on", "Luz Injeção (0101)", "0/1", "{:.0f}", card=False),
         Channel("dtc_count", "Qtd. DTCs (0101)", "un", "{:.0f}", card=False),
         Channel("o2_mask", "Máscara Sondas (0113)", "bit", "{:.0f}", card=False),
@@ -57,6 +60,13 @@ CHANNELS: Dict[str, Channel] = {
         Channel("inj_ms", "Tempo de Injeção", "ms", "{:.2f}", card=False),
         Channel("flex_ethanol_pct", "Teor de Etanol Flex", "%", "{:.1f}", card=False),
         Channel("app_pedal_pct", "Pedal Acelerador (APP)", "%", "{:.1f}", card=False),
+        Channel("power_hp", "Potência Estimada", "cv", "{:.1f}", card=False),
+        Channel("torque_kgfm", "Torque Estimado", "kgfm", "{:.1f}", card=False),
+        Channel("lambda_error_pct", "Desvio Mistura Lambda", "%", "{:+.1f}", card=False),
+        Channel("trip_liters", "Combustível Viagem", "L", "{:.3f}", card=False),
+        Channel("trip_cost_brl", "Custo Viagem", "R$", "{:.2f}", card=False),
+        Channel("trip_avg_kml", "Consumo Médio Viagem", "km/l", "{:.1f}", card=False),
+        Channel("trip_km", "Distância Viagem", "km", "{:.2f}", card=False),
     )
 }
 

@@ -364,3 +364,121 @@ class MockTransport(Transport):
 
     def flush_input(self) -> None:
         self._pending = b""
+
+
+# --------------------------------------------------------------------------- KKL SERIAL / USB
+class KklSerialTransport(Transport):
+    """Transporte Serial direto para cabos VAG-COM KKL 409.1 (FTDI/CH340) ou ELM327 USB.
+
+    Permite comunicação direta a 9600 ou 10400 bps com a Linha K, possibilitando
+    o handshake byte-echo exigido pelo protocolo KW1281 (Bosch MP9.0 Kombi 1.6 Ar).
+    """
+
+    name = "USB KKL / Serial"
+
+    def __init__(self, port: str = "COM3", baudrate: int = 9600, timeout: float = 2.0):
+        self.port = port
+        self.baudrate = baudrate
+        self.timeout = timeout
+        self._ser: Optional[Any] = None
+
+    @staticmethod
+    def list_ports() -> list[tuple[str, str]]:
+        """Lista portas COM disponíveis no sistema (ex: [('COM3', 'USB-SERIAL CH340')])."""
+        try:
+            import serial.tools.list_ports
+            return [(p.device, p.description) for p in serial.tools.list_ports.comports()]
+        except Exception:
+            return []
+
+    def open(self) -> None:
+        try:
+            import serial
+        except ImportError as e:
+            raise TransportError("Biblioteca 'pyserial' não encontrada. Execute 'pip install pyserial'.") from e
+
+        try:
+            self._ser = serial.Serial(
+                port=self.port,
+                baudrate=self.baudrate,
+                bytesize=serial.EIGHTBITS,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                timeout=self.timeout,
+                write_timeout=self.timeout,
+            )
+            self._ser.reset_input_buffer()
+            self._ser.reset_output_buffer()
+        except Exception as e:
+            raise TransportError(f"Não foi possível abrir a porta serial {self.port} ({e})") from e
+
+    def close(self) -> None:
+        if self._ser:
+            try:
+                self._ser.close()
+            except Exception:
+                pass
+            self._ser = None
+
+    def write(self, data: bytes) -> None:
+        if not self._ser or not self._ser.is_open:
+            raise TransportError("Porta serial KKL fechada")
+        try:
+            self._ser.write(data)
+            self._ser.flush()
+        except Exception as e:
+            raise TransportError(f"Erro ao escrever na porta serial KKL: {e}") from e
+
+    def read_some(self, timeout: float) -> bytes:
+        if not self._ser or not self._ser.is_open:
+            raise TransportError("Porta serial KKL fechada")
+        try:
+            orig_timeout = self._ser.timeout
+            if orig_timeout != timeout:
+                self._ser.timeout = max(0.01, timeout)
+            data = self._ser.read(max(1, self._ser.in_waiting or 1))
+            self._ser.timeout = orig_timeout
+            return data
+        except Exception as e:
+            raise TransportError(f"Erro ao ler da porta serial KKL: {e}") from e
+
+    def flush_input(self) -> None:
+        if self._ser and self._ser.is_open:
+            try:
+                self._ser.reset_input_buffer()
+            except Exception:
+                pass
+
+    def send_5baud_init(self, address: int = 0x01) -> None:
+        """Executa bit-banging da inicialização 5-baud na Linha K para o endereço da ECU.
+        
+        No padrão KW1281 / ISO 9141, cada bit dura 200 ms (1/5 s):
+        1 Start bit (Space = 0, 200ms)
+        7 Bits de dados + 1 Paridade Ímpar (ou 8 bits LSB first, 200ms cada)
+        1 Stop bit (Mark = 1, 200ms)
+        """
+        if not self._ser or not self._ser.is_open:
+            raise TransportError("Porta serial fechada para 5-baud init")
+
+        import serial
+        try:
+            # Alterna temporariamente a porta serial para 5 baud
+            self._ser.baudrate = 5
+            self._ser.bytesize = serial.SEVENBITS
+            self._ser.parity = serial.PARITY_ODD
+            self._ser.stopbits = serial.STOPBITS_ONE
+
+            # Envia o byte de endereço (0x01 para ECU do Motor)
+            self._ser.write(bytes([address]))
+            self._ser.flush()
+            time.sleep(2.1)  # 10 bits @ 5 baud = 2.0 s + margem
+
+            # Restaura para 9600 baud 8N1 imediatamente para aguardar o byte de sincronismo 0x55
+            self._ser.baudrate = self.baudrate
+            self._ser.bytesize = serial.EIGHTBITS
+            self._ser.parity = serial.PARITY_NONE
+            self._ser.stopbits = serial.STOPBITS_ONE
+            self._ser.reset_input_buffer()
+        except Exception as e:
+            raise TransportError(f"Falha durante 5-baud init na Linha K: {e}") from e
+

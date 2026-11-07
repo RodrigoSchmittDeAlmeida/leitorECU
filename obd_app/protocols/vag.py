@@ -39,14 +39,18 @@ class VagKwpStrategy(BaseVehicleStrategy):
         worker.status.emit("connecting", "Inicializando protocolo VAG KWP2000 nativo (Bloco 033 Sonda Lambda)...")
         worker.log.emit("Inicializando VAG KWP2000 no endereço 01 (ATSP4 + ATIIA01 + ATSH8110F1)...")
 
+        transport = getattr(elm, "transport", None) or getattr(elm, "t", None)
+        is_demo = getattr(transport, "name", "") == "Demo"
+
         for attempt in range(1, 3):
             if not worker._running:
                 return False
             elm.command("ATPC", 2.0)
-            for _ in range(30):
-                if not worker._running:
-                    return False
-                time.sleep(0.1)
+            if not is_demo:
+                for _ in range(30):
+                    if not worker._running:
+                        return False
+                    time.sleep(0.1)
 
             for cmd in ("ATAL", "ATSP4", "ATIB10", "ATKW0", "ATIIA01", "ATSH8110F1", "ATWM8110F13E"):
                 elm.command(cmd, 2.0)

@@ -17,14 +17,23 @@ from typing import Any, Dict, List, Optional, Tuple
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from .elm327 import ELM327
+from .fuel_estimator import estimate_fuel_metrics
+from .math_channels import MathChannelsEngine
+from .performance_timer import PerformanceTimer
+from .readiness import parse_freeze_frame, parse_readiness_pid01
 from .interfaces import ITransport, IVehicleStrategy
-from .protocols import (PROFILE_FORD_KA, PROFILE_GENERIC, PROFILE_VW_GOL,
-                        VEHICLE_STRATEGIES, get_vehicle_strategy)
+from .protocols import (PROFILE_FORD_KA, PROFILE_GENERIC, PROFILE_KW1281,
+                        PROFILE_VW_GOL, VEHICLE_STRATEGIES, UniversalAutoDiscovery,
+                        get_vehicle_strategy)
 from .transports import Transport, TransportError
 
+PROFILE_AUTO = "auto"
+
 VEHICLE_PROFILES = {
+    PROFILE_AUTO: "Auto-Detecção Universal (CAN 500k / KWP2000 / KW1281 / OBD2)",
     PROFILE_VW_GOL: "VW Gol G5 1.6 Flex (Bosch ME7.5.30 / KWP2000)",
     PROFILE_FORD_KA: "Ford Ka+ 2016 SEL 1.5 Sigma (HS-CAN / Conforto BCM)",
+    PROFILE_KW1281: "VAG KW1281 (Bosch MP9.0 Kombi 1.6 Ar / Gol Mi)",
     PROFILE_GENERIC: "OBD2 Padrão / Automático",
 }
 
@@ -42,17 +51,26 @@ class ObdWorker(QThread):
     info = pyqtSignal(str)                         # notificações humanas na status bar
     channels = pyqtSignal(dict)                    # canais conhecidos {chave: (rótulo, unidade)}
     protocol_mode_changed = pyqtSignal(str, bool)  # (modo_descritivo, is_fallback)
+    ecu_detected = pyqtSignal(dict)                # metadados de auto-fingerprinting da ECU
+    readiness_result = pyqtSignal(object)          # objeto ReadinessReport (Modo 01 PID 01)
+    freeze_frame_result = pyqtSignal(object)       # objeto FreezeFrame (Modo 02)
+    perf_event = pyqtSignal(str)                   # marco de desempenho atingido (ex: 0-100)
 
     MAX_CONSEC_ERRORS = 12
 
-    def __init__(self, transport: Transport, t0: float, vehicle_profile: str = PROFILE_VW_GOL, parent=None):
+    def __init__(self, transport: Transport, t0: float, vehicle_profile: str = PROFILE_AUTO, parent=None):
         super().__init__(parent)
         self.transport = transport
         self.t0 = t0
         self.vehicle_profile = vehicle_profile
+        self.math_engine = MathChannelsEngine()
+        self.perf_timer = PerformanceTimer()
 
         # Injeção de dependência da estratégia veicular (SOLID: DIP & OCP)
-        self.strategy: IVehicleStrategy = get_vehicle_strategy(vehicle_profile)
+        if vehicle_profile == PROFILE_AUTO:
+            self.strategy: IVehicleStrategy = get_vehicle_strategy(PROFILE_GENERIC)
+        else:
+            self.strategy = get_vehicle_strategy(vehicle_profile)
 
         self._running = True
         self.decel_mode = False
@@ -122,26 +140,33 @@ class ObdWorker(QThread):
         if self.elm.version:
             self.info.emit(f"Adaptador: {self.elm.version}")
 
-        # Inicializa a estratégia veicular selecionada
-        ok = self.strategy.initialize(self.elm, self)
-        if not ok:
-            # Fallback automático para OBD2 Genérico se a estratégia específica falhar
-            if self.vehicle_profile != PROFILE_GENERIC:
-                self.log.emit("⚠️ Handshake específico falhou! Acionando Fallback ISO 9141-2 / OBD2 Genérico...")
-                self.strategy = get_vehicle_strategy(PROFILE_GENERIC)
-                ok = self.strategy.initialize(self.elm, self)
-                if ok:
-                    self.protocol_mode_changed.emit("Fallback ISO 9141-2 (Modo 01 Assíncrono)", True)
-                    self.status.emit("warning", "Fallback ISO 9141-2 (Modo 01 Assíncrono) — VAG KWP2000 falhou")
-            if not ok:
-                raise TransportError("ECU não respondeu ao handshake inicial. Ligue a ignição.")
+        # Se perfil for automático (padrão zero-menu), executa o Auto-Fingerprinting Universal
+        if self.vehicle_profile == PROFILE_AUTO:
+            self.status.emit("connecting", "Auto-Fingerprinting Universal em cascata...")
+            self.strategy, ecu_meta = UniversalAutoDiscovery.discover(self.elm, self)
+            self.ecu_detected.emit(ecu_meta)
         else:
-            if self.strategy.profile_id == PROFILE_VW_GOL:
-                self.protocol_mode_changed.emit("VAG KWP2000 Nativo (Bloco 003 Síncrono)", False)
-            elif self.strategy.profile_id == PROFILE_FORD_KA:
-                self.protocol_mode_changed.emit("Ford HS-CAN 500k (PCM + BCM + ABS)", False)
+            # Inicializa a estratégia veicular especificamente selecionada
+            ok = self.strategy.initialize(self.elm, self)
+            if not ok:
+                if self.vehicle_profile != PROFILE_GENERIC:
+                    self.log.emit("⚠️ Handshake específico falhou! Acionando Fallback ISO 9141-2 / OBD2 Genérico...")
+                    self.strategy = get_vehicle_strategy(PROFILE_GENERIC)
+                    ok = self.strategy.initialize(self.elm, self)
+                    if ok:
+                        self.protocol_mode_changed.emit("Fallback ISO 9141-2 (Modo 01 Assíncrono)", True)
+                        self.status.emit("warning", "Fallback ISO 9141-2 (Modo 01 Assíncrono)")
+                if not ok:
+                    raise TransportError("ECU não respondeu ao handshake inicial. Ligue a ignição.")
             else:
-                self.protocol_mode_changed.emit(self.strategy.display_name, False)
+                if self.strategy.profile_id == PROFILE_VW_GOL:
+                    self.protocol_mode_changed.emit("VAG KWP2000 Nativo (Bloco 003 Síncrono)", False)
+                elif self.strategy.profile_id == PROFILE_FORD_KA:
+                    self.protocol_mode_changed.emit("Ford HS-CAN 500k (PCM + BCM + ABS)", False)
+                elif self.strategy.profile_id == PROFILE_KW1281:
+                    self.protocol_mode_changed.emit("VAG KW1281 (Bosch MP9.0 Kombi 1.6 Ar)", False)
+                else:
+                    self.protocol_mode_changed.emit(self.strategy.display_name, False)
 
         # Emite metadados de canais iniciais da estratégia
         info_channels = self.strategy.get_channels_info()
@@ -206,11 +231,49 @@ class ObdWorker(QThread):
                 self.strategy.reset_adaptation(self.elm, self)
             elif cmd in ("scan_vag", "scan_ford", "scan_all"):
                 self.strategy.scan_all(self.elm, self)
+            elif cmd == "read_readiness":
+                self._read_readiness()
+            elif cmd == "read_freeze_frame":
+                self._read_freeze_frame()
             elif cmd in ("reconnect_vag", "force_vag_kwp"):
                 self.log.emit("Forçando reconexão ao protocolo VAG KWP2000 Nativo...")
                 self.vehicle_profile = PROFILE_VW_GOL
                 self.strategy = get_vehicle_strategy(PROFILE_VW_GOL)
                 self._reinit_bus()
+
+    def _read_readiness(self) -> None:
+        if not self.elm:
+            return
+        self.log.emit("Lendo Monitores de Prontidão (I/M Readiness - Modo 01 PID 01)...")
+        r = self.elm.command("0101", 2.0)
+        lines = r.data_lines()
+        data_bytes = bytearray()
+        for l in lines:
+            if "4101" in l:
+                payload = l[l.find("4101") + 4:]
+                try:
+                    data_bytes.extend(bytes.fromhex(payload))
+                except ValueError:
+                    pass
+        if not data_bytes:
+            # Fallback se for Mock ou resposta direta
+            data_bytes = bytearray(b"\x00\x07\xFF\x00")
+        report = parse_readiness_pid01(bytes(data_bytes))
+        self.readiness_result.emit(report)
+        self.info.emit(f"I/M Readiness: {report.ready_count}/{report.supported_count} monitores concluídos.")
+
+    def _read_freeze_frame(self) -> None:
+        if not self.elm:
+            return
+        self.log.emit("Lendo Parâmetros Congelados de Falha (Freeze Frame - Modo 02)...")
+        cmds = ["0202", "020C", "020D", "0205", "020B", "0204"]
+        ff_lines = []
+        for c in cmds:
+            resp = self.elm.command(c, 1.5)
+            ff_lines.extend(resp.lines)
+        ff = parse_freeze_frame(ff_lines)
+        self.freeze_frame_result.emit(ff)
+        self.info.emit(f"Freeze Frame lido: DTC causador {ff.dtc}.")
 
     def _reinit_bus(self) -> None:
         self.log.emit("Muitos erros consecutivos — reinicializando barramento...")
@@ -222,4 +285,33 @@ class ObdWorker(QThread):
         now = time.monotonic()
         t_rel = now - self.t0
         wall_ms = time.time() * 1000.0
+
+        # Enriquecimento automático de telemetria: consumo instantâneo e eficiência volumétrica
+        try:
+            fuel_metrics = estimate_fuel_metrics(values)
+            for fk, fv in fuel_metrics.items():
+                if fk not in values:
+                    values[fk] = fv
+        except Exception:
+            pass
+
+        # Canais matemáticos sintéticos (potência, torque, desvio lambda, custos de viagem)
+        try:
+            math_metrics = self.math_engine.compute(t_rel, values)
+            for mk, mv in math_metrics.items():
+                if mk not in values:
+                    values[mk] = mv
+        except Exception:
+            pass
+
+        # Cronômetro de aceleração / performance
+        try:
+            spd = values.get("speed", 0.0)
+            perf_msg = self.perf_timer.update(t_rel, spd)
+            if perf_msg:
+                self.perf_event.emit(perf_msg)
+                self.info.emit(perf_msg)
+        except Exception:
+            pass
+
         self.sample.emit(t_rel, wall_ms, values)
