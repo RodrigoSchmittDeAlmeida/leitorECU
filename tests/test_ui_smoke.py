@@ -56,9 +56,13 @@ def test_main_window_instantiation():
 
     # 7. Controles de UX: Replay CSV, Limpar Picos, Badge de Protocolo e Varredura
     assert hasattr(win, "btn_open_csv")
+    assert hasattr(win, "btn_export_mlv")
+    assert hasattr(win, "btn_settings")
+    assert hasattr(win, "auto_log_chk")
     assert hasattr(win, "btn_clear_peaks")
     assert hasattr(win, "proto_badge")
     assert hasattr(win, "bg_scan_chk")
+    assert win.map2d.minimumSizeHint().width() <= 300
 
     # 8. Peak Hold funcional no ValueCard
     rpm_card = win.cards["rpm"]

@@ -1,204 +1,266 @@
-# Datalogger OBD2 — Diagnóstico Avançado VAG KWP2000 & Ford HS-CAN (UDS)
+# leitorECU — Scanner Automotivo Universal & Datalogger de Alta Frequência
 
-Aplicação desktop de telemetria e diagnóstico automotivo em tempo real desenvolvida em Python (PyQt6 + PyQtGraph a 30 FPS), projetada para aquisição de dados de alta frequência, análise de calibração e diagnóstico multimodular via interfaces baseadas no controlador ELM327 (Bluetooth BLE, Wi-Fi TCP e Simulador Integrado).
+Aplicação desktop profissional de telemetria, análise de calibração e diagnóstico automotivo em tempo real desenvolvida em Python (PyQt6 + PyQtGraph rodando a 30 FPS estáveis). Projetada para comunicação de alta velocidade com centrais de injeção eletrônica e módulos de carroceria via barramento CAN (ISO 15765-4 / UDS ISO 14229), Linha K nativa (VAG KWP2000 ISO 14230-4 e VAG KW1281) e padrão SAE J1979 OBD-II universal.
 
-![Interface Principal e Mapa 2D Térmico](docs/images/dashboard_map2d.png)
+Compatível com interfaces ELM327 (Bluetooth 4.0+ BLE, Wi-Fi TCP, USB Serial) e cabos seriais dedicados VAG-COM KKL 409.1 (FTDI/CH340).
 
-![Diagnóstico Multimodular Ford HS-CAN](docs/images/dashboard_ford_ka.png)
+![Telemetria em Tempo Real e Osciloscópio](docs/images/ui-dashboard-telemetry.png)
+
+![Diagnóstico Multimodular e Módulos de Rede](docs/images/ui-functions-modules.png)
 
 ---
 
 ## Sumário
 
-1. [Visão Geral e Perfis Suportados](#visão-geral-e-perfis-suportados)
-2. [Principais Funcionalidades e Recursos](#principais-funcionalidades-e-recursos)
-3. [Arquitetura do Sistema](#arquitetura-do-sistema)
-4. [Requisitos e Instalação](#requisitos-e-instalação)
-5. [Execução e Operação](#execução-e-operação)
-6. [Procedimento de Conexão (Bluetooth BLE e Wi-Fi)](#procedimento-de-conexão-bluetooth-ble-e-wi-fi)
-7. [Testes Automatizados](#testes-automatizados)
-8. [Estrutura do Diretório](#estrutura-do-diretório)
+1. [Versão Compilada para Download](#versão-compilada-para-download)
+2. [Arquitetura Zero-Menu: Auto-Fingerprinting Universal](#arquitetura-zero-menu-auto-fingerprinting-universal)
+3. [Compatibilidade de Veículos e Centrais](#compatibilidade-de-veículos-e-centrais)
+4. [Recursos Principais e Ferramentas de Engenharia](#recursos-principais-e-ferramentas-de-engenharia)
+5. [Interface Motorsport Telemetry](#interface-motorsport-telemetry)
+6. [Canais Matemáticos e Estimativas Físicas](#canais-matemáticos-e-estimativas-físicas)
+7. [Requisitos e Execução a partir do Código-Fonte](#requisitos-e-execução-a-partir-do-código-fonte)
+8. [Procedimentos de Conexão](#procedimentos-de-conexão)
+9. [Suíte de Testes Automatizados](#suíte-de-testes-automatizados)
+10. [Estrutura do Repositório](#estrutura-do-repositório)
 
 ---
 
-## Visão Geral e Perfis Suportados
+## Versão Compilada para Download
 
-O sistema opera de forma totalmente offline e implementa estratégias dedicadas de comunicação para contornar as limitações do padrão OBD-II genérico em centrais sul-americanas:
+Para usuários do Microsoft Windows (10 ou 11 de 64 bits), o **leitorECU** está disponível como executável binário independente (*standalone*), dispensando a instalação prévia de Python ou dependências externas.
 
-### 1. Volkswagen Gol G5 1.6 Flex (Bosch Motronic ME7.5.30)
-Comunicação nativa via protocolo proprietário **VAG KWP2000 sobre ISO 14230-4 K-Line** (Serviço `0x21` — Leitura de Blocos de Medição `001` a `255`), com fallback automático e transparente para OBD-II Modo `01`:
-- **Bloco 003 Síncrono**: Aquisição simultânea de Rotação (RPM), Carga/Pressão do Coletor (MAP), Ângulo da Borboleta (TPS) e Avanço de Ignição em uma única requisição serial, eliminando distorções de fase (*time-skew*) durante transitórios rápidos.
-- **Bloco 002**: Tempo de Injeção real (`ms`), carga e fluxo de massa de ar (`g/s`).
-- **Bloco 004, Bloco 032 e Pino 16 OBD (`ATRV`)**: Monitoramento cruzado da tensão elétrica em três pontos independentes: tensão no terminal 30/15 da ECU (Bloco `004.2` e Bloco `032.4`), tensão de referência da central e tensão direta no Pino 16 do conector OBD-II via ADC do ELM327 (`ATRV`).
-- **Bloco 020 e Bloco 026**: Monitoramento individual por cilindro (`Cil. 1` a `Cil. 4`) do retardo de ignição por detonação (`°KW`) e da tensão bruta dos sensores piezoelétricos de detonação (`V`).
-- **Bloco 032 e Bloco 033**: Monitoramento contínuo das adaptações de combustível de curto prazo (STFT), longo prazo em marcha lenta e carga parcial (LTFT) e tensão bruta da Sonda Lambda pré-catalisador.
-- **Bloco 062 e Bloco 103**: Pistas duplas potenciométricas do corpo de borboleta eletrônico EPC (`G187`/`G188`) e do pedal acelerador APP (`G79`/`G185`), além do teor percentual de etanol aprendido pela malha Flex (`Bloco 103`).
-- **Reset de Adaptação e Aprendizado Flex (Canal 00)**: Execução dos serviços KWP2000 `0x21 0x00`, `0x28 0x00` (Basic Setting) e `0x10 0x89` para reinicialização dos mapas adaptativos de mistura e combustível na EEPROM da ECU.
-- **Mapeamento Completo de Fórmulas VAG**: Decodificador para 45 fórmulas numéricas do padrão KWP1281/KWP2000, com persistência automática dos blocos descobertos em cache JSON (`cache/vag_blocos_<ECU_ID>.json`).
+- **Arquivo Executável Standalone**: `dist/leitorECU.exe`
+- **Tamanho aproximado**: ~70 MB (inclui runtime Python 3.13, bibliotecas gráficas PyQt6/PyQtGraph e drivers de rede)
+- **Modo de Uso Direto**:
+  1. Baixe o executável na aba de [Releases do GitHub](https://github.com/);
+  2. Conecte sua interface (Bluetooth BLE, Wi-Fi, cabo USB serial ou selecione o modo Demo);
+  3. Execute `leitorECU.exe` e clique em **Conectar**. O motor de Auto-Fingerprinting identifica a central e configura a tela automaticamente.
 
-### 2. Ford Ka+ 2016 SEL 1.5 Sigma 16V Flex (Rede HS-CAN 500 kbps)
-Comunicação via barramento **ISO 15765-4 CAN (11-bit, 500 kbps)** utilizando o protocolo **UDS (ISO 14229 Serviço `0x22` — ReadDataByIdentifier)** com chaveamento dinâmico de endereçamento físico (`ATSH`, `ATCRA`, `ATFCSH`) e isolamento individual de falhas por DID:
-- **PCM (`0x7E0` / `0x7E8` — Powertrain Control Module)**: Leitura simultânea das duas sondas lambda (Sonda 1 pré-catalisador e Sonda 2 pós-catalisador), avaliação automática de eficiência catalítica, estado da malha de injeção (Closed Loop / Open Loop), temperatura da cabeça do cilindro (CHT), temperatura do catalisador, posição do pedal acelerador (APP), tempo de pulso de injeção (`ms`), ciclo de trabalho da ventoinha (PWM %), percentual de etanol no tanque, pressão barométrica, pressão da linha de Ar-Condicionado (`kPa` via DIDs `0136`/`0323`) e estado de acoplamento do compressor A/C (DIDs `0908`/`0325`).
-- **ABS / ESC (`0x760` / `0x768` — Anti-Lock Brake System)**: Velocidade individual das quatro rodas (`km/h`), estado do interruptor do pedal de freio, pressão hidráulica de frenagem, ângulo do sensor de direção (SAS) e monitoramento de intervenção do controle de estabilidade (ESC) e assistente de partida em rampa (HLA).
-- **PSCM / EPAS (`0x730` / `0x738` — Power Steering Control Module)**: Direção elétrica assistida com leitura de ângulo do volante (`°` via DIDs `3300`/`3301`), torque aplicado pelo motorista (`Nm` via DID `3200`) e corrente elétrica do motor de assistência (`A`).
-- **IPC (`0x720` / `0x728` — Instrument Panel Cluster)**: Odômetro total (`km`), nível percentual do tanque de combustível, temperatura ambiente externa (`°C`), estado do freio de estacionamento e alerta de afivelamento do cinto de segurança.
-- **BCM (`0x726` / `0x72E` — Body Control Module)**: Monitoramento de portas individuais, capô, porta-malas, travamento central, imobilizador PATS, faróis, lanternas, limpadores, posição de ignição e tensão de referência do módulo.
-- **Reset de KAM (Keep Alive Memory)**: Reinicialização das tabelas adaptativas da memória não-volátil do PCM via serviços UDS `0x14 FF FF FF` e `0x11 0x01` (ECU Hard Reset).
-
-### 3. OBD-II Genérico / Automático
-Perfil universal compatível com qualquer veículo que implemente a norma SAE J1979 / ISO 15031-5 (Modos `01`, `03`, `04` e `09`), com descoberta automática de PIDs suportados via bitmasks (`0100`, `0120`, `0140`).
+Para iniciar diretamente em modo de simulação sem hardware conectado:
+```powershell
+.\leitorECU.exe --demo
+```
 
 ---
 
-## Principais Funcionalidades e Recursos
+## Arquitetura Zero-Menu: Auto-Fingerprinting Universal
+
+O aplicativo elimina completamente qualquer menu estático de seleção manual de veículo. O motor `UniversalAutoDiscovery` executa uma sonda em cascata (*cascading probe*) a partir do momento em que o usuário clica em **Conectar**, progredindo do barramento mais veloz para os mais lentos:
+
+```text
+                  [ Clique em Conectar ]
+                             │
+            ┌────────────────┴────────────────┐
+            ▼                                 │
+  [ 1. Sonda CAN Bus (ATSP6/7) ]              │ (se falhar em 0,3s)
+  • Envia 0100, 0902 (VIN), 22F190            │
+  • Consulta DIDs UDS 22F187 e 221624         │
+  • Varre headers CAN (7E0, 726, 760, 730)    │
+  • Detecta Continental EMS2211, Bosch CAN    │
+            │ (Se responder)                  ▼
+            ├───────────────► [ 2. Sonda K-Line Fast Init (ATSP5) ]
+            │                 • ATSH 81 10 F1 + 1A9B (ReadECUId)
+            │                 • Identifica ME7.5.30 e centrais ISO 14230
+            │                 │ (se falhar em 1,5s)
+            │                 ▼
+            │               [ 3. Sonda K-Line 5-Baud Init (ATSP4/3) ]
+            │               • ATIIA 01 + 1089 + 1A9B (VAG KWP2000)
+            │               • Detecção de KeyBytes KW1281 (01 8A)
+            │               • Suporte Bosch Motronic MP9.0 (Kombi 1.6 Ar)
+            │               │ (se falhar em 3,5s)
+            │               ▼
+            │               [ 4. Fallback Universal OBD-II (ATSP0) ]
+            │               • Varredura de bitmasks PIDs 0100, 0120, 0140
+            │               • Identificação via VIN 0902 / WMI de montadora
+            │
+            ▼
+[ UI Orientada a Capacidades + Polling Ativo Customizado ]
+```
+
+### Decodificador Universal de Identidade da ECU (`obd_app/ecu_id.py`)
+Extrai metadados completos da resposta bruta dos serviços `1A 9B` (KWP2000), `09 02` (VIN OBD2) e `22 F1 87` (Part Number UDS):
+- **Identificação do Fabricante por WMI**: `9BW` = Volkswagen Brasil, `9BF` = Ford Brasil, `9BG` = General Motors Brasil, `9BD` = Fiat Brasil, `3FA` = Ford México, etc.
+- **Part Numbers VAG**: `032906032AJ` (VW EA111 1.6 Flex — Bosch ME7.5.30), `237906021` (VW Kombi 1.6 Ar — Bosch MP9.0), `036906034` (VW 1.0 16V — Magneti Marelli 4LV), entre outros.
+- **Gravação de Metadados**: O identificador oficial e o protocolo ativo são inseridos diretamente no cabeçalho dos arquivos de telemetria CSV e laudos técnicos.
+
+---
+
+## Compatibilidade de Veículos e Centrais
+
+### 1. Volkswagen Kombi 1999 1.6 a Ar Injetada (Bosch Motronic MP9.0 — Protocolo KW1281)
+- **Desafio Físico**: A central MP9.0 (Part Number típico `237 906 021.X`) opera via Linha K a 9.600 baud com inicialização 5-baud no endereço `0x01` e exige handshake de inversão de complemento (*byte-echo*) a cada byte trafegado.
+- **Solução Implementada**: 
+  - Módulo [`obd_app/protocols/kw1281.py`](file:///c:/Users/rsaho/Desktop/leitorECU3/leitorECU/leitorECU/obd_app/protocols/kw1281.py) com decodificação direta dos blocos ASCII e numéricos de células KW1281.
+  - Driver [`KklSerialTransport`](file:///c:/Users/rsaho/Desktop/leitorECU3/leitorECU/leitorECU/obd_app/transports.py) para conexão direta via cabos USB KKL 409.1 (FTDI/CH340).
+  - Aquisição em tempo real dos Blocos `001` a `008`: RPM, Ângulo de Avanço de Ignição, Tempo de Injeção real (`ms`), Temperatura do Óleo e Cabeçote, Tensão da Sonda Lambda e Tensão de Bateria.
+  - Detecção transparente de KeyBytes `01 8A` em adaptadores ELM327 com recomendação automática de conexão via cabo KKL.
+
+### 2. Linha Volkswagen TotalFlex (Bosch Motronic ME7.5.30 — VAG KWP2000)
+- **Comunicação Nativa**: ISO 14230-4 K-Line via Serviço `0x21` (Blocos de Medição `001` a `255`).
+- **Blocos Síncronos e Alta Resolução**: Bloco `003` (RPM, MAP, TPS e Avanço em frame único de 12 bytes sem defasagem temporal), Bloco `002` (Tempo de Injeção em ms e fluxo de ar), Bloco `020`/`026` (Retardo individual por cilindro 1 a 4 e tensão de detonação em Volts), Bloco `032`/`033` (STFT e LTFT em marcha lenta e carga parcial, Sonda Lambda 1 com oscilação contínua 0,10 V a 0,85 V).
+- **Reset de Mistura Flex**: Procedimento de reinicialização dos adaptativos via Canal `00` na EEPROM.
+
+### 3. Ford Ka+ 1.5 16V Sigma Flex e Carros Modernos (Rede CAN 500k UDS)
+- **PCM (0x7E0 / 0x7E8)**: Leitura simultânea de Sonda 1 (B1S1 pré-catalisador) e Sonda 2 (B1S2 pós-catalisador), avaliação de eficiência do catalisador em tempo real, status de malha (Open/Closed Loop), temperatura da cabeça do cilindro (CHT), eletroventilador PWM %, pressão de linha do ar-condicionado e teor de etanol.
+- **Multimódulos CAN**: BCM Carroceria (`0x726`), Freios ABS/ESC com velocidade individual das 4 rodas (`0x760`), Direção Elétrica EPAS (`0x730`) e Painel de Instrumentos IPC (`0x720`).
+
+### 4. Padrão OBD-II Universal (ISO 15765-4, ISO 14230-4, ISO 9141-2, SAE J1850)
+- Suporte a qualquer veículo comercial que responda aos PIDs SAE J1979 Modos 01, 02, 03, 04, 07, 09 e 0A.
+
+---
+
+## Recursos Principais e Ferramentas de Engenharia
 
 | Funcionalidade | Descrição Técnica |
 |---|---|
-| **Painel de Indicadores (14 Cards Fixos)** | Exibição em tempo real de RPM, MAP, Avanço, TPS, Carga, Velocidade, Bateria, Sonda 1, Sonda 2, Correção Lambda, STFT, LTFT, ECT e IAT, com retenção de picos (mínimo e máximo), geometria travada sem deslocamento de layout e alertas visuais de limites operacionais. |
-| **Osciloscópio Customizável (30 FPS)** | Três gráficos de eixo duplo compartilhando a mesma base temporal de 30 segundos, equipados com seletores individuais (`Esq.1`, `Esq.2`, `Dir.`) que permitem plotar qualquer canal disponível da ECU (RPM, MAP, TPS, Pedal APP, Sonda 1, Sonda 2, STFT, LTFT, Bateria, Pino 16 ATRV, Tensão ECU, Tempo de Injeção, Temperatura CHT/ECT/Catalisador, Etanol Flex, Pressão A/C, Velocidade das Rodas ABS, Ângulo EPAS e Detonação) com ajuste automático de escala Y. |
-| **Mapa 2D Térmico com Guias Diretas** | Matriz bidimensional acumulativa (12 faixas de rotação por 9 faixas de pressão absoluta, ajustada integralmente na tela sem barras de rolagem) com guias diretas lado a lado para seleção instantânea de Avanço (`°`), STFT (`%`), Sonda 1 (`V`), Injeção (`ms`), Bateria (`V`) e Etanol (`%`). |
-| **Replay e Análise de Logs CSV** | Carregamento de arquivos CSV gravados para inspeção offline com zoom livre, reconstrução integral da matriz do Mapa 2D e cursor vertical (*Crosshair*) sincronizado entre os três gráficos. |
-| **Detector de Anomalias de Desaceleração** | Algoritmo de estado (`DecelDetector`) com validação de sincronismo temporal entre amostras (*time-skew rejection*) para detecção automática de falha de *Cut-Off* (excesso de combustível com borboleta fechada), vácuo insuficiente no coletor e retardo severo de ignição pós-PMS (*ATDC*). |
-| **Prioridade de Desaceleração** | Modo de aquisição de alta frequência que suspende leituras secundárias de temperatura e adaptação lenta, concentrando a largura de banda serial exclusivamente em RPM, MAP, TPS, Avanço e Sonda Lambda. |
-| **Controle de Cadência da Linha K** | Seletor de frequência de pacotes (`Máxima`, `Suave`, `1 Hz` ou `Pausar Linha K`) projetado para eliminar ruídos de indução eletromagnética no chicote de áudio de veículos plataforma PQ24/G5. |
-| **Diagnóstico Multimodular de DTCs** | Leitura e limpeza de códigos de falha via OBD-II (Modos `03`, `04`, `07`, `0A`), VAG KWP2000 (Serviços `0x18` e `0x14`) e Ford UDS (Serviço `0x19 0x02` varrendo simultaneamente PCM, ABS, PSCM, IPC e BCM). Inclui dicionário expandido (>150 códigos P, C, B e U) e decodificador estrutural heurístico conforme SAE J2012. |
-| **Gravação Datalogger CSV** | Exportação contínua formatada para abertura direta no Microsoft Excel em português (separador `;` e vírgula decimal), contendo carimbo de tempo absoluto (`epoch_ms`), tempo relativo (`t_s`), eventos diagnosticados e todos os canais estáticos e dinâmicos. |
+| **Osciloscópio Triplo Customizável (30 FPS)** | Três gráficos de duplo eixo Y desacoplados compartilhando base temporal sincronizada de 30 segundos. Cada traço possui seletor dinâmico individual (`Esq.1`, `Esq.2`, `Dir.`) para alternar entre qualquer canal físico ou virtual da ECU. |
+| **Barra de Telemetria Viva nos Gráficos** | Cabeçalho fino de 22px integrado no topo de cada gráfico contendo bolinha colorida correspondente à curva, seletor compacto e leitura digital numérica em tempo real em fonte monoespaçada. |
+| **Matriz Térmica 2D Operacional (RPM × MAP)** | Grid acumulativo de 12 colunas de rotação (700 a 5.500 RPM) por 9 linhas de pressão absoluta (20 a 100 kPa). Destaca em tempo real a célula ativa com contorno ciano de 2px e guia visual de eixos (`▲ MAP kPa │ ► RPM`). Modos estatísticos: Média, Máximo, Mínimo e Contagem de Ocorrências (Hits). |
+| **Exportação MegaLogViewer HD (.msl)** | Exportador nativo de logs tabulados formatados rigorosamente conforme a especificação EFI Analytics / TunerStudio, permitindo análise profunda de transitórios e mapas em softwares externos de calibração. |
+| **Temporizadores de Performance Arrancada & Frenagem** | Módulo de telemetria de pista medindo automaticamente 0-60 km/h, 0-100 km/h, 100-200 km/h, 201m (1/8 milha), 402m (1/4 milha) e distância/tempo de frenagem 100-0 km/h com filtro contra falso disparo. |
+| **Monitores de Prontidão (I/M Readiness)** | Diagnóstico completo de emissões via Modo 01 PID 01 (status da lâmpada MIL, contagem de DTCs gravados e tabela detalhada de monitores contínuos e não-contínuos para ciclos Otto e Diesel). |
+| **Dados Congelados da Falha (Freeze Frame)** | Leitura do Modo 02 com reconstrução de todos os parâmetros operacionais do motor no instante exato em que o código de falha gerador do congelamento foi registrado. |
+| **Gerador de Laudos Técnicos (PDF Vetorial & HTML)** | Emissão de relatórios completos de diagnóstico contendo dados do veículo, VIN, DTCs ativos, histórico, monitores de emissão e teste de bateria, exportáveis em HTML formatado e PDF vetorial nativo via `QPdfWriter`. |
+| **Alertas Sonoros Sintetizados Não-Bloqueantes** | Monitor de Shift Light por rotação e alarme de temperatura crítica de arrefecimento (ECT) operando em `QThread` assíncrona desacoplada via `winsound.Beep`. |
+| **Diálogo de Ajustes Persistentes** | Configuração de massa do veículo (kg), preço do combustível (R$/L), limiar de rotação do Shift Light e temperatura crítica ECT, persistidos via `QSettings`. |
 
 ---
 
-## Arquitetura do Sistema
+## Interface Motorsport Telemetry
 
-O projeto adota uma arquitetura desacoplada baseada no padrão **Strategy** e comunicação assíncrona orientada a sinais Qt (`pyqtSignal`), garantindo que a interface gráfica mantenha 30 FPS constantes independentemente da latência do barramento automotivo:
+A interface foi projetada com base em princípios ergonômicos de telemetria esportiva profissional (MoTeC i2 e Bosch WinDARAB):
 
-1. **Camada de Transporte (`obd_app/transports.py`)**: Abstrai o meio físico em uma interface uniforme (`Transport`) com implementações para Bluetooth Low Energy via biblioteca `bleak` (`BleTransport`), sockets TCP/IP (`TcpTransport`) e simulação determinística (`MockTransport`).
-2. **Driver de Protocolo ELM327 (`obd_app/elm327.py`)**: Gerencia a inicialização AT, controle de fluxo, concatenação e recomposição de quadros multi-frame (ISO-TP e KWP2000), filtragem de ruído de barramento e extração de payloads hexadecimais.
-3. **Estratégias de Protocolo (`obd_app/protocols/`)**:
-   - `ProtocolStrategy` (`base.py`): Interface abstrata que define o ciclo de vida de inicialização, loop de aquisição, leitura/limpeza de DTCs e reset de adaptações.
-   - `VagKwpStrategy` (`vag.py`): Implementa o estado de sessão KWP2000, recomposição de blocos multi-linha, varredura completa dos blocos `001`..`255` e reset via Canal `00`.
-   - `FordCanStrategy` (`ford.py`): Gerencia o chaveamento dinâmico de identificadores CAN 11-bit (`0x7E0`, `0x760`, `0x730`, `0x720`, `0x726`), controle de falhas isolado por DID e leitura de DTCs em múltiplos módulos via serviço UDS `0x19`.
-   - `GenericObdStrategy` (`generic.py`): Implementa o polling otimizado de PIDs Modo `01` com suporte a sufixo de resposta rápida.
-4. **Worker Assíncrono (`obd_app/worker.py`)**: Executa em uma `QThread` dedicada, coordenando a estratégia ativa através do protocolo `WorkerContext` (`obd_app/interfaces.py`) e emitindo lotes de amostras validadas para a thread de interface.
-
-Para especificações detalhadas de engenharia, tabelas de conversão KWP2000 e estrutura de quadros, consulte o documento [AGENTS.md](AGENTS.md).
+- **Geometria Retangular e Aproveitamento Total de Espaço**: Padronização estrita com `border-radius: 0px` em todos os elementos visuais (cards, botões, tabelas, abas, barras de rolagem e caixas de diálogo).
+- **Redução de Ruído Visual**: Fundo estruturado em camadas de profundidade (`#0D1015`, `#13171F`, `#151A22`, `#181E27`) com divisórias finas de 1px em cinza escuro, substituindo contornos pesados e cansativos.
+- **Grid Espacial Unificado de 8px**: Margens e espaçamentos internos padronizados, garantindo alinhamento pixel-a-pixel entre cards, osciloscópios e matriz 2D.
+- **Tipografia Monoespaçada**: Fontes `JetBrains Mono` e `Consolas` em todas as leituras numéricas dinâmicas para evitar oscilações de layout durante variações rápidas de valores.
+- **Checkboxes Vetoriais Sóbrias**: Indicadores com preenchimento ciano suave (`#236B7A`) e ícone vetorial de checkmark SVG nítido.
+- **Estado de Conexão Inequívoco**: Em repouso, o único elemento verde ativo na tela é o botão de ação **Conectar**, enquanto o indicador de protocolo exibe `SEM PROTOCOLO` em cinza neutro.
 
 ---
 
-## Requisitos e Instalação
+## Canais Matemáticos e Estimativas Físicas
+
+O motor `MathChannelsEngine` processa em tempo real canais virtuais de alta utilidade:
+
+1. **Potência Estimada às Rodas (WHP) e Torque (kgfm)**: Calculados a partir da taxa de variação de velocidade ($\frac{\Delta v}{\Delta t}$), massa configurada do veículo, perdas parasíticas estimadas e rotação do motor.
+2. **Eficiência Volumétrica (VE%)**: Calculada dinamicamente pelo método Speed-Density utilizando Pressão Absoluta no Coletor (MAP), Temperatura do Ar Admitido (IAT), Rotação (RPM) e deslocamento volumétrico configurado.
+3. **Consumo Instantâneo de Combustível (km/l e L/h)**: Estimado a partir do fluxo de massa de ar (MAF direto ou estimado por Speed-Density), relação ar/combustível estequiométrica (AFR) ajustada pelo teor de etanol Flex e velocidade instantânea reportada.
+4. **Custo Operacional por Quilômetro (R$/km)**: Calculado em tempo real cruzando a taxa de consumo instantâneo com o preço do litro de combustível configurado.
+5. **Analisador de Queda de Tensão na Partida (Cranking Drop)**: Monitora a resposta do conversor analógico-digital durante a transição de rotação de 0 para >200 RPM. Se a tensão cair abaixo de 9,6 V, emite alerta de bateria fraca ou resistência de aterramento.
+
+---
+
+## Requisitos e Execução a partir do Código-Fonte
 
 ### Requisitos de Sistema
-- Sistema Operacional: Windows 10 ou Windows 11 (necessário suporte a Bluetooth 4.0+ BLE para uso com adaptadores BLE).
-- Python: 3.10 ou superior (recomendado Python 3.13).
-- Adaptador compatível com ELM327 v1.4b/v1.5 ou v2.2/v2.3 original (recomendado Vgate iCar Pro BLE 4.0 ou Wi-Fi).
+- **Sistema Operacional**: Windows 10 ou Windows 11 (recomendado para suporte pleno a Bluetooth BLE).
+- **Python**: Versão 3.10 ou superior (testado e otimizado para Python 3.13 de 64 bits).
 
-### Instalação das Dependências
-Execute o comando abaixo no diretório raiz do projeto (requer conexão com a internet apenas durante a instalação):
+### Instalação de Dependências
+Clone o repositório e instale as dependências listadas no `requirements.txt`:
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-Dependências instaladas:
+Dependências principais:
 - `PyQt6 >= 6.5`
 - `pyqtgraph >= 0.13`
 - `numpy >= 1.24`
-- `bleak >= 0.21`
+- `bleak >= 0.21` (comunicação GATT Bluetooth Low Energy)
+- `pyserial >= 3.5` (opcional, recomendado para cabos seriais KKL / Pass-Thru)
 
----
-
-## Execução e Operação
-
-Para iniciar a aplicação em modo de operação normal:
-
+### Inicialização
+Para abrir a aplicação:
 ```powershell
 python main.py
 ```
 
-Para iniciar diretamente com o perfil de simulação ativo (permite testar todos os gráficos, o detector de anomalias e o Mapa 2D sem estar conectado ao veículo):
-
+Para abrir diretamente no modo de demonstração/simulador:
 ```powershell
 python main.py --demo
 ```
 
 ---
 
-## Procedimento de Conexão (Bluetooth BLE e Wi-Fi)
+## Procedimentos de Conexão
 
-### Conexão via Bluetooth BLE (Vgate iCar Pro BLE 4.0)
-1. Conecte o adaptador na porta de diagnóstico OBD-II do veículo e posicione a chave de ignição no estágio ligado (painel energizado).
-2. **Importante**: Não realize o pareamento do adaptador através das configurações de Bluetooth do Windows. Dispositivos BLE estabelecem conexão GATT diretamente pela aplicação. Caso o adaptador já esteja pareado no sistema operacional, remova-o das configurações do Windows.
-3. Certifique-se de que nenhum aplicativo móvel (como Torque ou Car Scanner) esteja conectado ao adaptador no smartphone.
-4. Na aplicação, selecione o perfil do veículo correspondente, escolha o modo **Bluetooth BLE (Vgate iCar Pro)** e clique em **Procurar BLE**.
-5. Selecione o adaptador identificado (geralmente listado como `IOS-Vlink` ou `Android-Vlink`) e clique em **Conectar**.
+### Bluetooth BLE (Adaptadores Vgate iCar Pro BLE 4.0)
+1. Conecte a interface na porta OBD-II do veículo e ligue a ignição.
+2. **Atenção**: Não realize o pareamento nas configurações de Bluetooth do Windows. O driver `bleak` comunica-se diretamente via GATT. Caso o dispositivo tenha sido pareado anteriormente no painel do Windows, remova o pareamento.
+3. Certifique-se de que nenhum aplicativo de smartphone esteja conectado à interface.
+4. No leitorECU, selecione o modo **Bluetooth BLE**, clique em **Buscar**, selecione o dispositivo na lista e clique em **Conectar**.
 
-### Conexão via Wi-Fi (TCP/IP)
-1. Conecte o computador à rede Wi-Fi gerada pelo adaptador OBD-II.
-2. Na aplicação, selecione o modo **Wi-Fi (TCP)**, informe o endereço IP e a porta padrão do dispositivo (tipicamente `192.168.0.10` e porta `35000`) e clique em **Conectar**.
+### Wi-Fi (Adaptadores TCP/IP)
+1. Conecte a rede Wi-Fi do computador ao ponto de acesso gerado pelo adaptador OBD-II.
+2. No leitorECU, selecione o modo **Wi-Fi (TCP)**, verifique o IP e Porta (padrão `192.168.0.10:35000`) e clique em **Conectar**.
+
+### Cabo USB Serial / KKL (VAG-COM 409.1)
+1. Conecte o cabo USB na porta do computador e na porta de diagnóstico do veículo.
+2. No leitorECU, selecione o modo **USB Serial / KKL (COM)**, escolha a porta serial correspondente (ex: `COM3`) e o baud rate apropriado (`9600` para KW1281 / MP9.0 ou `38400`/`115200` para ELM327 USB).
+3. Clique em **Conectar**.
 
 ---
 
-## Testes Automatizados
+## Suíte de Testes Automatizados
 
-O projeto conta com uma suíte de 43 testes automatizados (unitários, funcionais e de interface) construída com `pytest`, validando decodificadores KWP2000 e UDS, recomposição de pacotes multi-frame, rejeição de *time-skew* no detector de desaceleração, catálogo de DTCs, Mapa 2D e replay de CSV.
-
-Para executar todos os testes:
+O projeto conta com 59 testes automatizados cobrindo estratégias de inicialização, detecção de falhas, algoritmos de cálculo, integração de interface gráfica e exportação de relatórios:
 
 ```powershell
-pytest tests/ -v
+py -3.13 -m pytest tests/ -v
+```
+
+Resultado da suíte de testes:
+```text
+============================= 59 passed in 4.67s =============================
 ```
 
 ---
 
-## Estrutura do Diretório
+## Estrutura do Repositório
 
 ```text
 leitorECU/
 ├── main.py                         # Ponto de entrada da aplicação desktop
-├── requirements.txt                # Lista de dependências Python
-├── README.md                       # Documentação principal do projeto
-├── AGENTS.md                       # Especificação técnica de arquitetura e protocolos
+├── requirements.txt                # Dependências Python do projeto
+├── README.md                       # Documentação completa de usuário e engenharia
+├── AGENTS.md                       # Especificação técnica aprofundada de protocolos
 ├── docs/
 │   └── images/                     # Capturas de tela da interface para documentação
-│       ├── dashboard_map2d.png
-│       └── dashboard_ford_ka.png
-├── cache/                          # Cache JSON de blocos KWP2000 e DIDs descobertos por ECU
-├── logs/                           # Diretório padrão para armazenamento de gravações CSV
+├── cache/                          # Cache local JSON de blocos KWP2000 e DIDs por ECU
+├── logs/                           # Diretório de armazenamento de datalogs CSV e MSL
 ├── obd_app/
-│   ├── __init__.py
 │   ├── interfaces.py               # Protocolos de tipagem estática (WorkerContext)
-│   ├── transports.py               # Camada física: BLE (bleak), TCP e MockTransport
+│   ├── transports.py               # Camada física: BLE (bleak), TCP, Serial KKL e Mock
 │   ├── ble_scan.py                 # Descoberta assíncrona de dispositivos Bluetooth BLE
 │   ├── elm327.py                   # Driver ELM327, parser hexadecimal e controle AT
-│   ├── pids.py                     # Definição de PIDs OBD-II Modo 01 e canais semânticos
-│   ├── vag.py                      # Fórmulas VAG KWP2000, blocos ME7.5.30 e cache JSON
-│   ├── ford.py                     # Mapeamento de módulos e DIDs Ford HS-CAN (UDS 0x22)
-│   ├── dtc.py                      # Decodificador de DTCs (OBD-II, KWP2000, UDS e heurística SAE)
-│   ├── detector.py                 # Máquina de estados para detecção de anomalias e Cut-Off
-│   ├── datalog.py                  # Gravação CSV dinâmica e buffers circulares em memória
-│   ├── mock_engine.py              # Simulador físico de motor para testes e modo demonstração
-│   ├── worker.py                   # QThread de aquisição contínua e gerenciamento de sessão
-│   ├── protocols/                  # Implementações do padrão Strategy por fabricante
-│   │   ├── __init__.py
-│   │   ├── base.py                 # Classe base ProtocolStrategy
-│   │   ├── vag.py                  # Estratégia VAG KWP2000 (Bosch ME7.5.30)
-│   │   ├── ford.py                 # Estratégia Ford HS-CAN 500 kbps (UDS ISO 14229)
-│   │   └── generic.py              # Estratégia OBD-II Universal
-│   └── ui/                         # Componentes visuais PyQt6 e PyQtGraph
-│       ├── __init__.py
-│       ├── main_window.py          # Janela principal, abas de diagnóstico e replay CSV
-│       ├── map2d.py                # Matriz térmica bidimensional (RPM x MAP)
-│       ├── plots.py                # Osciloscópio de eixo duplo com Crosshair e marcadores
-│       ├── widgets.py              # Cards de telemetria com retenção de picos (min/max)
-│       └── style.py                # Folha de estilos QSS e paleta de cores de alto contraste
-└── tests/                          # Suíte de testes automatizados (pytest)
-    ├── conftest.py
-    ├── test_datalog.py
-    ├── test_detector_advanced.py
-    ├── test_dtc.py
-    ├── test_ford.py
-    ├── test_map2d_and_replay.py
-    ├── test_pids.py
-    ├── test_strategies.py
-    ├── test_ui_smoke.py
-    ├── test_vag.py
-    └── test_vag_improvements.py
+│   ├── ecu_id.py                   # Decodificador de VIN, WMI, Part Numbers e nomes de ECU
+│   ├── math_channels.py            # Motor de canais virtuais (WHP, Torque, VE%, Consumo)
+│   ├── performance.py              # Temporizador de aceleração (0-100, 402m) e frenagem
+│   ├── audio_alerts.py             # Alertas sonoros multithreaded para Shift Light e ECT
+│   ├── report_generator.py         # Gerador de laudos técnicos em PDF vetorial e HTML
+│   ├── datalog.py                  # Gravação CSV dinâmica e exportador MegaLogViewer (.msl)
+│   ├── pids.py                     # Definições de PIDs SAE J1979 Modo 01 e canais semânticos
+│   ├── vag.py                      # Fórmulas VAG KWP2000 e catálogo de labels de blocos
+│   ├── ford.py                     # Módulos HS-CAN e DIDs Ford UDS (Modo 22)
+│   ├── dtc.py                      # Decodificador de códigos de falha e heurística SAE J2012
+│   ├── detector.py                 # Máquina de estados para detecção de anomalias de vácuo e ignição
+│   ├── mock_engine.py              # Simulador físico de dinâmica veicular e injeção de falhas
+│   ├── worker.py                   # QThread de aquisição e coordenação de estratégias
+│   ├── protocols/                  # Motor de comunicação por protocolo
+│   │   ├── autodiscovery.py        # Probe em cascata UniversalAutoDiscovery
+│   │   ├── base.py                 # Classe abstrata ProtocolStrategy
+│   │   ├── kw1281.py               # Protocolo VAG KW1281 (Kombi 1.6 Ar Bosch MP9.0)
+│   │   ├── vag.py                  # Protocolo VAG KWP2000 (Bosch ME7.5.30)
+│   │   ├── ford.py                 # Protocolo Ford HS-CAN 500k UDS
+│   │   └── generic.py              # Protocolo OBD-II Universal SAE J1979
+│   └── ui/                         # Design system e componentes visuais PyQt6 / PyQtGraph
+│       ├── main_window.py          # Janela principal com layout motorsport e abas adaptativas
+│       ├── map2d.py                # Matriz operacional 2D térmica (RPM x MAP)
+│       ├── plots.py                # Osciloscópio triplo com barra de telemetria integrada
+│       ├── widgets.py              # Cards de telemetria com retenção de picos e bullets coloridos
+│       ├── check.svg               # Marcação vetorial SVG nítida para caixas de seleção
+│       └── style.py                # Design system retangular de alta densidade (QSS)
+└── tests/                          # 59 testes automatizados com pytest
 ```

@@ -256,3 +256,53 @@ def test_audio_alerts_non_blocking():
     # Overheat atingido
     alerts.check(rpm=3000.0, ect=108.0)
     assert alerts.overheat_triggered is True
+
+
+def test_megalogviewer_export():
+    from obd_app.datalog import export_megalogviewer_csv
+
+    with tempfile.NamedTemporaryFile(suffix=".csv", mode="w", delete=False, encoding="utf-8") as f_src:
+        f_src.write("timestamp_ms;tempo_s;atualizado;rpm;map;tps;advance;lambda_v;ect;evento\n")
+        f_src.write("1000;1,000;rpm+map;3500;85,5;45,0;22,5;0,850;88,0;\n")
+        f_src.write("1100;1,100;rpm+map;3600;90,0;50,0;21,0;0,840;88,0;Arrancada\n")
+        src_path = f_src.name
+
+    with tempfile.NamedTemporaryFile(suffix=".msl", delete=False) as f_dst:
+        dst_path = f_dst.name
+
+    try:
+        ok = export_megalogviewer_csv(src_path, dst_path)
+        assert ok is True
+        assert os.path.exists(dst_path)
+
+        with open(dst_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        assert len(lines) == 3
+        header = lines[0].strip().split("\t")
+        assert "Time" in header
+        assert "RPM" in header
+        assert "MAP" in header
+        assert "TPS" in header
+        assert "Advance" in header
+        assert "CLT" in header
+
+        row1 = lines[1].strip().split("\t")
+        # Deve ter convertido vírgula decimal para ponto
+        assert "1.000" in row1
+        assert "85.5" in row1
+    finally:
+        if os.path.exists(src_path):
+            os.remove(src_path)
+        if os.path.exists(dst_path):
+            os.remove(dst_path)
+
+
+def test_map2d_size_hint_stability(qapp):
+    map_w = Map2DWidget()
+    initial_min_w = map_w.minimumSizeHint().width()
+    assert initial_min_w <= 300
+
+    # Texto muito longo no active_info não pode aumentar o minimumSizeHint do widget!
+    map_w.active_info.setText("Ponto de Operação Crítico em WOT com texto extraordinariamente longo: 6000 RPM × 100 kPa | Atual: 1.250 V | Modo: Contagem")
+    assert map_w.minimumSizeHint().width() == initial_min_w

@@ -18,3 +18,8 @@ venv/
 # Temporários de cache
 cache/*.tmp
 
+# PyInstaller builds e executáveis
+build/
+dist/
+*.spec
+

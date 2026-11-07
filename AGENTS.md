@@ -256,12 +256,92 @@ O `CsvLogger` ([`obd_app/datalog.py`](file:///c:/Users/rsaho/Desktop/leitorECU3/
 * **Mapa 2D Térmico**: Grade RPM × MAP (700 a 5500 RPM × 20 a 100 kPa) acumulando médias de Avanço de Ignição (°), STFT (%) ou Sonda Lambda (V). Coloração especial em magenta/roxo para zonas de retardo negativo (`-19°`).
 * **Peak Hold nos Cards**: Mínimo e Máximo exibidos no canto inferior esquerdo de cada ValueCard com botão `⚡ Limpar Picos`.
 
-### 8.5 Suite de Testes Automatizados (39 Testes)
+### 8.5 Suite de Testes Automatizados (59 Testes)
 ```bash
 py -3.13 -m pytest tests/ -v
-# 39 passed in ~6s (100% sucesso)
+# 59 passed in ~4.6s (100% sucesso)
 ```
 
+---
+
+## 9. Arquitetura Universal Zero-Menu (`UniversalAutoDiscovery`)
+
+Para eliminar o seletor manual de veículos e permitir operação *plug-and-play* em qualquer veículo do mercado, o handshake do `ObdWorker` é coordenado pela classe `UniversalAutoDiscovery` (`obd_app/protocols/autodiscovery.py`):
+
+1. **Sonda em Cascata Otimizada por Tempo de Resposta**:
+   - **Tentativa 1 (CAN Bus 500k/250k)**: Envia `0100` e `0902` (VIN). Se responder, lê DIDs UDS `22 F1 90` (VIN), `22 F1 87` (Part Number) e faz varredura rápida nos headers multimodulares (`0x7E0` PCM, `0x726` BCM, `0x760` ABS, `0x730` PSCM, `0x720` IPC).
+   - **Tentativa 2 (Linha K Fast Init)**: `ATSP5` + `ATSH 81 10 F1` + comando `1A 9B` (ReadECUIdentification) ou `09 02`.
+   - **Tentativa 3 (Linha K 5-Baud Init KWP2000 & KW1281)**: `ATSP4` + `ATIIA 01` + `10 89` + `1A 9B`. Se detectar os KeyBytes `01 8A` via `ATKW`, identifica protocolo VAG KW1281 (centrais pré-2001).
+   - **Tentativa 4 (OBD2 Universal Fallback)**: `ATSP0` com mapeamento automático de bitmasks suportadas (`0100`, `0120`, `0140`).
+
+2. **Decodificação de Identidade e Part Number (`obd_app/ecu_id.py`)**:
+   - Converte strings brutas de identificação em nomes canônicos exibidos no título da janela e gravados no cabeçalho do CSV:
+     - `032906032AJ` -> `VW EA111 1.6 Flex — Bosch ME7.5.30 (KWP2000)`
+     - `237906021` -> `VW Kombi 1.6 Ar — Bosch MP9.0 (KW1281)`
+     - `9BF...` -> `Ford Brasil (HS-CAN UDS 500kbps)`
+     - `9BW...` -> `Volkswagen Brasil`
+
+---
+
+## 10. Protocolo VAG KW1281 & Bosch MP9.0 (Kombi 1999 1.6 Ar Injetada)
+
+A Kombi 1.6 a ar com injeção eletrônica (1997 a 2005) utiliza a central **Bosch Motronic MP9.0**, que implementa o protocolo VAG KW1281 a 9.600 baud pela Linha K (Pino 7):
+
+1. **Desafio Físico do ELM327**: O chip ELM327 não suporta em firmware o handshake de inversão de complemento (*byte-echo*) exigido pelo KW1281. Ao receber a inicialização 5-baud, a MP9.0 devolve os KeyBytes `01 8A` e o ELM327 aborta com `BUS INIT: ERROR`.
+2. **Implementação do Módulo KW1281 (`obd_app/protocols/kw1281.py`)**:
+   - Implementa decodificação completa dos blocos de medição `001` a `008` da MP9.0:
+     - Bloco 001: Rotação (RPM), Temperatura do Líquido/Óleo (°C), Sonda Lambda (V), Status Operacional
+     - Bloco 002: Rotação (RPM), Tempo de Injeção Real (ms), Tensão da Bateria (V), Temperatura do Ar (°C)
+     - Bloco 003: Rotação (RPM), Ângulo de Borboleta TPS (°), Ângulo de Avanço de Ignição (°), Vácuo
+     - Bloco 004..008: Aprendizado de marcha lenta, enriquecimento em aceleração e adaptação de mistura
+3. **Transporte Serial KKL (`KklSerialTransport` em `obd_app/transports.py`)**:
+   - Suporte direto a cabos USB KKL 409.1 (chips FTDI FT232R e CH340) via `pyserial`. Permite conexão física direta e leitura serial nativa dos blocos da Kombi a 9.600 bps.
+
+---
+
+## 11. Motores Físicos, Matemáticos e Alertas Assíncronos
+
+1. **Canais Matemáticos Virtuais (`obd_app/math_channels.py`)**:
+   - **Potência às Rodas (WHP) e Torque (kgfm)**: Derivação de aceleração instantânea ($\frac{\Delta v}{\Delta t}$), massa configurada do veículo, perdas aerodinâmicas e atrito de rolagem.
+   - **Eficiência Volumétrica (VE%)**: Método Speed-Density cruzando MAP, IAT e RPM com a cilindrada configurada.
+   - **Consumo Instantâneo (km/l e L/h)**: Cálculo por balanço de massa de ar (MAF ou MAP estimado) e estequiometria ajustada por teor de etanol flex.
+   - **Queda de Tensão na Partida (Cranking Drop)**: Análise do vale de tensão durante partida do motor (< 9,6 V indica bateria fraca ou cabo de aterramento com resistência parasita).
+
+2. **Temporizador de Performance e Arrancada (`obd_app/performance.py`)**:
+   - Medições automáticas com filtro de tempo decorrido e rejeição de ruído estático:
+     - Arrancada: 0-60 km/h, 0-100 km/h, 100-200 km/h, 201 metros (1/8 milha) e 402 metros (1/4 milha).
+     - Frenagem: 100-0 km/h (tempo e distância percorrida).
+
+3. **Alertas Sonoros Sintetizados (`obd_app/audio_alerts.py`)**:
+   - Operação assíncrona em `QThread` desacoplada usando `winsound.Beep`. Emite alertas sonoros para Shift Light e Alerta Térmico de ECT sem travar a interface gráfica ou a aquisição de dados serial.
+
+4. **Exportação MegaLogViewer HD (`obd_app/datalog.py`)**:
+   - Função `export_megalogviewer_csv`: exporta arquivos `.msl` tabulados com ponto decimal, compatíveis com MegaLogViewer HD e TunerStudio.
+
+---
+
+## 12. Design System Motorsport Telemetry
+
+A interface do leitorECU adota uma identidade visual de telemetria automotiva de competição:
+
+1. **Geometria Retangular e Espaço Otimizado**:
+   - `border-radius: 0px` padronizado em 100% dos componentes da interface, aproveitando integralmente a tela e eliminando perda de área útil.
+   - Grid unificado de espaçamentos em 8px (`setContentsMargins` e `setSpacing`), mantendo alinhamento estrito.
+2. **Osciloscópio com Barra de Telemetria Integrada**:
+   - Títulos internos do `PlotItem` e legendas flutuantes removidos de dentro da área gráfica.
+   - Cabeçalho fino de 22px acima de cada gráfico com bolinha colorida do canal, seletor compacto e leitura numérica ao vivo em fonte monoespaçada.
+   - Linhas horizontais de referência com rótulos posicionados na margem esquerda (`position: 0.05`).
+3. **Matriz 2D Térmica**:
+   - Cores dessaturadas de alto contraste, garantindo leitura dos números sem ofuscamento visual.
+   - Guia visual de eixos (`▲ MAP kPa │ ► RPM`).
+   - Célula ativa do ponto de operação destacada dinamicamente com foco ciano de 2px.
+4. **Tipografia e Checkboxes**:
+   - Fontes monoespaçadas (`JetBrains Mono`, `Consolas`) em todos os valores dinâmicos.
+   - Checkboxes suaves com preenchimento `#236B7A` e marcação vetorial SVG (`obd_app/ui/check.svg`).
+
+---
+
+## 13. Diretrizes de Engenharia e Preservação de Código
 
 Ao realizar modificações ou expansões no código:
 

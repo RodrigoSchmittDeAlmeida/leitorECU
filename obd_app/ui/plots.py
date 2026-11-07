@@ -13,7 +13,7 @@ class DualAxisPlot(pg.PlotWidget):
         super().__init__(parent=parent, background="#0A0C10")
         self.setMinimumHeight(112)
         self.pi = self.getPlotItem()
-        self.pi.setTitle(title.upper(), color="#AEB9C8", size="8pt")
+        self.plot_title = title
         self.pi.showGrid(x=True, y=True, alpha=0.15)
         self.pi.setLabel("left", left_label)
         self.pi.setXRange(-WINDOW_S, 0, padding=0)
@@ -22,7 +22,6 @@ class DualAxisPlot(pg.PlotWidget):
         self.pi.setMouseEnabled(x=False, y=True)
         self.pi.setClipToView(True)
         self.pi.hideButtons()
-        self.legend = self.pi.addLegend(offset=(8, 4), labelTextColor="#C8D1DE", brush=(10, 12, 16, 210))
         self.vb2 = None
         self._markers = []
         if right_label:
@@ -46,7 +45,6 @@ class DualAxisPlot(pg.PlotWidget):
         if right and self.vb2 is not None:
             c = pg.PlotDataItem(pen=pen, name=name)
             self.vb2.addItem(c)
-            self.legend.addItem(c, name)
         else:
             c = self.pi.plot(pen=pen, name=name)
         c.setDownsampling(auto=True, method="peak")
@@ -55,7 +53,7 @@ class DualAxisPlot(pg.PlotWidget):
     def add_hline(self, y: float, color: str, right: bool = False, style=Qt.PenStyle.DashLine,
                   label: str | None = None) -> pg.InfiniteLine:
         line = pg.InfiniteLine(pos=y, angle=0, movable=False, pen=pg.mkPen(color, width=1, style=style),
-                               label=label, labelOpts={"color": color, "position": 0.97})
+                               label=label, labelOpts={"color": color, "position": 0.05})
         (self.vb2 if right and self.vb2 is not None else self.pi).addItem(line)
         return line
 

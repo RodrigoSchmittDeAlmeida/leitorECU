@@ -135,3 +135,50 @@ class SeriesBuffer:
 
     def clear(self) -> None:
         self.n = 0
+
+
+def export_megalogviewer_csv(src_csv_path: str, dst_msl_path: str) -> bool:
+    """Converte um log gravado para o formato padrão do MegaLogViewer HD / TunerStudio.
+
+    Gera arquivo delimitado por tabulação com ponto decimal (.) e mapeia nomes
+    canônicos de colunas (Time, RPM, MAP, TPS, Advance, CLT, MAT, Batt_V, etc.).
+    """
+    try:
+        with open(src_csv_path, "r", encoding="utf-8") as f_in:
+            reader = csv.reader(f_in, delimiter=";")
+            header = next(reader)
+
+            mlv_map = {
+                "tempo_s": "Time",
+                "rpm": "RPM",
+                "map": "MAP",
+                "tps": "TPS",
+                "advance": "Advance",
+                "lambda_v": "O2_Volts",
+                "lambda2_v": "O2_Volts_Post",
+                "stft": "Fuel_Trim_Short",
+                "ltft": "Fuel_Trim_Long",
+                "ect": "CLT",
+                "iat": "MAT",
+                "speed": "Speed_kmh",
+                "battery": "Batt_V",
+                "power_hp": "Power_HP",
+                "torque_kgfm": "Torque_kgfm",
+                "fuel_rate_lph": "Fuel_Flow_LPH",
+                "trip_liters": "Trip_Fuel_Liters",
+                "trip_km": "Trip_Distance_km",
+                "volumetric_eff": "VE",
+                "evento": "Marker",
+            }
+
+            out_header = [mlv_map.get(col, col) for col in header]
+
+            with open(dst_msl_path, "w", newline="", encoding="utf-8") as f_out:
+                writer = csv.writer(f_out, delimiter="\t")
+                writer.writerow(out_header)
+                for row in reader:
+                    out_row = [val.replace(",", ".") for val in row]
+                    writer.writerow(out_row)
+        return True
+    except Exception:
+        return False

@@ -333,12 +333,12 @@
    "%"
   ],
   "g005_c3": [
-   "Bloco 005.3 Velocidade [raw70]",
-   "raw70"
+   "Bloco 005.3 Velocidade [raw80]",
+   "raw80"
   ],
   "g005_c4": [
-   "Bloco 005.4 Estado operação [rawA2]",
-   "rawA2"
+   "Bloco 005.4 Estado operação [raw63]",
+   "raw63"
   ],
   "g006_c1": [
    "Bloco 006.1 RPM [rpm]",

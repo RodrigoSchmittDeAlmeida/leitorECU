@@ -28,6 +28,7 @@ from ..pids import CHANNELS, DYNAMIC_INFO
 from ..readiness import FreezeFrame, ReadinessReport
 from ..report_generator import export_report_to_pdf, generate_html_report
 from ..transports import BleTransport, KklSerialTransport, MockTransport, TcpTransport
+from ..vag_labels import get_vag_group_label
 from ..worker import PROFILE_AUTO, ObdWorker
 from .map2d import Map2DWidget
 from .plots import WINDOW_S, DualAxisPlot
@@ -471,7 +472,7 @@ class MainWindow(QMainWindow):
             bg = on_bg if is_active else off_bg
             color = on_color if is_active else off_color
             border = on_color if is_active else "#343b46"
-            lbl.setStyleSheet(f"background:{bg}; color:{color}; font-weight:bold; padding:3px; border-radius:3px; border:1px solid {border}; font-size:8pt;")
+            lbl.setStyleSheet(f"background:{bg}; color:{color}; font-weight:bold; padding:3px; border-radius:0px; border:1px solid {border}; font-size:8pt;")
 
         # BCM Portas
         if "door_fl" in latest:
@@ -547,16 +548,16 @@ class MainWindow(QMainWindow):
             temp_ref = latest.get("cht_temp") or latest.get("ect") or 0.0
             if temp_ref < 60.0:
                 self.f_cat_diag.setText("Catalisador: AQUECENDO...")
-                self.f_cat_diag.setStyleSheet("background:#1a2b3c; color:#80d8ff; padding:3px; border-radius:3px; font-size:8pt;")
+                self.f_cat_diag.setStyleSheet("background:#1a2b3c; color:#80d8ff; padding:3px; border-radius:0px; font-size:8pt;")
             elif 0.50 <= s2 <= 0.82:
                 self.f_cat_diag.setText("Catalisador: SAUDÁVEL (Eficiente)")
-                self.f_cat_diag.setStyleSheet("background:#143820; color:#69f0ae; padding:3px; border-radius:3px; font-size:8pt; font-weight:bold;")
+                self.f_cat_diag.setStyleSheet("background:#143820; color:#69f0ae; padding:3px; border-radius:0px; font-size:8pt; font-weight:bold;")
             elif s2 < 0.20:
                 self.f_cat_diag.setText("Catalisador: MISTURA POBRE / AR")
-                self.f_cat_diag.setStyleSheet("background:#3a2010; color:#ffab40; padding:3px; border-radius:3px; font-size:8pt;")
+                self.f_cat_diag.setStyleSheet("background:#3a2010; color:#ffab40; padding:3px; border-radius:0px; font-size:8pt;")
             else:
                 self.f_cat_diag.setText("Catalisador: MONITORANDO...")
-                self.f_cat_diag.setStyleSheet("background:#1f242b; color:#e0e0e0; padding:3px; border-radius:3px; font-size:8pt;")
+                self.f_cat_diag.setStyleSheet("background:#1f242b; color:#e0e0e0; padding:3px; border-radius:0px; font-size:8pt;")
 
         # Status do Sistema de Injeção (Malha Aberta / Fechada)
         fs = latest.get("fuel_sys1")
@@ -620,6 +621,7 @@ class MainWindow(QMainWindow):
         protocol = meta.get("protocol", "OBD2")
         self.setWindowTitle(f"leitorECU — {display_title}")
         self.proto_badge.setText(protocol)
+        self.proto_badge.setProperty("state", "connected")
         self.proto_badge.setProperty("fallback", "false")
         self.proto_badge.style().unpolish(self.proto_badge)
         self.proto_badge.style().polish(self.proto_badge)
@@ -648,15 +650,15 @@ class MainWindow(QMainWindow):
     def _build_ui(self):
         central = QWidget()
         root = QVBoxLayout(central)
-        root.setContentsMargins(7, 6, 7, 5)
-        root.setSpacing(5)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
         self.setCentralWidget(central)
 
         # ---------------- conexão
         conn = QFrame(objectName="connectionBar")
         cl = QHBoxLayout(conn)
-        cl.setContentsMargins(8, 4, 8, 4)
-        cl.setSpacing(7)
+        cl.setContentsMargins(8, 6, 8, 6)
+        cl.setSpacing(8)
 
         self.mode = QComboBox()
         self.mode.addItems([
@@ -667,29 +669,30 @@ class MainWindow(QMainWindow):
         ])
         self.mode.setFixedWidth(175)
         self.mode.currentIndexChanged.connect(self._mode_changed)
-        mode_lbl = QLabel("LINK")
-        mode_lbl.setStyleSheet("color:#607088; font-size:7pt; font-weight:800;")
+        mode_lbl = QLabel("LINK", objectName="sectionLabel")
         cl.addWidget(mode_lbl)
         cl.addWidget(self.mode)
 
         self.wifi_box = QWidget()
         wl = QHBoxLayout(self.wifi_box)
         wl.setContentsMargins(0, 0, 0, 0)
+        wl.setSpacing(6)
         self.ip = QLineEdit("192.168.0.10")
         self.ip.setFixedWidth(88)
         self.port = QSpinBox()
         self.port.setRange(1, 65535)
         self.port.setValue(35000)
         self.port.setFixedWidth(70)
-        wl.addWidget(QLabel("IP"))
+        wl.addWidget(QLabel("IP", objectName="sectionLabel"))
         wl.addWidget(self.ip)
-        wl.addWidget(QLabel("TCP"))
+        wl.addWidget(QLabel("TCP", objectName="sectionLabel"))
         wl.addWidget(self.port)
         cl.addWidget(self.wifi_box)
 
         self.ble_box = QWidget()
         bl = QHBoxLayout(self.ble_box)
         bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(6)
         self.ble_dev = QComboBox()
         self.ble_dev.setEditable(True)
         self.ble_dev.setFixedWidth(110)
@@ -697,7 +700,7 @@ class MainWindow(QMainWindow):
         self.ble_scan_btn = QPushButton("Buscar")
         self.ble_scan_btn.setFixedWidth(72)
         self.ble_scan_btn.clicked.connect(self._scan_ble)
-        bl.addWidget(QLabel("BLE"))
+        bl.addWidget(QLabel("BLE", objectName="sectionLabel"))
         bl.addWidget(self.ble_dev)
         bl.addWidget(self.ble_scan_btn)
         cl.addWidget(self.ble_box)
@@ -705,7 +708,7 @@ class MainWindow(QMainWindow):
         self.serial_box = QWidget()
         sl = QHBoxLayout(self.serial_box)
         sl.setContentsMargins(0, 0, 0, 0)
-        sl.setSpacing(4)
+        sl.setSpacing(6)
         self.serial_port_cb = QComboBox()
         self.serial_port_cb.setEditable(True)
         self.serial_port_cb.setFixedWidth(115)
@@ -724,9 +727,9 @@ class MainWindow(QMainWindow):
             "115200 (ELM327 Rápido)",
         ])
         self.serial_baud_cb.setFixedWidth(125)
-        sl.addWidget(QLabel("COM"))
+        sl.addWidget(QLabel("COM", objectName="sectionLabel"))
         sl.addWidget(self.serial_port_cb)
-        sl.addWidget(QLabel("BAUD"))
+        sl.addWidget(QLabel("BAUD", objectName="sectionLabel"))
         sl.addWidget(self.serial_baud_cb)
         cl.addWidget(self.serial_box)
 
@@ -741,9 +744,10 @@ class MainWindow(QMainWindow):
         self.connection_pill.setFixedWidth(82)
         cl.addWidget(self.connection_pill)
 
-        self.proto_badge = QLabel("AGUARDANDO CONEXÃO", objectName="protoBadge")
-        self.proto_badge.setProperty("fallback", "false")
-        self.proto_badge.setFixedWidth(150)
+        self.proto_badge = QLabel("SEM PROTOCOLO", objectName="protoBadge")
+        self.proto_badge.setProperty("state", "offline")
+        self.proto_badge.setProperty("fallback", "none")
+        self.proto_badge.setFixedWidth(145)
         cl.addWidget(self.proto_badge)
 
         self.btn_reconnect_vag = QPushButton("Forçar K-Line")
@@ -772,6 +776,7 @@ class MainWindow(QMainWindow):
         # ---------------- controles
         ctl = QHBoxLayout()
         ctl.setContentsMargins(0, 0, 0, 0)
+        ctl.setSpacing(8)
         ctl.setSpacing(5)
         self.btn_open_csv = QPushButton("Abrir Log CSV")
         self.btn_open_csv.setToolTip("Carrega um arquivo CSV gravado para replay e análise ponto a ponto.")
@@ -822,10 +827,21 @@ class MainWindow(QMainWindow):
             "Use 'Pausar Linha K' ou 'Suave' quando estiver parado e 'Máxima' quando for gravar o teste."
         )
         self.cadence_cb.currentIndexChanged.connect(self._apply_worker_flags)
-        for w in (self.btn_open_csv, self.btn_clear_peaks, self.decel_btn, self.rec_btn, self.freeze_btn, clear_btn):
+        self.btn_export_mlv = QPushButton("Exportar MLV")
+        self.btn_export_mlv.setToolTip("Converte log CSV para o formato padrão do MegaLogViewer HD / TunerStudio (.msl).")
+        self.btn_export_mlv.clicked.connect(self._export_mlv_dialog)
+
+        self.btn_settings = QPushButton("Ajustes")
+        self.btn_settings.setToolTip("Configurar parâmetros do veículo, alertas de rotação (Shift Light), temperatura crítica e combustível.")
+        self.btn_settings.clicked.connect(self._open_settings_dialog)
+
+        self.auto_log_chk = QCheckBox("Auto-Log")
+        self.auto_log_chk.setToolTip("Inicia gravação automaticamente ao acelerar forte (TPS > 75% e RPM > 2200) e pausa na marcha lenta.")
+
+        for w in (self.btn_open_csv, self.btn_export_mlv, self.btn_clear_peaks, self.decel_btn, self.rec_btn, self.freeze_btn, clear_btn, self.btn_settings):
             ctl.addWidget(w)
         ctl.addSpacing(4)
-        for w in (self.cadence_cb, self.extras_chk, self.bg_scan_chk, self.fast_chk, self.raw_chk):
+        for w in (self.cadence_cb, self.extras_chk, self.bg_scan_chk, self.fast_chk, self.auto_log_chk, self.raw_chk):
             ctl.addWidget(w)
         ctl.addStretch()
         root.addLayout(ctl)
@@ -833,7 +849,7 @@ class MainWindow(QMainWindow):
         # ---------------- cards
         cards = QGridLayout()
         cards.setContentsMargins(0, 0, 0, 0)
-        cards.setSpacing(4)
+        cards.setSpacing(6)
         self.cards: Dict[str, ValueCard] = {}
         card_channels = [(k, ch) for k, ch in CHANNELS.items() if getattr(ch, "card", True)]
         
@@ -866,7 +882,7 @@ class MainWindow(QMainWindow):
         plots_w = QWidget()
         pl = QVBoxLayout(plots_w)
         pl.setContentsMargins(0, 0, 0, 0)
-        pl.setSpacing(2)
+        pl.setSpacing(6)
 
         self.p1 = DualAxisPlot("01  Dinâmica de Ar e Giro", "RPM", (0, 7000), "TPS % / MAP kPa", (0, 105))
         self.p2 = DualAxisPlot("02  Combustão e Ignição", "Sonda (V)", (0, 1.3), "Avanço (°)", (-20, 50))
@@ -905,37 +921,74 @@ class MainWindow(QMainWindow):
         self.p3.add_hline(-10, "#ffc107", label="-10%")
         channel_keys = list(CHANNELS.keys()) + [k for k in DYNAMIC_INFO if k not in CHANNELS]
 
-        def plot_panel(plot, binding_slice):
+        self.plot_channel_readouts = []
+
+        def plot_panel(plot, title, binding_slice):
             panel = QFrame()
-            panel.setStyleSheet("QFrame { background:#0A0C10; border:1px solid #2C3545; border-radius:5px; }")
+            panel.setStyleSheet("QFrame { background:#0A0C10; border:1px solid #1E2532; border-radius:0px; }")
             panel_lay = QVBoxLayout(panel)
-            panel_lay.setContentsMargins(3, 3, 3, 3)
+            panel_lay.setContentsMargins(4, 3, 4, 3)
             panel_lay.setSpacing(2)
             selector_row = QHBoxLayout()
-            selector_row.setContentsMargins(3, 0, 3, 0)
-            selector_row.addWidget(QLabel("CANAIS"))
+            selector_row.setContentsMargins(3, 1, 3, 1)
+            selector_row.setSpacing(6)
+
+            title_lbl = QLabel(title, objectName="sectionLabel")
+            title_lbl.setStyleSheet("color:#8B98AB; font-weight:800; font-size:7.5pt; text-transform:uppercase; background:transparent; border:none;")
+            selector_row.addWidget(title_lbl)
+            selector_row.addSpacing(6)
+
             for binding in binding_slice:
+                cur_k = binding[2]
+                color = COLORS.get(cur_k, "#00D2FF")
+
+                dot = QLabel("●")
+                dot.setStyleSheet(f"color:{color}; font-size:7.5pt; font-weight:bold; background:transparent; border:none;")
+                selector_row.addWidget(dot)
+
                 combo = QComboBox()
-                combo.setMinimumWidth(105)
+                combo.setStyleSheet(
+                    "QComboBox { min-height: 18px; max-height: 18px; font-size: 7.5pt; font-weight: 700; "
+                    "background: #151A22; border: 1px solid #232B38; border-radius: 0px; padding: 0 4px; } "
+                    "QComboBox::drop-down { width: 12px; border: 0; }"
+                )
                 for key in channel_keys:
                     label = CHANNELS[key].label if key in CHANNELS else DYNAMIC_INFO[key][0]
-                    combo.addItem(f"{binding[3]}  {label}", key)
-                combo.setCurrentIndex(max(0, combo.findData(binding[2])))
-                combo.currentIndexChanged.connect(
-                    lambda _idx, cb=combo, target=binding: target.__setitem__(2, cb.currentData())
-                )
+                    combo.addItem(f"{binding[3]} {label}", key)
+                combo.setCurrentIndex(max(0, combo.findData(cur_k)))
                 selector_row.addWidget(combo)
+
+                val_lbl = QLabel("--")
+                val_lbl.setStyleSheet(f"color:{color}; font-family:'JetBrains Mono',Consolas,monospace; font-size:8pt; font-weight:bold; background:transparent; border:none;")
+                val_lbl.setMinimumWidth(44)
+                selector_row.addWidget(val_lbl)
+
+                item_tuple = (binding, combo, val_lbl, dot)
+                self.plot_channel_readouts.append(item_tuple)
+
+                def _make_handler(target_binding, cb, v_lbl, d_lbl):
+                    def _on_change(_idx):
+                        new_k = cb.currentData()
+                        target_binding[2] = new_k
+                        new_col = COLORS.get(new_k, "#00D2FF")
+                        d_lbl.setStyleSheet(f"color:{new_col}; font-size:7.5pt; font-weight:bold; background:transparent; border:none;")
+                        v_lbl.setStyleSheet(f"color:{new_col}; font-family:'JetBrains Mono',Consolas,monospace; font-size:8pt; font-weight:bold; background:transparent; border:none;")
+                    return _on_change
+
+                combo.currentIndexChanged.connect(_make_handler(binding, combo, val_lbl, dot))
+                selector_row.addSpacing(4)
+
             selector_row.addStretch()
-            window_lbl = QLabel("JANELA 30 s")
-            window_lbl.setStyleSheet("color:#607088; font-family:'JetBrains Mono'; font-size:7pt; font-weight:700;")
+            window_lbl = QLabel("30s")
+            window_lbl.setStyleSheet("color:#607088; font-family:'JetBrains Mono'; font-size:7pt; font-weight:700; background:transparent; border:none;")
             selector_row.addWidget(window_lbl)
             panel_lay.addLayout(selector_row)
             panel_lay.addWidget(plot, 1)
             return panel
 
-        pl.addWidget(plot_panel(self.p1, self.plot_bindings[0:3]), 1)
-        pl.addWidget(plot_panel(self.p2, self.plot_bindings[3:6]), 1)
-        pl.addWidget(plot_panel(self.p3, self.plot_bindings[6:9]), 1)
+        pl.addWidget(plot_panel(self.p1, "01 • AR E GIRO", self.plot_bindings[0:3]), 1)
+        pl.addWidget(plot_panel(self.p2, "02 • COMBUSTÃO E IGNIÇÃO", self.plot_bindings[3:6]), 1)
+        pl.addWidget(plot_panel(self.p3, "03 • FUEL TRIMS E ELÉTRICA", self.plot_bindings[6:9]), 1)
 
         self.crosshair_p1 = self.p1.add_crosshair("#ffffff")
         self.crosshair_p2 = self.p2.add_crosshair("#ffffff")
@@ -1058,6 +1111,8 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(1, 1)
         split.setSizes([int(self.width() * 0.50), int(self.width() * 0.50)])
         split.setChildrenCollapsible(False)
+        plots_w.setMinimumWidth(320)
+        tabs.setMinimumWidth(320)
         root.addWidget(split, 1)
 
         event_ribbon = QFrame(objectName="eventRibbon")
@@ -1107,6 +1162,9 @@ class MainWindow(QMainWindow):
         self.extras_chk.setChecked(s.value("extras", "true") == "true")
         self.bg_scan_chk.setChecked(s.value("bg_scan", "false") == "true")
         self.fast_chk.setChecked(s.value("fast", "false") == "true")
+        self.auto_log_chk.setChecked(s.value("auto_log", "false") == "true")
+        self.audio_alerts.shift_rpm = float(s.value("shift_rpm", 6000.0))
+        self.audio_alerts.max_ect_c = float(s.value("max_ect_c", 105.0))
 
     def _save_settings(self):
         s = self.settings
@@ -1119,6 +1177,9 @@ class MainWindow(QMainWindow):
         s.setValue("ble_name", self.ble_dev.currentText().split("  [")[0] if self.ble_dev.currentData() else "")
         s.setValue("extras", "true" if self.extras_chk.isChecked() else "false")
         s.setValue("bg_scan", "true" if self.bg_scan_chk.isChecked() else "false")
+        s.setValue("auto_log", "true" if self.auto_log_chk.isChecked() else "false")
+        s.setValue("shift_rpm", self.audio_alerts.shift_rpm)
+        s.setValue("max_ect_c", self.audio_alerts.max_ect_c)
         s.setValue("fast", "true" if self.fast_chk.isChecked() else "false")
 
     # ============================================================ conexão
@@ -1245,10 +1306,13 @@ class MainWindow(QMainWindow):
         self.ble_box.setEnabled(True)
         self.serial_box.setEnabled(True)
         self.btn_reconnect_vag.setEnabled(False)
-        self.proto_badge.setText("Desconectado")
-        self.proto_badge.setProperty("fallback", "false")
+        self.proto_badge.setText("SEM PROTOCOLO")
+        self.proto_badge.setProperty("state", "offline")
+        self.proto_badge.setProperty("fallback", "none")
         self.proto_badge.style().unpolish(self.proto_badge)
         self.proto_badge.style().polish(self.proto_badge)
+        for _, _, val_lbl, _ in getattr(self, "plot_channel_readouts", []):
+            val_lbl.setText("--")
         self.connection_pill.setText("● OFFLINE")
         self.connection_pill.setProperty("state", "offline")
         self.connection_pill.style().unpolish(self.connection_pill)
@@ -1271,6 +1335,7 @@ class MainWindow(QMainWindow):
 
     def _on_protocol_mode_changed(self, mode_name: str, is_fallback: bool):
         self.proto_badge.setText(mode_name)
+        self.proto_badge.setProperty("state", "connected")
         self.proto_badge.setProperty("fallback", "true" if is_fallback else "false")
         self.proto_badge.style().unpolish(self.proto_badge)
         self.proto_badge.style().polish(self.proto_badge)
@@ -1329,11 +1394,29 @@ class MainWindow(QMainWindow):
         if "rpm" in self.latest and "map" in self.latest:
             self.map2d.add_sample(self.latest["rpm"], self.latest["map"], self.latest)
         self.audio_alerts.check(self.latest.get("rpm", 0.0), self.latest.get("ect"))
+
+        if self.auto_log_chk.isChecked():
+            tps_val = self.latest.get("tps", 0.0)
+            rpm_val = self.latest.get("rpm", 0.0)
+            if not self.logger.active and (tps_val > 75.0 or (self.worker and self.worker.perf_timer.state == "RUNNING")) and rpm_val > 2000.0:
+                self.rec_btn.setChecked(True)
+            elif self.logger.active and tps_val < 5.0 and rpm_val < 1100.0:
+                if not hasattr(self, "_auto_log_idle_since"):
+                    self._auto_log_idle_since = t
+                elif t - self._auto_log_idle_since > 4.0:
+                    self.rec_btn.setChecked(False)
+                    del self._auto_log_idle_since
+            else:
+                if hasattr(self, "_auto_log_idle_since"):
+                    del self._auto_log_idle_since
+
         events = self.detector.update(t, self.latest, self.stamp)
         ev_text = " | ".join(e.message for e in events)
         if self.logger.active:
             self.logger.write(wall_ms, t, "+".join(values.keys()), self.latest, ev_text)
         for e in events:
+            if "Partida do motor" in e.message or ("queda" in e.message.lower() and "tensão" in e.message.lower()):
+                self.last_battery_test = e.message
             self._add_event(e)
 
     def _add_event(self, e: Event):
@@ -1360,6 +1443,8 @@ class MainWindow(QMainWindow):
             b.clear()
         for c in self.curves.values():
             c.setData([], [])
+        for _, _, val_lbl, _ in getattr(self, "plot_channel_readouts", []):
+            val_lbl.setText("--")
         for _, lines in self.markers:
             for p, ln in zip((self.p1, self.p2, self.p3), lines):
                 try:
@@ -1418,6 +1503,21 @@ class MainWindow(QMainWindow):
                     c2.unit.setText("L/h")
                 c2.set_value(self.latest["fuel_rate_lph"])
                 c2.set_state("normal")
+
+        # Atualiza leituras numéricas ao vivo na barra superior de cada gráfico
+        for binding, combo, val_lbl, dot in getattr(self, "plot_channel_readouts", []):
+            k = binding[2]
+            if k in self.latest:
+                v = self.latest[k]
+                if k in CHANNELS:
+                    val_lbl.setText(CHANNELS[k].fmt.format(v))
+                elif k in DYNAMIC_INFO:
+                    val_lbl.setText(f"{v:.1f}")
+                else:
+                    val_lbl.setText(f"{v:.1f}")
+            elif not self.connect_btn.isChecked():
+                val_lbl.setText("--")
+
         self.dirty.clear()
         if self.frame % 3 == 0:
             self._update_function_ui()
@@ -1453,6 +1553,18 @@ class MainWindow(QMainWindow):
                 label, unit = DYNAMIC_INFO[k]
                 desc = f"{label} [{unit}]" if unit else label
                 val_str = f"{val:.3f}" if val is not None else "--"
+            elif k.startswith("g") and "_c" in k:
+                try:
+                    parts = k[1:].split("_c")
+                    grp = int(parts[0])
+                    cell = int(parts[1])
+                    is_mp90 = "MP9.0" in self.windowTitle() or "Kombi" in self.windowTitle()
+                    lbl_vag = get_vag_group_label(group=grp, cell=cell, is_mp90=is_mp90)
+                    desc = f"{lbl_vag} (Bloco {grp:03d}.{cell})"
+                    val_str = f"{val:.2f}" if val is not None else "--"
+                except Exception:
+                    desc = k
+                    val_str = f"{val:.3f}" if val is not None else "--"
             else:
                 desc = k
                 val_str = f"{val:.3f}" if val is not None else "--"
@@ -1837,6 +1949,17 @@ class MainWindow(QMainWindow):
             else:
                 card.set_state("stale")
 
+        for binding, combo, val_lbl, dot in getattr(self, "plot_channel_readouts", []):
+            k = binding[2]
+            if k in rec:
+                v = rec[k]
+                if k in CHANNELS:
+                    val_lbl.setText(CHANNELS[k].fmt.format(v))
+                else:
+                    val_lbl.setText(f"{v:.1f}")
+            else:
+                val_lbl.setText("--")
+
         if "rpm" in rec and "map" in rec:
             cur_key = self.map2d.metrics[self.map2d.cur_metric_idx][1]
             cur_fmt = self.map2d.metrics[self.map2d.cur_metric_idx][2]
@@ -1844,6 +1967,112 @@ class MainWindow(QMainWindow):
             self.map2d.active_info.setText(f"Ponto: {rec['rpm']:.0f} RPM × {rec['map']:.0f} kPa | Valor: {v_str} (t={actual_t:.2f}s)")
 
         self.statusBar().showMessage(f"Replay CSV: t = {actual_t:.2f} s | Registro {idx + 1}/{len(self._replay_records)}")
+
+    # ============================================================ MegaLogViewer e Ajustes
+    def _export_mlv_dialog(self):
+        csv_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Selecione o arquivo de Log CSV para conversão",
+            "",
+            "Logs CSV (*.csv)"
+        )
+        if not csv_path:
+            return
+        dst_default = os.path.splitext(csv_path)[0] + "_MegaLogViewer.msl"
+        dst_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Salvar Log compatível com MegaLogViewer HD",
+            dst_default,
+            "MegaLogViewer MSL (*.msl);;Texto Tabulado (*.tsv)"
+        )
+        if not dst_path:
+            return
+        from ..datalog import export_megalogviewer_csv
+        ok = export_megalogviewer_csv(csv_path, dst_path)
+        if ok:
+            QMessageBox.information(
+                self,
+                "Exportação Concluída",
+                f"Log convertido com sucesso para o formato MegaLogViewer:\n{dst_path}"
+            )
+        else:
+            QMessageBox.critical(self, "Erro", "Falha ao converter o log para o formato MegaLogViewer.")
+
+    def _open_settings_dialog(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Ajustes de Telemetria, Desempenho e Alertas")
+        dlg.resize(420, 280)
+        lay = QVBoxLayout(dlg)
+        lay.setSpacing(10)
+
+        grid = QGridLayout()
+        grid.setSpacing(8)
+
+        # 1. Massa do veículo (kg)
+        lbl_mass = QLabel("Massa do Veículo (kg):")
+        spn_mass = QSpinBox()
+        spn_mass.setRange(400, 4000)
+        spn_mass.setValue(int(float(self.settings.value("vehicle_mass_kg", 1050.0))))
+        grid.addWidget(lbl_mass, 0, 0)
+        grid.addWidget(spn_mass, 0, 1)
+
+        # 2. Preço do combustível (R$)
+        lbl_price = QLabel("Preço Combustível (R$/L):")
+        edt_price = QLineEdit()
+        edt_price.setText(str(self.settings.value("fuel_price_brl", "5.89")))
+        grid.addWidget(lbl_price, 1, 0)
+        grid.addWidget(edt_price, 1, 1)
+
+        # 3. Shift Light RPM
+        lbl_shift = QLabel("Shift Light (RPM):")
+        spn_shift = QSpinBox()
+        spn_shift.setRange(3000, 9500)
+        spn_shift.setSingleStep(100)
+        spn_shift.setValue(int(self.audio_alerts.shift_rpm))
+        grid.addWidget(lbl_shift, 2, 0)
+        grid.addWidget(spn_shift, 2, 1)
+
+        # 4. Alerta Térmico ECT (°C)
+        lbl_ect = QLabel("Alerta Térmico ECT (°C):")
+        spn_ect = QSpinBox()
+        spn_ect.setRange(80, 130)
+        spn_ect.setValue(int(self.audio_alerts.max_ect_c))
+        grid.addWidget(lbl_ect, 3, 0)
+        grid.addWidget(spn_ect, 3, 1)
+
+        lay.addLayout(grid)
+
+        bb = QHBoxLayout()
+        btn_cancel = QPushButton("Cancelar")
+        btn_save = QPushButton("Salvar Ajustes")
+        btn_cancel.clicked.connect(dlg.reject)
+        bb.addStretch()
+        bb.addWidget(btn_cancel)
+        bb.addWidget(btn_save)
+        lay.addLayout(bb)
+
+        def _save():
+            s = self.settings
+            s.setValue("vehicle_mass_kg", spn_mass.value())
+            try:
+                price = float(edt_price.text().replace(",", "."))
+            except ValueError:
+                price = 5.89
+            s.setValue("fuel_price_brl", price)
+            self.audio_alerts.shift_rpm = float(spn_shift.value())
+            self.audio_alerts.max_ect_c = float(spn_ect.value())
+            s.setValue("shift_rpm", self.audio_alerts.shift_rpm)
+            s.setValue("max_ect_c", self.audio_alerts.max_ect_c)
+
+            if self.worker and hasattr(self.worker, "math_engine"):
+                self.worker.math_engine.vehicle_mass_kg = float(spn_mass.value())
+                self.worker.math_engine.fuel_price_brl = price
+
+            dlg.accept()
+            self.statusBar().showMessage("Ajustes de telemetria e limites atualizados com sucesso.", 4000)
+
+        btn_save.clicked.connect(_save)
+        dlg.exec()
 
     # ============================================================ DTC e Diagnóstico
     def _set_dtc_enabled(self, on: bool):

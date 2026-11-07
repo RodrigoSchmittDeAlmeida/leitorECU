@@ -81,7 +81,7 @@ def generate_html_report(
             .header {{ border-bottom: 2px solid #1565c0; padding-bottom: 10px; margin-bottom: 20px; }}
             .title {{ font-size: 18pt; font-weight: 800; color: #1565c0; margin: 0; }}
             .subtitle {{ font-size: 10pt; color: #616161; margin: 3px 0 0 0; }}
-            .box {{ background: #f5f7fa; border: 1px solid #cfd8dc; border-radius: 4px; padding: 12px; margin-bottom: 15px; }}
+            .box {{ background: #f5f7fa; border: 1px solid #cfd8dc; border-radius: 0px; padding: 12px; margin-bottom: 15px; }}
             h3 {{ margin: 0 0 8px 0; font-size: 12pt; }}
             table {{ width: 100%; border-collapse: collapse; }}
             th {{ text-align: left; background: #eceff1; padding: 6px; font-size: 9pt; color: #37474f; }}

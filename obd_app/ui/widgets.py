@@ -13,6 +13,7 @@ class ValueCard(QFrame):
     def __init__(self, ch: Channel, color: str | None = None, parent=None):
         super().__init__(parent)
         self.ch = ch
+        self.sensor_color = color
         self.setObjectName("card")
         self.setProperty("state", "stale")
         self.setMinimumWidth(96)
@@ -20,13 +21,23 @@ class ValueCard(QFrame):
         self.max_val: Optional[float] = None
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(7, 4, 7, 4)
+        lay.setContentsMargins(7, 5, 7, 5)
         lay.setSpacing(0)
 
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
+
+        if color:
+            self.dot = QLabel("■")
+            self.dot.setStyleSheet(f"color: {color}; font-size: 7pt; font-weight: bold; background: transparent; border: none;")
+            top.addWidget(self.dot)
+            top.addSpacing(3)
+        else:
+            self.dot = None
+
         self.title = QLabel(ch.label, objectName="cardTitle")
-        self.note = QLabel("sem sinal", objectName="cardNote")
+        self.note = QLabel("", objectName="cardNote")
+        self.note.setVisible(False)
         top.addWidget(self.title)
         top.addStretch()
         top.addWidget(self.note)
@@ -37,8 +48,7 @@ class ValueCard(QFrame):
         val_box.setSpacing(3)
         self.value = QLabel("--", objectName="cardValue")
         self.value.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        if color:
-            self.value.setStyleSheet(f"color: {color};")
+        self.value.setStyleSheet("color: #56657F;")
         val_box.addWidget(self.value)
 
         self.unit = QLabel(ch.unit, objectName="cardUnit")
@@ -46,7 +56,7 @@ class ValueCard(QFrame):
         val_box.addWidget(self.unit)
         lay.addLayout(val_box)
 
-        self.peaks_label = QLabel("mín --  |  máx --", objectName="cardPeaks")
+        self.peaks_label = QLabel("", objectName="cardPeaks")
         self.peaks_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
         lay.addWidget(self.peaks_label)
 
@@ -54,6 +64,8 @@ class ValueCard(QFrame):
 
     def set_value(self, v: float) -> None:
         self.value.setText(self.ch.fmt.format(v))
+        if self.sensor_color:
+            self.value.setStyleSheet(f"color: {self.sensor_color};")
         if self.min_val is None or v < self.min_val:
             self.min_val = v
         if self.max_val is None or v > self.max_val:
@@ -72,10 +84,15 @@ class ValueCard(QFrame):
 
     def set_state(self, state: str, note: str = "") -> None:
         """state: normal | warn | alarm | stale"""
-        display_note = note if note else ("sem sinal" if state == "stale" else "")
+        display_note = note if note else ""
         if display_note != self.note.text():
             self.note.setText(display_note)
         self.note.setVisible(bool(display_note))
+        if state == "stale" and self.value.text() == "--":
+            self.value.setStyleSheet("color: #56657F;")
+        elif self.sensor_color and self.value.text() != "--":
+            self.value.setStyleSheet(f"color: {self.sensor_color};")
+
         if state != self._state:
             self._state = state
             self.setProperty("state", state)

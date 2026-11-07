@@ -7,10 +7,10 @@ ou desvios de malha de combustível tanto em tempo real quanto em replay de CSV.
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QHeaderView, QLabel,
-                             QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                             QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 RPM_BINS = [700, 1000, 1400, 1800, 2200, 2600, 3000, 3500, 4000, 4500, 5000, 5500]
 MAP_BINS = [100, 90, 80, 70, 60, 50, 40, 30, 20]  # WOT (100) no topo, Vácuo máx (20) na base
@@ -29,59 +29,59 @@ def _find_bin(val: float, bins: List[float]) -> int:
 
 
 def _color_for_value(metric: str, v: float) -> Tuple[QColor, QColor]:
-    """Retorna (QColor fundo, QColor texto) em gradiente térmico."""
+    """Retorna (QColor fundo, QColor texto) em gradiente térmico dessaturado profissional."""
     if metric == "advance":
         # Avanço de Ignição
         if v < -8.0:
-            return QColor("#880e4f"), QColor("#ffffff")  # Retardo extremo (-19°), alerta roxo/magenta
+            return QColor("#880e4f"), QColor("#ffffff")  # Retardo extremo (-19°), magenta escuro
         elif v < -0.5:
-            return QColor("#b71c1c"), QColor("#ffffff")  # Retardo ATDC (vermelho)
+            return QColor("#8a1c1c"), QColor("#ffffff")  # Retardo ATDC (rubi escuro)
         elif v < 10.0:
-            return QColor("#e65100"), QColor("#ffffff")  # Baixo avanço (laranja)
+            return QColor("#8c4611"), QColor("#ffffff")  # Baixo avanço (castanho âmbar)
         elif v < 22.0:
-            return QColor("#f57f17"), QColor("#15181d")  # Avanço moderado (âmbar)
+            return QColor("#665914"), QColor("#ffffff")  # Avanço moderado (oliva escuro)
         elif v < 35.0:
-            return QColor("#1b5e20"), QColor("#ffffff")  # Avanço típico (verde)
+            return QColor("#1b5e20"), QColor("#ffffff")  # Avanço típico (verde escuro)
         else:
-            return QColor("#00695c"), QColor("#ffffff")  # Alto avanço (azul esverdeado)
+            return QColor("#005c51"), QColor("#ffffff")  # Alto avanço (teal escuro)
 
     elif metric == "stft":
         # Short Term Fuel Trim (%)
         if v < -10.0:
-            return QColor("#0d47a1"), QColor("#ffffff")  # Mistura muito rica sendo corrigida (azul)
+            return QColor("#163254"), QColor("#CFE5FF")  # Mistura muito rica sendo corrigida
         elif v < -3.0:
-            return QColor("#0288d1"), QColor("#ffffff")  # Leve correção negativa (ciano)
+            return QColor("#124357"), QColor("#BEEBF7")  # Leve correção negativa
         elif v <= 3.0:
-            return QColor("#1b5e20"), QColor("#ffffff")  # Quase estequiométrico 0% (verde)
+            return QColor("#173E28"), QColor("#C6F7D7")  # Quase estequiométrico 0%
         elif v <= 10.0:
-            return QColor("#f57f17"), QColor("#15181d")  # Leve enriquecimento (âmbar)
+            return QColor("#4C3912"), QColor("#FFE4A8")  # Leve enriquecimento
         else:
-            return QColor("#b71c1c"), QColor("#ffffff")  # Mistura pobre extrema (+15%..+25%) (vermelho)
+            return QColor("#5A1D23"), QColor("#FFD8DC")  # Mistura pobre extrema (+15%..+25%)
 
     elif metric == "lambda_v":
         # Sonda Lambda (V)
         if v < 0.20:
-            return QColor("#0d47a1"), QColor("#ffffff")  # Pobre / Cut-off (< 0.2 V)
+            return QColor("#163254"), QColor("#CFE5FF")  # Pobre / Cut-off (< 0.2 V)
         elif v < 0.45:
-            return QColor("#00838f"), QColor("#ffffff")
+            return QColor("#124357"), QColor("#BEEBF7")
         elif v < 0.70:
-            return QColor("#2e7d32"), QColor("#ffffff")  # Janela estequiométrica
+            return QColor("#173E28"), QColor("#C6F7D7")  # Janela estequiométrica
         else:
-            return QColor("#c62828"), QColor("#ffffff")  # Rica (> 0.7 V)
+            return QColor("#5A1D23"), QColor("#FFD8DC")  # Rica (> 0.7 V)
     elif metric == "battery":
         if v < 12.0 or v > 15.0:
-            return QColor("#7B1836"), QColor("#ffffff")
+            return QColor("#521B27"), QColor("#FFD3DE")
         if v < 13.2:
-            return QColor("#8A6515"), QColor("#ffffff")
-        return QColor("#14603A"), QColor("#ffffff")
+            return QColor("#4D3B12"), QColor("#FFE6B3")
+        return QColor("#173E28"), QColor("#C6F7D7")
     elif metric == "flex_ethanol_pct":
         if v < 30.0:
-            return QColor("#174E78"), QColor("#ffffff")
+            return QColor("#163254"), QColor("#CFE5FF")
         if v < 70.0:
-            return QColor("#14603A"), QColor("#ffffff")
-        return QColor("#8A6515"), QColor("#ffffff")
+            return QColor("#173E28"), QColor("#C6F7D7")
+        return QColor("#4D3B12"), QColor("#FFE6B3")
     else:
-        return QColor("#1D232D"), QColor("#8B98AB")
+        return QColor("#181E27"), QColor("#8B98AB")
 
 
 class Map2DWidget(QWidget):
@@ -110,14 +110,14 @@ class Map2DWidget(QWidget):
     def _build_ui(self):
         vlay = QVBoxLayout(self)
         vlay.setContentsMargins(4, 4, 4, 4)
-        vlay.setSpacing(4)
+        vlay.setSpacing(3)
 
-        # Barra de ferramentas superior
+        # Linha 1: Controles de Métrica, Modo estatístico e Ações
         top_bar = QHBoxLayout()
         top_bar.setContentsMargins(0, 0, 0, 0)
+        top_bar.setSpacing(6)
 
-        lbl = QLabel("MÉTRICA")
-        lbl.setStyleSheet("font-weight: bold; color: #cfd8dc;")
+        lbl = QLabel("MÉTRICA", objectName="sectionLabel")
         top_bar.addWidget(lbl)
 
         self.cb_metric = QComboBox()
@@ -126,18 +126,13 @@ class Map2DWidget(QWidget):
         self.cb_metric.currentIndexChanged.connect(self._on_metric_changed)
         top_bar.addWidget(self.cb_metric)
 
-        lbl_stat = QLabel("MODO")
-        lbl_stat.setStyleSheet("font-weight: bold; color: #cfd8dc; margin-left: 8px;")
+        lbl_stat = QLabel("MODO", objectName="sectionLabel")
         top_bar.addWidget(lbl_stat)
 
         self.cb_stat = QComboBox()
         self.cb_stat.addItems(["Média", "Máximo", "Mínimo", "Contagem (Hits)"])
         self.cb_stat.currentIndexChanged.connect(self._on_stat_changed)
         top_bar.addWidget(self.cb_stat)
-
-        self.active_info = QLabel("Ponto de Operação: --")
-        self.active_info.setStyleSheet("color: #ffd54f; font-weight: bold; margin-left: 12px;")
-        top_bar.addWidget(self.active_info)
 
         top_bar.addStretch()
 
@@ -152,6 +147,24 @@ class Map2DWidget(QWidget):
 
         vlay.addLayout(top_bar)
 
+        # Linha 2: Ponto de Operação Ativo (sub-barra dedicada; largura desacoplada para não empurrar os gráficos)
+        info_bar = QHBoxLayout()
+        info_bar.setContentsMargins(0, 0, 0, 0)
+        self.active_info = QLabel("Ponto de Operação: --")
+        self.active_info.setStyleSheet(
+            "color: #ffd54f; font-weight: bold; font-size: 8.5pt; "
+            "background: #12161E; border: 1px solid #1E2532; border-radius: 0px; padding: 2px 6px;"
+        )
+        self.active_info.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.active_info.setMinimumWidth(0)
+        info_bar.addWidget(self.active_info, 1)
+        vlay.addLayout(info_bar)
+
+        # Guia visual dos eixos da matriz (RPM horizontal × MAP vertical)
+        axis_banner = QLabel("▲ EIXO VERTICAL: CARGA / MAP (kPa)    │    ► EIXO HORIZONTAL: ROTAÇÃO DO MOTOR (RPM)")
+        axis_banner.setStyleSheet("color: #718096; font-size: 7.5pt; font-weight: 700; background: transparent; padding: 2px 0;")
+        vlay.addWidget(axis_banner)
+
         # Grade QTableWidget
         self.table = QTableWidget(len(MAP_BINS), len(RPM_BINS))
         self.table.setHorizontalHeaderLabels([str(r) for r in RPM_BINS])
@@ -159,36 +172,45 @@ class Map2DWidget(QWidget):
 
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        hh.setMinimumSectionSize(22)
         vh = self.table.verticalHeader()
         vh.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        vh.setMinimumSectionSize(16)
 
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setMinimumWidth(0)
 
         # Inicializa células vazias
         for r in range(len(MAP_BINS)):
             for c in range(len(RPM_BINS)):
                 item = QTableWidgetItem("--")
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                item.setForeground(QColor("#546e7a"))
-                item.setBackground(QColor("#13161b"))
+                item.setForeground(QColor("#455263"))
+                item.setBackground(QColor("#11151C"))
                 self.table.setItem(r, c, item)
 
         vlay.addWidget(self.table, 1)
 
         legend = QHBoxLayout()
-        legend.setSpacing(0)
+        legend.setSpacing(1)
         for text, color in (
-            ("−20° RETARDO", "#6A174B"), ("−8°", "#9A1F45"), ("0°", "#C24A22"),
-            ("+10°", "#B88216"), ("+22° ALVO", "#17663E"), ("+45° AVANÇO", "#08716B"),
+            ("−20° RETARDO", "#880e4f"), ("−8°", "#8a1c1c"), ("0°", "#8c4611"),
+            ("+10°", "#665914"), ("+22° ALVO", "#1b5e20"), ("+45° AVANÇO", "#005c51"),
         ):
             swatch = QLabel(text)
             swatch.setAlignment(Qt.AlignmentFlag.AlignCenter)
             swatch.setStyleSheet(
-                f"background:{color}; color:#F5F7FA; padding:3px; font-size:7pt; font-weight:bold;"
+                f"background:{color}; color:#F5F7FA; padding:2px; font-size:7pt; font-weight:bold; border-radius:0px;"
             )
+            swatch.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            swatch.setMinimumWidth(0)
             legend.addWidget(swatch, 1)
         vlay.addLayout(legend)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(280, 140)
 
     def _on_metric_changed(self, idx: int):
         self.cur_metric_idx = idx
@@ -261,6 +283,7 @@ class Map2DWidget(QWidget):
 
         self._update_cell(r, c)
         self._last_active_cell = coord
+        self.table.setCurrentCell(r, c)
 
     def _update_cell(self, r: int, c: int):
         coord = (r, c)
