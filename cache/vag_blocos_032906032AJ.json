@@ -301,8 +301,8 @@
    "mbar"
   ],
   "g003_c3": [
-   "Bloco 003.3 Borboleta [%]",
-   "%"
+   "Bloco 003.3 Borboleta [°]",
+   "°"
   ],
   "g003_c4": [
    "Bloco 003.4 Avanço [°]",
@@ -565,12 +565,12 @@
    "V"
   ],
   "g033_c3": [
-   "Bloco 033.3 [°C]",
-   "°C"
+   "Bloco 033.3 [rpm]",
+   "rpm"
   ],
   "g033_c4": [
-   "Bloco 033.4 [°C]",
-   "°C"
+   "Bloco 033.4 [rpm]",
+   "rpm"
   ],
   "g034_c1": [
    "Bloco 034.1 RPM [rpm]",

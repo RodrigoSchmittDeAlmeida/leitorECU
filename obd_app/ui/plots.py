@@ -59,7 +59,10 @@ class DualAxisPlot(pg.PlotWidget):
         (self.vb2 if right and self.vb2 is not None else self.pi).addItem(line)
         return line
 
-    def add_marker(self, x: float, color: str = "#ff5252", label: str | None = None) -> pg.InfiniteLine:
+    def add_marker(self, x: float | str = 0.0, color: str = "#ff5252", label: str | None = None) -> pg.InfiniteLine:
+        if isinstance(x, str):
+            color = x
+            x = 0.0
         line = pg.InfiniteLine(pos=x, angle=90, movable=False,
                                pen=pg.mkPen(color, width=1.5, style=Qt.PenStyle.DotLine),
                                label=label, labelOpts={"color": color, "position": 0.85, "rotateAxis": (1, 0)})
