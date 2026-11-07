@@ -44,7 +44,8 @@ CHANNELS: Dict[str, Channel] = {
         Channel("fuel_sys1", "Status Malha Comb. 1 (0103)", "cod", "{:.0f}", card=False),
         Channel("fuel_sys2", "Status Malha Comb. 2 (0103)", "cod", "{:.0f}", card=False),
         Channel("cat_temp", "Temp. Catalisador (013C)", "°C", "{:.0f}", card=False),
-        Channel("ecu_volt", "Tensão PCM (0142)", "V", "{:.2f}", card=False),
+        Channel("ecu_volt", "Tensão Interna ECU", "V", "{:.2f}", card=False),
+        Channel("obd_pin16_v", "Tensão Pino 16 OBD (ATRV)", "V", "{:.2f}", card=False),
         Channel("baro", "Pressão Barométrica (0133)", "kPa", "{:.0f}", card=False),
         Channel("fuel_rate", "Consumo Instantâneo (015E)", "L/h", "{:.1f}", card=False),
         Channel("mil_on", "Luz Injeção (0101)", "0/1", "{:.0f}", card=False),
@@ -54,6 +55,8 @@ CHANNELS: Dict[str, Channel] = {
         Channel("dist_mil", "Dist. c/ MIL (0121)", "km", "{:.0f}", card=False),
         Channel("fuel_type", "Tipo Combustível (0151)", "id", "{:.0f}", card=False),
         Channel("inj_ms", "Tempo de Injeção", "ms", "{:.2f}", card=False),
+        Channel("flex_ethanol_pct", "Teor de Etanol Flex", "%", "{:.1f}", card=False),
+        Channel("app_pedal_pct", "Pedal Acelerador (APP)", "%", "{:.1f}", card=False),
     )
 }
 
@@ -129,7 +132,7 @@ def _dec_vag_group33(d: bytes) -> Dict[str, Optional[float]]:
 
 
 def _dec_vag_group32(d: bytes) -> Dict[str, Optional[float]]:
-    """Bloco VW 032 (comando 2120): Célula 1 = LTFT Lenta (%), Célula 2 = LTFT Parcial (%)."""
+    """Bloco VW 032 (comando 2120): Célula 1 = LTFT Lenta (%), Célula 2 = LTFT Parcial (%), Célula 4 = Tensão Ref (V)."""
     out: Dict[str, Optional[float]] = {}
     v1, u1 = decode_vag_cell(d[0], d[1], d[2])
     v2, u2 = decode_vag_cell(d[3], d[4], d[5])
@@ -137,6 +140,11 @@ def _dec_vag_group32(d: bytes) -> Dict[str, Optional[float]]:
         out["ltft"] = v2
     elif v1 is not None and u1 == "%":
         out["ltft"] = v1
+    if len(d) >= 12:
+        v4, u4 = decode_vag_cell(d[9], d[10], d[11])
+        if v4 is not None and u4 == "V" and 5.0 <= v4 <= 18.0:
+            out["ecu_volt"] = v4
+            out.setdefault("battery", v4)
     return out
 
 
@@ -179,6 +187,7 @@ def _dec_vag_group02(d: bytes) -> Dict[str, Optional[float]]:
             out["load"] = v2
         if v3 is not None and "ms" in u3:
             out["inj_ms"] = v3
+            out["inj_pulse_width"] = v3
         if v4 is not None and u4 == "mbar":
             out["map"] = v4 / 10.0  # mbar -> kPa
     return out
@@ -213,10 +222,19 @@ def _dec_vag_group04(d: bytes) -> Dict[str, Optional[float]]:
         v4, u4 = decode_vag_cell(d[9], d[10], d[11])
         if v1 is not None and u1 == "rpm":
             out["rpm"] = v1
+        elif v1 is not None and u1 == "V":
+            out["battery"] = v1
+            out["ecu_volt"] = v1
         if v2 is not None and u2 == "V":
             out["battery"] = v2
+            out["ecu_volt"] = v2
+        elif v2 is not None and u2 in ("°C", "C"):
+            out["ect"] = v2
         if v3 is not None and u3 in ("°C", "C"):
-            out["ect"] = v3
+            if "ect" not in out:
+                out["ect"] = v3
+            else:
+                out["iat"] = v3
         if v4 is not None and u4 in ("°C", "C"):
             out["iat"] = v4
     return out
@@ -245,6 +263,64 @@ def _dec_vag_group05(d: bytes) -> Dict[str, Optional[float]]:
             out["fuel_sys1"] = 4.0  # WOT / Enriquecimento Plena Carga
         else:
             out["fuel_sys1"] = 2.0  # Lenta / Parcial / Malha Fechada
+    return out
+
+
+def _dec_vag_group20(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 020 (comando 2114): Retardo de detonação Cilindros 1..4 (°KW)."""
+    out: Dict[str, Optional[float]] = {}
+    for idx, key in enumerate(("knock_ret_c1", "knock_ret_c2", "knock_ret_c3", "knock_ret_c4")):
+        off = idx * 3
+        if len(d) >= off + 3:
+            v, _ = decode_vag_cell(d[off], d[off + 1], d[off + 2])
+            if v is not None:
+                out[key] = v
+    return out
+
+
+def _dec_vag_group26(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 026 (comando 211A): Tensão do sensor de detonação Cilindros 1..4 (V)."""
+    out: Dict[str, Optional[float]] = {}
+    for idx, key in enumerate(("knock_v_c1", "knock_v_c2", "knock_v_c3", "knock_v_c4")):
+        off = idx * 3
+        if len(d) >= off + 3:
+            v, u = decode_vag_cell(d[off], d[off + 1], d[off + 2])
+            if v is not None and u == "V":
+                out[key] = v
+    return out
+
+
+def _dec_vag_group62(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 062 (comando 213E): C1 = TPS1 (%), C2 = TPS2 (%), C3 = Pedal APP1 (%), C4 = Pedal APP2 (%)."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 12:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
+        v4, u4 = decode_vag_cell(d[9], d[10], d[11])
+        if v1 is not None and u1 == "%":
+            out["tps_track1"] = v1
+        if v2 is not None and u2 == "%":
+            out["tps_track2"] = v2
+        if v3 is not None and u3 == "%":
+            out["app_pedal_pct"] = v3
+        if v4 is not None and u4 == "%":
+            out["app_track2"] = v4
+    return out
+
+
+def _dec_vag_group103(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 103 (comando 2167): Adaptação de Combustível Flex (Teor de Etanol % em C1 ou C5)."""
+    out: Dict[str, Optional[float]] = {}
+    # Na ME7.5.30 (032906032AJ), C1..C4 podem ser vazios (00 00 00) e o Etanol % vir em C5 (offset 12)
+    for cell_idx in (4, 0, 5, 1):
+        off = cell_idx * 3
+        if len(d) >= off + 3:
+            v, u = decode_vag_cell(d[off], d[off + 1], d[off + 2])
+            if v is not None and u == "%" and 0.0 <= v <= 100.0:
+                out["flex_ethanol_pct"] = v
+                out["ethanol"] = v
+                break
     return out
 
 
@@ -297,6 +373,10 @@ PIDS: Dict[int, PidDef] = {
         PidDef(0x03, 12, _dec_vag_group03, "VW Bloco 003 RPM+MAP+TPS+Avanço (2103)", mode=0x21, fast=True),
         PidDef(0x04, 12, _dec_vag_group04, "VW Bloco 004 RPM+Bat+ECT+IAT (2104)", mode=0x21, slow=True),
         PidDef(0x05, 9, _dec_vag_group05, "VW Bloco 005 RPM+Carga+Vel (2105)", mode=0x21, extra=True),
+        PidDef(0x14, 12, _dec_vag_group20, "VW Bloco 020 Retardo Detonação (2114)", mode=0x21, extra=True),
+        PidDef(0x1A, 12, _dec_vag_group26, "VW Bloco 026 Tensão Detonação (211A)", mode=0x21, extra=True),
+        PidDef(0x3E, 12, _dec_vag_group62, "VW Bloco 062 Pistas TPS/APP (213E)", mode=0x21, extra=True),
+        PidDef(0x67, 15, _dec_vag_group103, "VW Bloco 103 Adaptação Flex (2167)", mode=0x21, extra=True, slow=True),
         # Todos os demais PIDs que a sua ECU declarou no bitmap (01, 03, 04, 0D, 0F, 13, 1C, 21, 51)
         PidDef(0x04, 1, lambda d: {"load": (d[0] * 100.0) / 255.0}, "Carga", extra=True),
         PidDef(0x0D, 1, lambda d: {"speed": float(d[0])}, "Velocidade", extra=True),
@@ -321,7 +401,7 @@ PIDS: Dict[int, PidDef] = {
         PidDef(0x31, 2, lambda d: {"dist_clr": float((d[0] * 256) + d[1])}, "Distância desde Limpeza (0131)", extra=True, slow=True),
         PidDef(0x33, 1, lambda d: {"baro": float(d[0])}, "Pressão Barométrica (0133)", extra=True, slow=True),
         PidDef(0x3C, 2, lambda d: {"cat_temp": ((d[0] * 256) + d[1]) / 10.0 - 40.0}, "Temp. Catalisador B1S1 (013C)", extra=True, slow=True),
-        PidDef(0x42, 2, lambda d: {"ecu_volt": ((d[0] * 256) + d[1]) / 1000.0}, "Tensão Módulo (0142)", extra=True, slow=True),
+        PidDef(0x42, 2, lambda d: {"ecu_volt": ((d[0] * 256) + d[1]) / 1000.0, "battery": ((d[0] * 256) + d[1]) / 1000.0}, "Tensão Módulo (0142)", extra=True, slow=True),
         PidDef(0x43, 2, lambda d: {"abs_load": ((d[0] * 256) + d[1]) * 100.0 / 255.0}, "Carga Absoluta (0143)", extra=True),
         PidDef(0x44, 2, lambda d: {"cmd_lambda": ((d[0] * 256) + d[1]) * 2.0 / 65536.0}, "Lambda Comandado (0144)", extra=True),
         PidDef(0x45, 1, lambda d: {"rel_tps": (d[0] * 100.0) / 255.0}, "Borboleta Relativa (0145)", extra=True),
@@ -332,26 +412,39 @@ PIDS: Dict[int, PidDef] = {
         PidDef(0x4C, 1, lambda d: {"cmd_throttle": (d[0] * 100.0) / 255.0}, "Atuador Borboleta (014C)", extra=True),
         PidDef(0x4D, 2, lambda d: {"time_mil": float((d[0] * 256) + d[1])}, "Tempo c/ MIL (014D)", extra=True, slow=True),
         PidDef(0x4E, 2, lambda d: {"time_clr": float((d[0] * 256) + d[1])}, "Tempo desde Limpeza (014E)", extra=True, slow=True),
-        PidDef(0x52, 1, lambda d: {"ethanol": (d[0] * 100.0) / 255.0}, "% Etanol (0152)", extra=True, slow=True),
+        PidDef(0x52, 1, lambda d: {"ethanol": (d[0] * 100.0) / 255.0, "flex_ethanol_pct": (d[0] * 100.0) / 255.0}, "% Etanol (0152)", extra=True, slow=True),
         PidDef(0x5C, 1, lambda d: {"oil_temp": d[0] - 40.0}, "Temp. Óleo (015C)", extra=True, slow=True),
         PidDef(0x5E, 2, lambda d: {"fuel_rate": ((d[0] * 256) + d[1]) / 20.0}, "Consumo (015E)", extra=True),
     )
 }
 
-# Rótulo/unidade dos canais dinâmicos do Modo 01 (fora de CHANNELS) — usados no CSV e na aba "Todos os Canais"
+# Rótulo/unidade dos canais dinâmicos do Modo 01 e KWP2000 (fora de CHANNELS) — usados no CSV e na aba "Canais"
 DYNAMIC_INFO: Dict[str, Tuple[str, str]] = {
     "stft_b2": ("STFT Banco 2", "%"), "ltft_b2": ("LTFT Banco 2", "%"),
     "fuel_press": ("Pressão Combustível", "kPa"), "maf": ("MAF", "g/s"),
     "run_time": ("Tempo Motor Ligado", "s"), "evap_purge": ("Purga Cânister", "%"),
     "fuel_level": ("Nível Combustível", "%"), "warmups": ("Aquecimentos desde Limpeza", "un"),
     "dist_clr": ("Distância desde Limpeza", "km"), "baro": ("Pressão Barométrica", "kPa"),
-    "cat_temp": ("Temp. Catalisador B1S1", "°C"), "ecu_volt": ("Tensão Módulo", "V"),
+    "cat_temp": ("Temp. Catalisador B1S1", "°C"), "ecu_volt": ("Tensão Interna ECU", "V"),
+    "obd_pin16_v": ("Tensão Pino 16 OBD (ATRV)", "V"),
     "abs_load": ("Carga Absoluta", "%"), "cmd_lambda": ("Lambda Comandado", "λ"),
     "rel_tps": ("Borboleta Relativa", "%"), "ambient": ("Temp. Ambiente", "°C"),
     "tps_b": ("Borboleta B", "%"), "pedal_d": ("Pedal D", "%"), "pedal_e": ("Pedal E", "%"),
     "cmd_throttle": ("Atuador Borboleta", "%"), "time_mil": ("Tempo c/ MIL", "min"),
     "time_clr": ("Tempo desde Limpeza", "min"), "ethanol": ("% Etanol", "%"),
+    "flex_ethanol_pct": ("Teor de Etanol Flex", "%"), "app_pedal_pct": ("Pedal Acelerador (APP)", "%"),
     "oil_temp": ("Temp. Óleo", "°C"), "fuel_rate": ("Consumo", "l/h"),
+    "knock_ret_c1": ("Retardo Detonação Cil. 1", "°KW"),
+    "knock_ret_c2": ("Retardo Detonação Cil. 2", "°KW"),
+    "knock_ret_c3": ("Retardo Detonação Cil. 3", "°KW"),
+    "knock_ret_c4": ("Retardo Detonação Cil. 4", "°KW"),
+    "knock_v_c1": ("Tensão Sensor Detonação Cil. 1", "V"),
+    "knock_v_c2": ("Tensão Sensor Detonação Cil. 2", "V"),
+    "knock_v_c3": ("Tensão Sensor Detonação Cil. 3", "V"),
+    "knock_v_c4": ("Tensão Sensor Detonação Cil. 4", "V"),
+    "tps_track1": ("Pista 1 Borboleta EPC", "%"),
+    "tps_track2": ("Pista 2 Borboleta EPC", "%"),
+    "app_track2": ("Pista 2 Pedal Acelerador", "%"),
 }
 
 # Ordem padrão (a sonda será ajustada automaticamente pelo autodiscovery no handshake)

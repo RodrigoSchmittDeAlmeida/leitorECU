@@ -101,7 +101,7 @@ def _dec_bcm_voltage(d: bytes) -> Dict[str, float]:
         val = ((d[0] << 8) | d[1]) / 100.0 if len(d) >= 2 else (d[0] * 0.1)
     else:
         val = d[0] * 0.1
-    return {"bcm_battery_v": val}
+    return {"bcm_battery_v": val, "battery": val}
 
 
 def _dec_abs_wheels(d: bytes) -> Dict[str, float]:
@@ -175,7 +175,7 @@ def _dec_pcm_injection(d: bytes) -> Dict[str, float]:
     """Tempo de injeção dos bicos injetores (DID 221125)."""
     if len(d) >= 2:
         pw = ((d[0] << 8) | d[1]) * 0.001  # ms
-        return {"inj_pulse_width": pw}
+        return {"inj_pulse_width": pw, "inj_ms": pw}
     return {}
 
 
@@ -211,7 +211,8 @@ def _dec_pcm_ac_clutch(d: bytes) -> Dict[str, float]:
 def _dec_pcm_flex(d: bytes) -> Dict[str, float]:
     """Porcentagem calculada de etanol no tanque de combustível (DID 221608)."""
     if len(d) >= 1:
-        return {"flex_ethanol_pct": float(d[0])}
+        val = float(d[0])
+        return {"flex_ethanol_pct": val, "ethanol": val}
     return {}
 
 

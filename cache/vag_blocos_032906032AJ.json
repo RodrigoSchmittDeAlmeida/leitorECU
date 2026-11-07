@@ -333,12 +333,12 @@
    "%"
   ],
   "g005_c3": [
-   "Bloco 005.3 Velocidade [km/h]",
-   "km/h"
+   "Bloco 005.3 Velocidade [raw70]",
+   "raw70"
   ],
   "g005_c4": [
-   "Bloco 005.4 Estado operação [cod]",
-   "cod"
+   "Bloco 005.4 Estado operação [mbar]",
+   "mbar"
   ],
   "g006_c1": [
    "Bloco 006.1 RPM [rpm]",
@@ -477,35 +477,35 @@
    "°KW"
   ],
   "g026_c1": [
-   "Bloco 026.1 [V]",
+   "Bloco 026.1 Sensor detonação cil. 1 [V]",
    "V"
   ],
   "g026_c2": [
-   "Bloco 026.2 [V]",
+   "Bloco 026.2 Sensor detonação cil. 2 [V]",
    "V"
   ],
   "g026_c3": [
-   "Bloco 026.3 [V]",
+   "Bloco 026.3 Sensor detonação cil. 3 [V]",
    "V"
   ],
   "g026_c4": [
-   "Bloco 026.4 [V]",
+   "Bloco 026.4 Sensor detonação cil. 4 [V]",
    "V"
   ],
   "g028_c1": [
-   "Bloco 028.1 [rpm]",
+   "Bloco 028.1 RPM [rpm]",
    "rpm"
   ],
   "g028_c2": [
-   "Bloco 028.2 [%]",
+   "Bloco 028.2 Carga [%]",
    "%"
   ],
   "g028_c3": [
-   "Bloco 028.3 [°C]",
+   "Bloco 028.3 Temp. motor [°C]",
    "°C"
   ],
   "g028_c4": [
-   "Bloco 028.4 [cod]",
+   "Bloco 028.4 Teste sensor detonação [cod]",
    "cod"
   ],
   "g030_c1": [
@@ -549,11 +549,11 @@
    "%"
   ],
   "g032_c3": [
-   "Bloco 032.3 [%]",
+   "Bloco 032.3 Fator adaptação mistura [%]",
    "%"
   ],
   "g032_c4": [
-   "Bloco 032.4 [V]",
+   "Bloco 032.4 Tensão referência ECU [V]",
    "V"
   ],
   "g033_c1": [
@@ -589,35 +589,35 @@
    "cod"
   ],
   "g036_c1": [
-   "Bloco 036.1 [V]",
+   "Bloco 036.1 Sonda 2 pós-cat (tensão) [V]",
    "V"
   ],
   "g036_c2": [
-   "Bloco 036.2 [°C]",
+   "Bloco 036.2 Temp. sonda 2 [°C]",
    "°C"
   ],
   "g036_c3": [
-   "Bloco 036.3 [λ]",
+   "Bloco 036.3 Fator lambda 2 [λ]",
    "λ"
   ],
   "g036_c4": [
-   "Bloco 036.4 [cod]",
+   "Bloco 036.4 Status sonda 2 [cod]",
    "cod"
   ],
   "g037_c1": [
-   "Bloco 037.1 [%]",
+   "Bloco 037.1 Carga [%]",
    "%"
   ],
   "g037_c2": [
-   "Bloco 037.2 [V]",
+   "Bloco 037.2 Sonda 2 (tensão) [V]",
    "V"
   ],
   "g037_c3": [
-   "Bloco 037.3 [V]",
+   "Bloco 037.3 Delta lambda [V]",
    "V"
   ],
   "g037_c4": [
-   "Bloco 037.4 [cod]",
+   "Bloco 037.4 Status diagnose cat. [cod]",
    "cod"
   ],
   "g041_c1": [
@@ -681,11 +681,11 @@
    "rpm"
   ],
   "g050_c3": [
-   "Bloco 050.3 [cod]",
+   "Bloco 050.3 Solicitação A/C [cod]",
    "cod"
   ],
   "g050_c4": [
-   "Bloco 050.4 [cod]",
+   "Bloco 050.4 Compressor A/C [cod]",
    "cod"
   ],
   "g051_c1": [
@@ -741,7 +741,7 @@
    "rpm"
   ],
   "g054_c2": [
-   "Bloco 054.2 [cod]",
+   "Bloco 054.2 Estado operação [cod]",
    "cod"
   ],
   "g054_c3": [
@@ -785,35 +785,35 @@
    "bits"
   ],
   "g057_c1": [
-   "Bloco 057.1 [rpm]",
+   "Bloco 057.1 RPM real [rpm]",
    "rpm"
   ],
   "g057_c2": [
-   "Bloco 057.2 [rpm]",
+   "Bloco 057.2 RPM especificada [rpm]",
    "rpm"
   ],
   "g057_c3": [
-   "Bloco 057.3 [cod]",
+   "Bloco 057.3 Compressor A/C [cod]",
    "cod"
   ],
   "g057_c4": [
-   "Bloco 057.4 [bar]",
+   "Bloco 057.4 Pressão/Torque A/C [bar]",
    "bar"
   ],
   "g058_c1": [
-   "Bloco 058.1 [%]",
+   "Bloco 058.1 Carga [%]",
    "%"
   ],
   "g058_c2": [
-   "Bloco 058.2 [bar]",
+   "Bloco 058.2 Pressão A/C [bar]",
    "bar"
   ],
   "g058_c3": [
-   "Bloco 058.3 [°C]",
+   "Bloco 058.3 Temp. motor [°C]",
    "°C"
   ],
   "g058_c4": [
-   "Bloco 058.4 [bits]",
+   "Bloco 058.4 Status A/C [bits]",
    "bits"
   ],
   "g059_c1": [
@@ -841,11 +841,11 @@
    "%"
   ],
   "g060_c3": [
-   "Bloco 060.3 [cont]",
+   "Bloco 060.3 Passo adaptação EPC [cont]",
    "cont"
   ],
   "g060_c4": [
-   "Bloco 060.4 [cod]",
+   "Bloco 060.4 Status adaptação EPC [cod]",
    "cod"
   ],
   "g061_c1": [
@@ -881,19 +881,19 @@
    "%"
   ],
   "g064_c1": [
-   "Bloco 064.1 [V]",
+   "Bloco 064.1 Tensão mín. TPS 1 [V]",
    "V"
   ],
   "g064_c2": [
-   "Bloco 064.2 [V]",
+   "Bloco 064.2 Tensão mín. TPS 2 [V]",
    "V"
   ],
   "g064_c3": [
-   "Bloco 064.3 [V]",
+   "Bloco 064.3 Tensão emergência TPS 1 [V]",
    "V"
   ],
   "g064_c4": [
-   "Bloco 064.4 [V]",
+   "Bloco 064.4 Tensão emergência TPS 2 [V]",
    "V"
   ],
   "g066_c1": [
@@ -1489,7 +1489,7 @@
    "ms"
   ],
   "g101_c4": [
-   "Bloco 101.4 Status injeção [mbar]",
+   "Bloco 101.4 Pressão coletor [mbar]",
    "mbar"
   ],
   "g101_c5": [
@@ -1541,19 +1541,19 @@
    "bits"
   ],
   "g103_c5": [
-   "Bloco 103.5 [%]",
+   "Bloco 103.5 Teor Etanol Flex [%]",
    "%"
   ],
   "g103_c6": [
-   "Bloco 103.6 [%]",
+   "Bloco 103.6 Adaptação Mistura Flex [%]",
    "%"
   ],
   "g103_c7": [
-   "Bloco 103.7 [%]",
+   "Bloco 103.7 Correção Partida Flex [%]",
    "%"
   ],
   "g103_c8": [
-   "Bloco 103.8 [bits]",
+   "Bloco 103.8 Status Reconhecimento Flex [bits]",
    "bits"
   ],
   "g104_c1": [

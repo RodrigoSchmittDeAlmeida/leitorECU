@@ -1,8 +1,9 @@
-"""Gráficos (osciloscópio) com PyQtGraph: eixo duplo (esquerdo/direito) e eixo X compartilhado."""
+"""Gráficos (osciloscópio) com PyQtGraph: eixo duplo (esquerdo/direito) e reconfiguração dinâmica."""
 from __future__ import annotations
 
 import pyqtgraph as pg
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QSizePolicy
 
 WINDOW_S = 30.0
 
@@ -11,9 +12,10 @@ class DualAxisPlot(pg.PlotWidget):
     def __init__(self, title: str, left_label: str, left_range, right_label: str | None = None,
                  right_range=None, parent=None):
         super().__init__(parent=parent, background="#0f1115")
-        self.setMinimumHeight(100)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.setMinimumHeight(90)
         self.pi = self.getPlotItem()
-        self.pi.setTitle(title, color="#9aa4b2", size="8.5pt")
+        self.pi.setTitle(title, color="#9aa4b2", size="8pt")
         self.pi.showGrid(x=True, y=True, alpha=0.18)
         self.pi.setLabel("left", left_label)
         self.pi.setXRange(-WINDOW_S, 0, padding=0)
@@ -23,23 +25,39 @@ class DualAxisPlot(pg.PlotWidget):
         self.pi.setClipToView(True)
         self.pi.hideButtons()
         self.legend = self.pi.addLegend(offset=(8, 4), labelTextColor="#cfd8dc", brush=(15, 17, 21, 180))
-        self.vb2 = None
-        self._markers = []
-        if right_label:
-            self.vb2 = pg.ViewBox()
-            self.pi.showAxis("right")
-            self.pi.scene().addItem(self.vb2)
-            self.pi.getAxis("right").linkToView(self.vb2)
+        self.vb2 = pg.ViewBox()
+        self.pi.showAxis("right")
+        self.pi.scene().addItem(self.vb2)
+        self.pi.getAxis("right").linkToView(self.vb2)
+        self.vb2.setXLink(self.pi)
+        self.vb2.enableAutoRange(x=False, y=False)
+        self.vb2.setMouseEnabled(x=False, y=True)
+        self.pi.vb.sigResized.connect(self._sync_views)
+
+        if right_label and right_range:
             self.pi.getAxis("right").setLabel(right_label)
-            self.vb2.setXLink(self.pi)
             self.vb2.setYRange(*right_range, padding=0.02)
-            self.vb2.enableAutoRange(x=False, y=False)
-            self.vb2.setMouseEnabled(x=False, y=True)
-            self.pi.vb.sigResized.connect(self._sync_views)
+        else:
+            self.pi.hideAxis("right")
+            self.vb2.setYRange(*left_range, padding=0.02)
+
+        self._markers = []
 
     def _sync_views(self):
         self.vb2.setGeometry(self.pi.vb.sceneBoundingRect())
         self.vb2.linkedViewChanged(self.pi.vb, self.vb2.XAxis)
+
+    def configure_axes(self, left_label: str, left_range: tuple, right_label: str | None = None,
+                       right_range: tuple | None = None) -> None:
+        """Atualiza os rótulos e escalas Y dos eixos esquerdo e direito dinamicamente."""
+        self.pi.setLabel("left", left_label)
+        self.pi.setYRange(*left_range, padding=0.02)
+        if right_label and right_range:
+            self.pi.showAxis("right")
+            self.pi.getAxis("right").setLabel(right_label)
+            self.vb2.setYRange(*right_range, padding=0.02)
+        else:
+            self.pi.hideAxis("right")
 
     def add_curve(self, name: str, color: str, right: bool = False, width: float = 1.6) -> pg.PlotDataItem:
         pen = pg.mkPen(color, width=width)

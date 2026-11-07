@@ -289,6 +289,15 @@ class FordHsCanStrategy(BaseVehicleStrategy):
         # Restaura para PCM ao final do ciclo
         self._set_target(elm, "7E0", "7E8")
 
+        # Leitura periódica da tensão no Pino 16 da tomada OBD2 via ELM327 (ATRV)
+        if cycle % 6 == 0 and hasattr(elm, "battery_voltage"):
+            try:
+                v_pin16 = elm.battery_voltage()
+                if v_pin16 is not None and 5.0 <= v_pin16 <= 20.0:
+                    worker._emit({"obd_pin16_v": v_pin16})
+            except Exception:
+                pass
+
         return n_resp
 
     def read_dtcs(self, elm: Any, worker: Any) -> None:

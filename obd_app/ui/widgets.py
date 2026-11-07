@@ -1,8 +1,9 @@
-"""Cards numéricos do painel superior."""
+"""Cards numéricos do painel superior com largura elástica estável (sem deslocamento de layout)."""
 from __future__ import annotations
 
+from typing import Optional
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout
 
 from ..pids import Channel
 
@@ -13,30 +14,35 @@ class ValueCard(QFrame):
         self.ch = ch
         self.setObjectName("card")
         self.setProperty("state", "stale")
-        self.setMinimumWidth(100)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setMinimumWidth(68)
+        self.setFixedHeight(48)
         self.min_val: Optional[float] = None
         self.max_val: Optional[float] = None
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(6, 3, 6, 3)
-        lay.setSpacing(1)
+        lay.setContentsMargins(5, 2, 5, 2)
+        lay.setSpacing(0)
 
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(2)
         self.title = QLabel(ch.label, objectName="cardTitle")
+        self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.note = QLabel("", objectName="cardNote")
-        top.addWidget(self.title)
-        top.addStretch()
+        self.note.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        top.addWidget(self.title, 1)
         top.addWidget(self.note)
         lay.addLayout(top)
 
         val_box = QHBoxLayout()
         val_box.setContentsMargins(0, 0, 0, 0)
-        val_box.setSpacing(3)
+        val_box.setSpacing(2)
         self.peaks_label = QLabel("", objectName="cardPeaks")
+        self.peaks_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.peaks_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
-        val_box.addWidget(self.peaks_label)
-        val_box.addStretch()
+        val_box.addWidget(self.peaks_label, 1)
+
         self.value = QLabel("--", objectName="cardValue")
         self.value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if color:
@@ -61,7 +67,7 @@ class ValueCard(QFrame):
     def _update_peaks_text(self) -> None:
         if self.min_val is not None and self.max_val is not None:
             f = self.ch.fmt
-            self.peaks_label.setText(f"mín {f.format(self.min_val)} | máx {f.format(self.max_val)}")
+            self.peaks_label.setText(f"{f.format(self.min_val)}..{f.format(self.max_val)}")
 
     def reset_peaks(self) -> None:
         self.min_val = None

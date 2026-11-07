@@ -147,6 +147,18 @@ class MockEngine:
                 g = int(cmd[2:], 16)
             except ValueError:
                 g = 0
+            if g == 0x02:  # Bloco 002: RPM, Carga %, Tempo Injeção ms, MAP mbar
+                rpm_w = int(s["rpm"] / 0.2)
+                load_w = int(s["load"] / 0.002)
+                inj_ms = 2.4 + (s["load"] / 100.0) * 6.5
+                inj_w = int(inj_ms / 0.01)
+                map_w = int((s["map"] * 10.0) / 0.04)
+                return (
+                    f"610201{rpm_w >> 8:02X}{rpm_w & 0xFF:02X}"
+                    f"02{load_w >> 8:02X}{load_w & 0xFF:02X}"
+                    f"0F{inj_w >> 8:02X}{inj_w & 0xFF:02X}"
+                    f"12{map_w >> 8:02X}{map_w & 0xFF:02X}"
+                )
             if g == 0x03:  # Bloco 003: RPM, MAP, TPS, Avanço
                 rpm_w = int(s["rpm"] / 0.2)
                 map_b = int(s["map"] / 0.04)
@@ -157,13 +169,39 @@ class MockEngine:
                 trim_b = int(s["stft"] * 128.0 / 100.0 + 128)
                 lam_w = int(s["lam"] * 1000.0)
                 return f"61211401{trim_b & 0xFF:02X}06{lam_w >> 8:02X}{lam_w & 0xFF:02X}010000010000"
-            if g == 0x20:  # Bloco 032: LTFT
+            if g == 0x20:  # Bloco 032: LTFT Lenta, LTFT Parcial, Fator, Tensão ECU
                 ltft_b = int(s["ltft"] * 128.0 / 100.0 + 128)
-                return f"61201401{ltft_b & 0xFF:02X}1401{ltft_b & 0xFF:02X}010000010000"
-            if g == 0x04:  # Bloco 004: Bateria, ECT, IAT
-                return "610415037C05016E05015A010000"
-            if g == 0x05:  # Bloco 005: Carga, Velocidade
-                return f"61050201{int(s['load'] * 50):02X}0701{int(s['speed'] * 100):02X}010000010000"
+                bat_w = int(s["bat"] * 1000.0)
+                return f"61201401{ltft_b & 0xFF:02X}1401{ltft_b & 0xFF:02X}14018006{bat_w >> 8:02X}{bat_w & 0xFF:02X}"
+            if g == 0x04:  # Bloco 004: C1=RPM, C2=Bateria (V), C3=ECT (°C), C4=IAT (°C)
+                rpm_w = int(s["rpm"] / 0.2)
+                bat_w = int(s["bat"] * 1000.0)
+                ect_b = int(s["ect"] * 10.0 / 1.0 + 100)
+                iat_b = int(s["iat"] * 10.0 / 1.0 + 100)
+                return (
+                    f"610401{rpm_w >> 8:02X}{rpm_w & 0xFF:02X}"
+                    f"15{bat_w >> 8:02X}{bat_w & 0xFF:02X}"
+                    f"0501{ect_b & 0xFF:02X}"
+                    f"0501{iat_b & 0xFF:02X}"
+                )
+            if g == 0x05:  # Bloco 005: RPM, Carga, Velocidade, Estado
+                rpm_w = int(s["rpm"] / 0.2)
+                return f"610501{rpm_w >> 8:02X}{rpm_w & 0xFF:02X}0201{int(s['load'] * 50):02X}0701{int(s['speed'] * 100):02X}250001"
+            if g == 0x14:  # Bloco 020: Retardo detonação Cil 1..4
+                return "6114220180220180220180220180"
+            if g == 0x1A:  # Bloco 026: Tensão sensor detonação Cil 1..4 (V)
+                return "611A06019006019506018C060192"
+            if g == 0x3E:  # Bloco 062: TPS1, TPS2, APP1, APP2
+                tps_w = int(s["tps"] / 0.002)
+                tps2_w = int((100.0 - s["tps"]) / 0.002)
+                return (
+                    f"613E02{tps_w >> 8:02X}{tps_w & 0xFF:02X}"
+                    f"02{tps2_w >> 8:02X}{tps2_w & 0xFF:02X}"
+                    f"02{tps_w >> 8:02X}{tps_w & 0xFF:02X}"
+                    f"02{tps_w >> 8:02X}{tps_w & 0xFF:02X}"
+                )
+            if g == 0x67:  # Bloco 103: Etanol Flex % (em C5)
+                return "616700000000000000000000000021011B210100210100100001"
 
         # DTCs padrão (Modo 03 / 04)
         if cmd.startswith("03"):

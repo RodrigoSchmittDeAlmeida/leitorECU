@@ -184,9 +184,10 @@ class VagKwpStrategy(BaseVehicleStrategy):
             pids_to_query = list(self.active_fast)
         else:
             # Em todo ciclo lê os 2 blocos de alta velocidade (Bloco 003 + Bloco 033)
-            # E intercala 1 dos 4 blocos complementares a cada ciclo:
-            # 0: Bloco 002 (Inj/Carga/MAP), 1: Bloco 004 (ECT/IAT/Bat), 2: Bloco 005 (Vel/Cut-Off/Estado), 3: Bloco 032 (LTFT)
-            interleaved = [0x2102, 0x2104, 0x2105, 0x2120]
+            # E intercala 1 dos blocos complementares a cada ciclo:
+            # 002 (Inj/Carga/MAP), 004 (Bat/ECT/IAT), 005 (Vel/Cut-Off), 032 (LTFT),
+            # 103 (Etanol Flex), 020 (Retardo Detonação), 026 (Tensão Detonação), 062 (TPS/APP)
+            interleaved = [0x2102, 0x2104, 0x2105, 0x2120, 0x2167, 0x2104, 0x2114, 0x211A, 0x213E, 0x2120]
             sec_block = interleaved[cycle % len(interleaved)]
             pids_to_query = list(self.active_fast) + [sec_block]
 
@@ -209,6 +210,22 @@ class VagKwpStrategy(BaseVehicleStrategy):
                         self._confirm_pending()
                         worker._emit(vals)
                         n_resp += 1
+                else:
+                    # Mesmo se o tamanho for maior/menor que nbytes, tenta decodificar células genéricas
+                    cell_vals = self._decode_cells(resp, pdef.pid, worker)
+                    if cell_vals:
+                        self._confirm_pending()
+                        worker._emit(cell_vals)
+                        n_resp += 1
+
+        # Leitura periódica da tensão física no Pino 16 OBD2 via conversor A/D do ELM327 (ATRV)
+        if not decel_mode and cycle % 6 == 0 and hasattr(elm, "battery_voltage"):
+            try:
+                v_pin16 = elm.battery_voltage()
+                if v_pin16 is not None and 5.0 <= v_pin16 <= 20.0:
+                    worker._emit({"obd_pin16_v": v_pin16})
+            except Exception:
+                pass
 
         # Sondagem de blocos adicionais DESCONHECIDOS em background somente se habilitado pelo usuário
         # e somente enquanto houver blocos na fila de descoberta (_vag_queue).

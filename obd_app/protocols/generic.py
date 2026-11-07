@@ -146,6 +146,14 @@ class GenericObdStrategy(BaseVehicleStrategy):
                         if pcode in lst:
                             lst.remove(pcode)
 
+        if not decel_mode and cycle % 5 == 0 and hasattr(elm, "battery_voltage"):
+            try:
+                v_pin16 = elm.battery_voltage()
+                if v_pin16 is not None and 5.0 <= v_pin16 <= 20.0:
+                    worker._emit({"obd_pin16_v": v_pin16, "battery": v_pin16})
+            except Exception:
+                pass
+
         return n_resp
 
     def read_dtcs(self, elm: Any, worker: Any) -> None:
