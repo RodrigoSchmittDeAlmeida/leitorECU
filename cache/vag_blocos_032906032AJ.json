@@ -301,8 +301,8 @@
    "mbar"
   ],
   "g003_c3": [
-   "Bloco 003.3 Borboleta [°]",
-   "°"
+   "Bloco 003.3 Borboleta [%]",
+   "%"
   ],
   "g003_c4": [
    "Bloco 003.4 Avanço [°]",
@@ -333,12 +333,12 @@
    "%"
   ],
   "g005_c3": [
-   "Bloco 005.3 Velocidade [raw80]",
-   "raw80"
+   "Bloco 005.3 Velocidade [km/h]",
+   "km/h"
   ],
   "g005_c4": [
-   "Bloco 005.4 Estado operação [raw63]",
-   "raw63"
+   "Bloco 005.4 Estado operação [cod]",
+   "cod"
   ],
   "g006_c1": [
    "Bloco 006.1 RPM [rpm]",
@@ -565,12 +565,12 @@
    "V"
   ],
   "g033_c3": [
-   "Bloco 033.3 [rpm]",
-   "rpm"
+   "Bloco 033.3 [°C]",
+   "°C"
   ],
   "g033_c4": [
-   "Bloco 033.4 [rpm]",
-   "rpm"
+   "Bloco 033.4 [°C]",
+   "°C"
   ],
   "g034_c1": [
    "Bloco 034.1 RPM [rpm]",

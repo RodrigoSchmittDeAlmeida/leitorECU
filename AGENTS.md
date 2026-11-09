@@ -46,7 +46,7 @@ Ao disparar o 5-baud init no endereço `01`, a central retorna os KeyBytes **`EF
 - **Bloco 003 (`2103`)**: Retorna em um único frame de 12 bytes: **RPM**, **MAP (mbar/kPa)**, **TPS (%)** e **Avanço de Ignição (°)** (fórmula `0x1B`).
 - **Bloco 004 (`2104`)**: Retorna **Bateria (V)**, **ECT (°C)** e **IAT (°C)**.
 - **Bloco 005 (`2105`)**: Retorna **Carga (%)** e **Velocidade (km/h)**.
-- **Bloco 031 (`211F`)**: Retorna a tensão bruta de ambas as sondas pré e pós catalisador.
+- **Bloco 031 (`211F`)**: Retorna a tensão da Sonda 1 pré-catalisador e o Lambda especificado (a calibração brasileira TotalFlex da ME7.5.30 utiliza apenas 1 sonda física, com o2_mask = 0x01).
 - **Serviço 18 (`1800FF00`)**: Leitura nativa de códigos de falha (DTC) do protocolo VAG KWP2000.
 - **Serviço 14 (`14FF00`)**: Limpeza de códigos de falha e adaptações da central.
 
