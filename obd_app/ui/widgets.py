@@ -61,9 +61,26 @@ class ValueCard(QFrame):
         lay.addWidget(self.peaks_label)
 
         self._state = "stale"
+        self._custom_fmt: Optional[str] = None
+
+    def set_display(self, title: Optional[str] = None, unit: Optional[str] = None, fmt: Optional[str] = None) -> None:
+        """Permite adaptar dinamicamente título, unidade e formatação do card."""
+        if title is not None:
+            self.title.setText(title)
+        if unit is not None:
+            self.unit.setText(unit)
+        if fmt is not None:
+            self._custom_fmt = fmt
+
+    def reset_display(self) -> None:
+        """Restaura as propriedades originais do canal."""
+        self.title.setText(self.ch.label)
+        self.unit.setText(self.ch.unit)
+        self._custom_fmt = None
 
     def set_value(self, v: float) -> None:
-        self.value.setText(self.ch.fmt.format(v))
+        fmt = self._custom_fmt or self.ch.fmt
+        self.value.setText(fmt.format(v))
         if self.sensor_color:
             self.value.setStyleSheet(f"color: {self.sensor_color};")
         if self.min_val is None or v < self.min_val:
@@ -74,7 +91,7 @@ class ValueCard(QFrame):
 
     def _update_peaks_text(self) -> None:
         if self.min_val is not None and self.max_val is not None:
-            f = self.ch.fmt
+            f = self._custom_fmt or self.ch.fmt
             self.peaks_label.setText(f"mín {f.format(self.min_val)} | máx {f.format(self.max_val)}")
 
     def reset_peaks(self) -> None:

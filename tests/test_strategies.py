@@ -119,8 +119,11 @@ def test_ford_strategy_polling():
     transport.close()
 
 
-def test_vag_strategy_polling():
+def test_vag_strategy_polling(monkeypatch, tmp_path):
     """Testa ciclo de polling da estratégia VAG KWP2000 (VW Gol G5)."""
+    import obd_app.vag as vag_mod
+    monkeypatch.setattr(vag_mod, "CACHE_DIR", str(tmp_path))
+
     transport = MockTransport(kline_latency=0.0)
     transport.open()
     elm = ELM327(transport)
@@ -140,7 +143,7 @@ def test_vag_strategy_polling():
     strategy.reset_adaptation(elm, worker)
     logs_str = " ".join(str(log) for log in worker.emitted_logs)
     assert "14FF00" in logs_str
-    assert "2800" in logs_str
+    assert "31010000" in logs_str
 
     transport.close()
 

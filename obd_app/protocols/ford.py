@@ -101,13 +101,13 @@ class FordHsCanStrategy(BaseVehicleStrategy):
         self._set_target(elm, module_tx, module_rx)
 
         resp = elm.command(f"22{did}", 1.5)
+        raw = "".join(resp.data_lines()).replace(" ", "").upper()
+        if "7F22" in raw or (resp.error and "7F22" in resp.error.replace(" ", "").upper()):
+            # Módulo respondeu com NRC UDS (está vivo no barramento, mas não suporta este DID específico)
+            self._module_ever_responded.add(mod_key)
+            self._unsupported_dids.add(did_key)
+            return None
         if resp.ok and resp.data_lines():
-            raw = "".join(resp.data_lines()).replace(" ", "").upper()
-            if "7F22" in raw:
-                # Módulo respondeu com NRC UDS (está vivo no barramento, mas não suporta este DID específico)
-                self._module_ever_responded.add(mod_key)
-                self._unsupported_dids.add(did_key)
-                return None
             if "NODATA" not in raw and "ERROR" not in raw:
                 prefix = "62" + did.upper()
                 idx = raw.find(prefix)
@@ -246,6 +246,20 @@ class FordHsCanStrategy(BaseVehicleStrategy):
             if self._query_did(elm, worker, "7E0", "0320", ford._dec_pcm_baro):
                 n_resp += 1
 
+        # DIDs Ford EcoBoost Turbo (Boost Target, Wastegate, CAC Temp, Flauta GDI, TIP)
+        # Sondados de forma segura; se a ECU for Sigma 1.5 aspirada, o retorno NRC 7F22 suspende estes DIDs imediatamente
+        if cycle % 4 == 3:
+            if self._query_did(elm, worker, "7E0", "0462", ford._dec_pcm_boost_target):
+                n_resp += 1
+            if self._query_did(elm, worker, "7E0", "0333", ford._dec_pcm_wastegate):
+                n_resp += 1
+            if self._query_did(elm, worker, "7E0", "03A0", ford._dec_pcm_cac_temp):
+                n_resp += 1
+            if self._query_did(elm, worker, "7E0", "03E7", ford._dec_pcm_fuel_rail):
+                n_resp += 1
+            if self._query_did(elm, worker, "7E0", "04FE", ford._dec_pcm_turbo_inlet):
+                n_resp += 1
+
         # 3. Módulo de CONFORTO & CARROCERIA (BCM 726 -> RX 72E)
         # No Ford Ka, o BCM comunica via MS-CAN (Pinos 3 e 11).
         # Se estiver em cabo padrão HS-CAN, será detectado e suspenso automaticamente após 3 tentativas.
@@ -350,7 +364,7 @@ class FordHsCanStrategy(BaseVehicleStrategy):
 
     def scan_all(self, elm: Any, worker: Any) -> None:
         self._module_offline.clear()
-        self._module_failures.clear()
+        self._did_failures.clear()
         worker.log.emit("Varredura de todos os módulos Ford (PCM, BCM Conforto, ABS, IPC, PSCM, RCM)...")
         worker.status.emit("connected", "Varrendo todos os módulos Ford Ka+...")
         found = 0

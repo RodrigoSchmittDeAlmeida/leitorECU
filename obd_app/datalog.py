@@ -46,7 +46,7 @@ class CsvLogger:
         self.stop()
         self.extra_cols = [k for k in (extra or {}) if k not in CHANNELS]
         self.extra_labels = {k: v for k, v in (extra or {}).items() if k not in CHANNELS}
-        self._fh = open(path, "w", newline="", encoding="utf-8")
+        self._fh = open(path, "w", newline="", encoding="utf-8-sig")
         self._w = csv.writer(self._fh, delimiter=";")
         self._w.writerow(self._header())
         self.path, self.rows = path, 0
@@ -66,20 +66,33 @@ class CsvLogger:
     def _rewrite(self, new: List[str]) -> None:
         """Reescreve o CSV com o cabeçalho ampliado, inserindo colunas vazias antes de 'evento'."""
         assert self._fh is not None
+        self._fh.flush()
         self._fh.close()
+        self._fh = None
+        self._w = None
+
         insert_at = len(_BASE_COLS) + len(CHANNELS) + len(self.extra_cols)
-        with open(self.path, newline="", encoding="utf-8") as f:
+        with open(self.path, newline="", encoding="utf-8-sig") as f:
             rows = list(csv.reader(f, delimiter=";"))
         self.extra_cols += new
         tmp = self.path + ".tmp"
-        with open(tmp, "w", newline="", encoding="utf-8") as f:
+        with open(tmp, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
             w.writerow(self._header())
             pad = [""] * len(new)
             for r in rows[1:]:
                 w.writerow(r[:insert_at] + pad + r[insert_at:])
-        os.replace(tmp, self.path)
-        self._fh = open(self.path, "a", newline="", encoding="utf-8")
+
+        for attempt in range(5):
+            try:
+                os.replace(tmp, self.path)
+                break
+            except (PermissionError, OSError):
+                if attempt == 4:
+                    raise
+                time.sleep(0.05)
+
+        self._fh = open(self.path, "a", newline="", encoding="utf-8-sig")
         self._w = csv.writer(self._fh, delimiter=";")
 
     def write(self, wall_ms: float, t_rel: float, updated: str, latest: Dict[str, float], event: str = "") -> None:
@@ -106,6 +119,10 @@ class CsvLogger:
 
     def stop(self) -> None:
         if self._fh:
+            try:
+                self._fh.flush()
+            except Exception:
+                pass
             self._fh.close()
         self._fh, self._w = None, None
 
@@ -141,10 +158,10 @@ def export_megalogviewer_csv(src_csv_path: str, dst_msl_path: str) -> bool:
     """Converte um log gravado para o formato padrão do MegaLogViewer HD / TunerStudio.
 
     Gera arquivo delimitado por tabulação com ponto decimal (.) e mapeia nomes
-    canônicos de colunas (Time, RPM, MAP, TPS, Advance, CLT, MAT, Batt_V, etc.).
+    canônicos de colunas (Time, RPM, MAP, TPS, Advance, CLT, MAT, Batt_V, Boost, etc.).
     """
     try:
-        with open(src_csv_path, "r", encoding="utf-8") as f_in:
+        with open(src_csv_path, "r", encoding="utf-8-sig") as f_in:
             reader = csv.reader(f_in, delimiter=";")
             header = next(reader)
 
@@ -156,6 +173,7 @@ def export_megalogviewer_csv(src_csv_path: str, dst_msl_path: str) -> bool:
                 "advance": "Advance",
                 "lambda_v": "O2_Volts",
                 "lambda2_v": "O2_Volts_Post",
+                "lambda_eq": "Lambda",
                 "stft": "Fuel_Trim_Short",
                 "ltft": "Fuel_Trim_Long",
                 "ect": "CLT",
@@ -168,6 +186,14 @@ def export_megalogviewer_csv(src_csv_path: str, dst_msl_path: str) -> bool:
                 "trip_liters": "Trip_Fuel_Liters",
                 "trip_km": "Trip_Distance_km",
                 "volumetric_eff": "VE",
+                "boost_bar": "Boost",
+                "boost_psi": "Boost_psi",
+                "baro": "Baro",
+                "wastegate_pct": "Wastegate_Duty",
+                "fuel_rail_bar": "Fuel_Rail_Pressure",
+                "knock_retard_max": "Knock_Retard",
+                "cac_temp_c": "CAC_Temp",
+                "oil_temp": "Oil_Temp",
                 "evento": "Marker",
             }
 

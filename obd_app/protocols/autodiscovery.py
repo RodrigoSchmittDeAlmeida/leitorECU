@@ -59,15 +59,18 @@ class UniversalAutoDiscovery:
                 return strategy_kkl, meta
 
         # Se for Demo / MockTransport, ativa o perfil do simulador imediatamente
-        if transport and getattr(transport, "name", "") == "Demo":
-            worker.log.emit("Modo Demo / Simulador ativo: inicializando central simulada...")
+        if transport and (getattr(transport, "name", "") == "Demo" or hasattr(transport, "engine")):
+            engine = getattr(transport, "engine", None)
+            is_turbo = bool(getattr(engine, "turbo_mode", False))
+            raw_id = "5G0906259 MED17.5 EA888 TSI" if is_turbo else "032906032AJ ME7.5.30"
+            worker.log.emit(f"Modo Demo / Simulador ativo ({'Turbo' if is_turbo else 'Aspirado'}): inicializando central simulada...")
             strat_vag = VagKwpStrategy()
             if strat_vag.initialize(elm, worker):
-                meta = identify_ecu(raw_id="032906032AJ ME7.5.30", vin="9BWCA05X9CP000000", protocol_name="VAG KWP2000 (Demo)")
+                meta = identify_ecu(raw_id=raw_id, vin="9BWCA05X9CP000000", protocol_name="VAG KWP2000 (Demo)")
                 return strat_vag, meta
             strat_gen = GenericObdStrategy()
             strat_gen.initialize(elm, worker)
-            meta = identify_ecu(raw_id="SIMULADOR", protocol_name="OBD-II Universal (Demo)")
+            meta = identify_ecu(raw_id=raw_id if is_turbo else "SIMULADOR", protocol_name="OBD-II Universal (Demo)")
             return strat_gen, meta
 
         # ======================================================================
@@ -90,24 +93,36 @@ class UniversalAutoDiscovery:
 
                 # Sonda módulos adicionais na rede CAN (BCM, ABS, IPC, PSCM)
                 can_modules = []
+                # BCM Conforto (TX 726, RX 72E) - DID 224001 ou 22404C
                 elm.command("ATSH 726", 0.4)
-                r_bcm = elm.command("22DD01", 0.6)
-                if "62 DD 01" in r_bcm:
+                elm.command("ATCRA 72E", 0.4)
+                r_bcm = elm.command("224001", 0.6)
+                if "62 40 01" in r_bcm or "624001" in r_bcm or "7F 22" in r_bcm or "7F22" in r_bcm:
                     can_modules.append("BCM")
+                elif "NO DATA" not in str(r_bcm) and "ERROR" not in str(r_bcm):
+                    r_bcm_alt = elm.command("22404C", 0.6)
+                    if "62 40 4C" in r_bcm_alt or "62404C" in r_bcm_alt or "7F 22" in r_bcm_alt or "7F22" in r_bcm_alt:
+                        can_modules.append("BCM")
 
+                # ABS / ESC (TX 760, RX 768) - DID 222B00
                 elm.command("ATSH 760", 0.4)
+                elm.command("ATCRA 768", 0.4)
                 r_abs = elm.command("222B00", 0.6)
-                if "62 2B 00" in r_abs:
+                if "62 2B 00" in r_abs or "622B00" in r_abs or "7F 22" in r_abs or "7F22" in r_abs:
                     can_modules.append("ABS")
 
+                # IPC Painel (TX 720, RX 728) - DID 22DD01 (Odômetro)
                 elm.command("ATSH 720", 0.4)
-                r_ipc = elm.command("22DD02", 0.6)
-                if "62 DD 02" in r_ipc:
+                elm.command("ATCRA 728", 0.4)
+                r_ipc = elm.command("22DD01", 0.6)
+                if "62 DD 01" in r_ipc or "62DD01" in r_ipc or "7F 22" in r_ipc or "7F22" in r_ipc:
                     can_modules.append("IPC")
 
+                # PSCM Direção Elétrica (TX 730, RX 738) - DID 223300
                 elm.command("ATSH 730", 0.4)
+                elm.command("ATCRA 738", 0.4)
                 r_pscm = elm.command("223300", 0.6)
-                if "62 33 00" in r_pscm:
+                if "62 33 00" in r_pscm or "623300" in r_pscm or "7F 22" in r_pscm or "7F22" in r_pscm:
                     can_modules.append("PSCM")
 
                 elm.command("ATSH 7E0", 0.4)
@@ -155,7 +170,9 @@ class UniversalAutoDiscovery:
         try:
             elm.command("ATSP4", 0.8)
             elm.command("ATIIA 01", 0.5)
-            # Lê KeyBytes retornados pelo adaptador
+            # Dispara 5-baud init com 1089 para acordar a ECU e capturar os KeyBytes
+            r_init = elm.command("1089", 3.0)
+            # Lê KeyBytes retornados pelo adaptador após o pulso 5-baud
             r_kw = elm.command("ATKW", 1.2)
             if "01 8A" in r_kw or "8A" in r_kw:
                 worker.log.emit("<< KeyBytes 01 8A detectados! Central identificada como Bosch MP9.0 (KW1281).")
@@ -164,8 +181,7 @@ class UniversalAutoDiscovery:
                 meta = identify_ecu(raw_id="237906021 (Bosch MP9.0 Kombi 1.6 Ar)", protocol_name="VAG KW1281")
                 return strategy_kw, meta
 
-            r_init = elm.command("1089", 2.0)
-            if "50" in r_init or "5A" in r_init:
+            if "50" in r_init or "5A" in r_init or r_init.ok:
                 r_id = elm.command("1A9B", 2.0)
                 raw_ascii = _hex_to_ascii(r_id) if "5A 9B" in r_id else ""
                 strategy_vag = VagKwpStrategy()

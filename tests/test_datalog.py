@@ -36,7 +36,11 @@ def test_csv_logger_pt_br_format():
         logger.stop()
 
         assert os.path.exists(csv_path)
-        with open(csv_path, "r", encoding="utf-8") as f:
+        with open(csv_path, "rb") as f_bin:
+            bom = f_bin.read(3)
+        assert bom == b"\xef\xbb\xbf", "Arquivo CSV deve conter BOM UTF-8 para compatibilidade nativa Excel pt-BR"
+
+        with open(csv_path, "r", encoding="utf-8-sig") as f:
             lines = f.readlines()
 
         assert len(lines) == 2
@@ -71,7 +75,7 @@ def test_csv_logger_dynamic_columns():
         logger.write(2000.0, 2.0, "cht_temp", {"rpm": 850.0, "cht_temp": 88.5})
         logger.stop()
 
-        with open(csv_path, "r", encoding="utf-8") as f:
+        with open(csv_path, "r", encoding="utf-8-sig") as f:
             lines = f.readlines()
 
         assert len(lines) == 3

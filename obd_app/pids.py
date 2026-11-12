@@ -67,6 +67,18 @@ CHANNELS: Dict[str, Channel] = {
         Channel("trip_cost_brl", "Custo Viagem", "R$", "{:.2f}", card=False),
         Channel("trip_avg_kml", "Consumo Médio Viagem", "km/l", "{:.1f}", card=False),
         Channel("trip_km", "Distância Viagem", "km", "{:.2f}", card=False),
+
+        # Telemetria Turbo / Injeção Direta GDI / Wideband
+        Channel("boost_bar", "Pressão de Turbo", "bar", "{:.2f}", card=False),
+        Channel("boost_psi", "Pressão de Turbo (PSI)", "psi", "{:.1f}", card=False),
+        Channel("boost_target_bar", "Pressão Turbo Alvo", "bar", "{:.2f}", card=False),
+        Channel("wastegate_pct", "Wastegate / N75", "%", "{:.1f}", card=False),
+        Channel("fuel_rail_bar", "Pressão Flauta GDI", "bar", "{:.1f}", card=False),
+        Channel("cac_temp_c", "Temp. Intercooler (CAC)", "°C", "{:.0f}", card=False),
+        Channel("turbo_inlet_kpa", "Pressão Entrada Turbo", "kPa", "{:.0f}", card=False),
+        Channel("oil_press_bar", "Pressão do Óleo", "bar", "{:.1f}", card=False),
+        Channel("lambda_eq", "Fator Lambda (Wideband)", "λ", "{:.3f}", card=False),
+        Channel("knock_retard_max", "Retardo Detonação Máx", "°KW", "{:.1f}", card=False),
     )
 }
 
@@ -101,15 +113,16 @@ def _dec_lambda_wb_v(d: bytes) -> Dict[str, Optional[float]]:
     """PID 0124: 4 bytes (AB = Fator Lambda 0..2, CD = Tensão 0..8 V)."""
     eq = ((d[0] * 256) + d[1]) * 2.0 / 65536.0
     v = ((d[2] * 256) + d[3]) * 8.0 / 65536.0
+    out: Dict[str, Optional[float]] = {"lambda_eq": eq}
     if 0.005 <= v <= 5.0:
-        return {"lambda_v": v}
-    return {"lambda_v": eq}
+        out["lambda_v"] = v
+    return out
 
 
 def _dec_lambda_wb_i(d: bytes) -> Dict[str, Optional[float]]:
     """PID 0134: 4 bytes (AB = Fator Lambda 0..2, CD = Corrente mA)."""
     eq = ((d[0] * 256) + d[1]) * 2.0 / 65536.0
-    return {"lambda_v": eq}
+    return {"lambda_eq": eq}
 
 
 from .vag import decode_cell
@@ -279,12 +292,161 @@ def _dec_vag_group05(d: bytes) -> Dict[str, Optional[float]]:
 def _dec_vag_group20(d: bytes) -> Dict[str, Optional[float]]:
     """Bloco VW 020 (comando 2114): Retardo de detonação Cilindros 1..4 (°KW)."""
     out: Dict[str, Optional[float]] = {}
+    rets = []
     for idx, key in enumerate(("knock_ret_c1", "knock_ret_c2", "knock_ret_c3", "knock_ret_c4")):
         off = idx * 3
         if len(d) >= off + 3:
             v, _ = decode_vag_cell(d[off], d[off + 1], d[off + 2])
             if v is not None:
                 out[key] = v
+                rets.append(abs(v))
+    if rets:
+        out["knock_retard_max"] = max(rets)
+    return out
+
+
+def _dec_vag_group114(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 114 (comando 2172): Carga especificada, corrigida, real e N75 Wastegate Duty %."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 12:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
+        v4, u4 = decode_vag_cell(d[9], d[10], d[11])
+        if v3 is not None and u3 == "%":
+            out["load"] = v3
+        if v4 is not None and u4 == "%":
+            out["wastegate_pct"] = v4
+    return out
+
+
+def _dec_vag_group115(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 115 (comando 2173): RPM, Carga, Boost Especificado e Boost Real."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 12:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
+        v4, u4 = decode_vag_cell(d[9], d[10], d[11])
+        if v1 is not None and u1 == "rpm":
+            out["rpm"] = v1
+        if v2 is not None and u2 == "%":
+            out["load"] = v2
+        # Validação estrita: somente unidades de pressão válidas são convertidas em boost
+        if v3 is not None and u3 in ("mbar", "bar", "kPa", "kpa"):
+            target_kpa = v3 / 10.0 if u3 == "mbar" else (v3 * 100.0 if u3 == "bar" else v3)
+            out["boost_target_abs_kpa"] = round(target_kpa, 1)
+            target_rel_bar = (target_kpa - 101.3) / 100.0
+            out["boost_target_bar"] = round(target_rel_bar, 3)
+        if v4 is not None and u4 in ("mbar", "bar", "kPa", "kpa"):
+            actual_kpa = v4 / 10.0 if u4 == "mbar" else (v4 * 100.0 if u4 == "bar" else v4)
+            out["map"] = round(actual_kpa, 1)
+            out["boost_abs_kpa"] = round(actual_kpa, 1)
+            rel_bar = (actual_kpa - 101.3) / 100.0
+            out["boost_bar"] = round(rel_bar, 3)
+            out["boost_psi"] = round(rel_bar * 14.5038, 2)
+    return out
+
+
+def _dec_vag_group118(d: bytes) -> Dict[str, Optional[float]]:
+    """Bloco VW 118 (comando 2176): RPM, IAT, N75 Wastegate % e Boost Real."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 12:
+        v1, u1 = decode_vag_cell(d[0], d[1], d[2])
+        v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+        v3, u3 = decode_vag_cell(d[6], d[7], d[8])
+        v4, u4 = decode_vag_cell(d[9], d[10], d[11])
+        if v1 is not None and u1 == "rpm":
+            out["rpm"] = v1
+        if v2 is not None and u2 in ("°C", "C"):
+            out["iat"] = v2
+        if v3 is not None and u3 == "%":
+            out["wastegate_pct"] = v3
+        # Validação estrita: somente unidades de pressão válidas são convertidas em boost
+        if v4 is not None and u4 in ("mbar", "bar", "kPa", "kpa"):
+            actual_kpa = v4 / 10.0 if u4 == "mbar" else (v4 * 100.0 if u4 == "bar" else v4)
+            out["map"] = round(actual_kpa, 1)
+            rel_bar = (actual_kpa - 101.3) / 100.0
+            out["boost_bar"] = round(rel_bar, 3)
+            out["boost_psi"] = round(rel_bar * 14.5038, 2)
+    return out
+
+
+def _dec_pid_6e(d: bytes) -> Dict[str, Optional[float]]:
+    """PID 016E: Turbocharger Compressor Inlet Pressure (kPa)."""
+    out: Dict[str, Optional[float]] = {}
+    if not d:
+        return out
+    if len(d) >= 5:
+        p = float(d[1] if (d[0] & 0x01 or d[0] == 0) else (d[2] if d[0] & 0x02 else d[1]))
+    elif len(d) >= 2:
+        p = float(d[1] if d[0] < 0x10 else d[0])
+    else:
+        p = float(d[0])
+    if 0.0 <= p <= 500.0:
+        out["turbo_inlet_kpa"] = p
+    return out
+
+
+def _dec_pid_6f(d: bytes) -> Dict[str, Optional[float]]:
+    """PID 016F: Boost Pressure Control (Target e Wastegate)."""
+    out: Dict[str, Optional[float]] = {}
+    if len(d) >= 3:
+        tgt_kpa = ((d[1] * 256) + d[2]) * 0.03125
+        if 0.0 <= tgt_kpa <= 600.0:
+            target_rel = max(0.0, (tgt_kpa - 101.325) / 100.0)
+            out["boost_target_bar"] = round(target_rel, 3)
+    if len(d) >= 2 and "boost_target_bar" not in out:
+        wg = (d[1] * 100.0) / 255.0
+        if 0.0 <= wg <= 100.0:
+            out["wastegate_pct"] = round(wg, 1)
+    return out
+
+
+def _dec_pid_70(d: bytes) -> Dict[str, Optional[float]]:
+    """PID 0170: Boost Pressure Control / Wastegate (Target, Actual, WG %)."""
+    out: Dict[str, Optional[float]] = {}
+    if not d:
+        return out
+    support = d[0]
+    # Bytes 1, 2: Commanded Boost Pressure A (0.03125 kPa/bit)
+    if len(d) >= 3 and (support & 0x01 or support == 0):
+        tgt_kpa = ((d[1] * 256) + d[2]) * 0.03125
+        if 0.0 <= tgt_kpa <= 600.0:
+            tgt_bar = max(0.0, (tgt_kpa - 101.325) / 100.0)
+            out["boost_target_bar"] = round(tgt_bar, 3)
+    # Bytes 3, 4: Boost Pressure Sensor A (0.03125 kPa/bit)
+    if len(d) >= 5 and (support & 0x02 or len(d) >= 5):
+        act_kpa = ((d[3] * 256) + d[4]) * 0.03125
+        if 0.0 <= act_kpa <= 600.0:
+            act_bar = (act_kpa - 101.325) / 100.0
+            out["boost_bar"] = round(act_bar, 3)
+            out["boost_psi"] = round(act_bar * 14.5038, 2)
+    # Wastegate position/duty cycle: byte 9 (index 9) ou byte 7 (index 7)
+    if len(d) >= 10:
+        wg = (d[9] * 100.0) / 255.0
+        if 0.0 <= wg <= 100.0:
+            out["wastegate_pct"] = round(wg, 1)
+    elif len(d) >= 8:
+        wg = (d[7] * 100.0) / 255.0
+        if 0.0 <= wg <= 100.0:
+            out["wastegate_pct"] = round(wg, 1)
+    return out
+
+
+def _dec_pid_77(d: bytes) -> Dict[str, Optional[float]]:
+    """PID 0177: Charge Air Cooler Temperature (CAC / Intercooler °C)."""
+    out: Dict[str, Optional[float]] = {}
+    if not d:
+        return out
+    if len(d) >= 3 and d[0] in (0x01, 0x02, 0x03):
+        t = float(d[1] - 40)
+    elif len(d) >= 2 and d[0] < 0x10:
+        t = float(d[1] - 40)
+    else:
+        t = float(d[0] - 40)
+    if -40.0 <= t <= 215.0:
+        out["cac_temp_c"] = t
     return out
 
 
@@ -387,6 +549,9 @@ PIDS: Dict[int, PidDef] = {
         PidDef(0x1A, 12, _dec_vag_group26, "VW Bloco 026 Tensão Detonação (211A)", mode=0x21, extra=True),
         PidDef(0x3E, 12, _dec_vag_group62, "VW Bloco 062 Pistas TPS/APP (213E)", mode=0x21, extra=True),
         PidDef(0x67, 15, _dec_vag_group103, "VW Bloco 103 Adaptação Flex (2167)", mode=0x21, extra=True, slow=True),
+        PidDef(0x72, 12, _dec_vag_group114, "VW Bloco 114 Carga+N75 (2172)", mode=0x21, extra=True),
+        PidDef(0x73, 12, _dec_vag_group115, "VW Bloco 115 Pressão Turbo (2173)", mode=0x21, fast=True),
+        PidDef(0x76, 12, _dec_vag_group118, "VW Bloco 118 IAT+N75+Boost (2176)", mode=0x21, extra=True),
         # Todos os demais PIDs que a sua ECU declarou no bitmap (01, 03, 04, 0D, 0F, 13, 1C, 21, 51)
         PidDef(0x04, 1, lambda d: {"load": (d[0] * 100.0) / 255.0}, "Carga", extra=True),
         PidDef(0x0D, 1, lambda d: {"speed": float(d[0])}, "Velocidade", extra=True),
@@ -425,6 +590,13 @@ PIDS: Dict[int, PidDef] = {
         PidDef(0x52, 1, lambda d: {"ethanol": (d[0] * 100.0) / 255.0, "flex_ethanol_pct": (d[0] * 100.0) / 255.0}, "% Etanol (0152)", extra=True, slow=True),
         PidDef(0x5C, 1, lambda d: {"oil_temp": d[0] - 40.0}, "Temp. Óleo (015C)", extra=True, slow=True),
         PidDef(0x5E, 2, lambda d: {"fuel_rate": ((d[0] * 256) + d[1]) / 20.0}, "Consumo (015E)", extra=True),
+        # PIDs SAE J1979 de Motores Turbo, Injeção Direta GDI e Intercooler
+        PidDef(0x22, 2, lambda d: {"fuel_rail_bar": (((d[0] * 256) + d[1]) * 0.079) / 100.0}, "Pressão Flauta Relativa (0122)", extra=True, slow=True),
+        PidDef(0x23, 2, lambda d: {"fuel_rail_bar": (((d[0] * 256) + d[1]) * 10.0) / 100.0}, "Pressão Flauta GDI (0123)", extra=True, slow=True),
+        PidDef(0x6E, 5, _dec_pid_6e, "Pressão Entrada Compressor (016E)", extra=True, slow=True),
+        PidDef(0x6F, 3, _dec_pid_6f, "Controle Pressão Turbo (016F)", extra=True),
+        PidDef(0x70, 10, _dec_pid_70, "Controle Boost/Wastegate (0170)", extra=True, fast=True),
+        PidDef(0x77, 5, _dec_pid_77, "Temp. Intercooler CAC (0177)", extra=True, slow=True),
     )
 }
 
@@ -455,6 +627,16 @@ DYNAMIC_INFO: Dict[str, Tuple[str, str]] = {
     "tps_track1": ("Pista 1 Borboleta EPC", "%"),
     "tps_track2": ("Pista 2 Borboleta EPC", "%"),
     "app_track2": ("Pista 2 Pedal Acelerador", "%"),
+    "boost_bar": ("Pressão de Turbo", "bar"),
+    "boost_psi": ("Pressão de Turbo (PSI)", "psi"),
+    "boost_target_bar": ("Pressão Turbo Alvo", "bar"),
+    "wastegate_pct": ("Wastegate / N75", "%"),
+    "fuel_rail_bar": ("Pressão Flauta GDI", "bar"),
+    "cac_temp_c": ("Temp. Intercooler (CAC)", "°C"),
+    "turbo_inlet_kpa": ("Pressão Entrada Turbo", "kPa"),
+    "oil_press_bar": ("Pressão do Óleo", "bar"),
+    "lambda_eq": ("Fator Lambda (Wideband)", "λ"),
+    "knock_retard_max": ("Retardo Detonação Máx", "°KW"),
 }
 
 # Ordem padrão (a sonda será ajustada automaticamente pelo autodiscovery no handshake)

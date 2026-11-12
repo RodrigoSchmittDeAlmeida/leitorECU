@@ -145,6 +145,12 @@ KNOWN_LABELS: Dict[Tuple[int, int], str] = {
     (107, 3): "Adaptação mistura", (107, 4): "Status regulação",
     (110, 1): "RPM", (110, 2): "Temp. motor",
     (110, 3): "Tempo injeção", (110, 4): "Correção carga / AF Álcool",
+    (114, 1): "Carga especificada", (114, 2): "Carga corrigida",
+    (114, 3): "Carga real", (114, 4): "Wastegate / N75 Duty Cycle",
+    (115, 1): "RPM", (115, 2): "Carga do motor",
+    (115, 3): "Pressão turbo especificada", (115, 4): "Pressão turbo real",
+    (118, 1): "RPM", (118, 2): "Temp. ar admissão (IAT)",
+    (118, 3): "Wastegate / N75 Duty Cycle", (118, 4): "Pressão turbo real",
     (120, 1): "RPM", (120, 2): "Torque especificado",
     (120, 3): "Torque real motor", (120, 4): "Status ASR/Torque",
 }
@@ -208,7 +214,9 @@ def extract_block(resp, group: int) -> Optional[bytes]:
 def is_negative(resp, service: int = 0x21) -> bool:
     """True se a ECU respondeu ``7F 21 xx`` (bloco inexistente / serviço recusado)."""
     tag = f"7F{service:02X}"
-    return any(tag in l for l in resp.data_lines())
+    if getattr(resp, "error", None) and tag in resp.error.replace(" ", "").upper():
+        return True
+    return any(tag in l.replace(" ", "").upper() for l in resp.data_lines())
 
 
 def channel_key(group: int, cell: int) -> str:

@@ -8,7 +8,9 @@ from PyQt6.QtWidgets import QApplication
 from obd_app.datalog import CsvLogger
 from obd_app.pids import CHANNELS, DYNAMIC_INFO
 from obd_app.ford import FORD_CHANNELS_INFO
-from obd_app.ui.map2d import Map2DWidget, _find_bin, _color_for_value, RPM_BINS, MAP_BINS
+from obd_app.ui.map2d import (Map2DWidget, _find_bin, _color_for_value, RPM_BINS, MAP_BINS,
+                             MAP_BINS_ASPIRADO, MAP_BINS_TURBO)
+from obd_app.ui.main_window import MainWindow
 
 app = QApplication.instance() or QApplication(sys.argv)
 
@@ -86,3 +88,100 @@ def test_csv_logger_pre_registration_no_rewrite():
         header = lines[0].strip().split(";")
         assert "g002_c3" in header or "Bloco 002.3 Tempo injeção [ms]" in header
         assert "cht_temp" in header or "Temp. Cabeça Cilindro (CHT) [°C]" in header
+
+
+def test_map2d_turbo_scale_and_new_metrics():
+    """Garante suporte à escala Turbo de 250 kPa e novas métricas (Boost, Wastegate, Knock, Lambda wideband)."""
+    assert 250 in MAP_BINS_TURBO
+    widget = Map2DWidget()
+
+    # Verifica métricas presentes
+    metric_keys = [m[1] for m in widget.metrics]
+    assert "boost_bar" in metric_keys
+    assert "wastegate_pct" in metric_keys
+    assert "knock_retard_max" in metric_keys
+    assert "lambda_eq" in metric_keys
+
+    # Mudança manual de escala para Turbo
+    widget.set_scale("turbo")
+    assert widget.map_bins == MAP_BINS_TURBO
+    assert widget.table.rowCount() == len(MAP_BINS_TURBO)
+    header_item = widget.table.verticalHeaderItem(0)
+    assert header_item is not None and "250 kPa" in header_item.text()
+
+    # Teste de gradientes térmicos das métricas turbo
+    bg_boost, _ = _color_for_value("boost_bar", 1.25)
+    assert bg_boost.name() == "#665914"  # Boost forte
+
+    bg_wg, _ = _color_for_value("wastegate_pct", 75.0)
+    assert bg_wg.name() == "#4c3912"
+
+    bg_knock, _ = _color_for_value("knock_retard_max", 4.0)
+    assert bg_knock.name() == "#8a1c1c"
+
+    bg_lam, _ = _color_for_value("lambda_eq", 0.88)
+    assert bg_lam.name() == "#005c51"
+
+
+def test_map2d_auto_expansion_and_throttling(monkeypatch):
+    """Testa auto-expansão para escala Turbo quando MAP > 105 kPa e throttling de repaint da célula."""
+    widget = Map2DWidget()
+    assert widget.map_bins == MAP_BINS_ASPIRADO
+
+    # Amostra com MAP elevado (> 105 kPa) deve acionar expansão automática para escala Turbo
+    widget.add_sample(3500.0, 175.0, {"advance": 19.0, "boost_bar": 0.75})
+    assert widget.map_bins == MAP_BINS_TURBO
+    assert widget.table.rowCount() == len(MAP_BINS_TURBO)
+
+    # Throttling de setCurrentCell: contar chamadas
+    cell_calls = 0
+    orig_setCurrentCell = widget.table.setCurrentCell
+
+    def mock_setCurrentCell(r, c):
+        nonlocal cell_calls
+        cell_calls += 1
+        orig_setCurrentCell(r, c)
+
+    monkeypatch.setattr(widget.table, "setCurrentCell", mock_setCurrentCell)
+
+    # 1. Mesma célula operacional -> não deve chamar setCurrentCell novamente
+    widget.add_sample(3500.0, 175.0, {"advance": 19.2, "boost_bar": 0.74})
+    assert cell_calls == 0
+
+    # 2. Célula operacional diferente -> chama setCurrentCell
+    widget.add_sample(5000.0, 240.0, {"advance": 23.0, "boost_bar": 1.40})
+    assert cell_calls == 1
+
+
+def test_replay_with_turbo_telemetry():
+    """Valida replay de log CSV contendo telemetria Turbo, auto-escala do osciloscópio e cards adaptativos."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_file = os.path.join(tmpdir, "turbo_run.csv")
+        with open(csv_file, "w", encoding="utf-8") as f:
+            f.write("timestamp_ms;tempo_s;atualizado;rpm;map;boost_bar;wastegate_pct;lambda_eq;fuel_rail_bar;knock_retard_max\n")
+            f.write("1000;0.0;rpm;1200;95;0.00;15.0;1.000;45.0;0.0\n")
+            f.write("2000;1.0;rpm+map;2800;165;0.65;55.0;0.920;115.0;0.5\n")
+            f.write("3000;2.0;rpm+map;4500;235;1.35;78.0;0.840;150.0;2.0\n")
+
+        win = MainWindow(demo=True)
+        win.show()
+
+        win._load_csv_file(csv_file)
+        assert win._replay_mode is True
+        assert len(win._replay_records) == 3
+
+        # O osciloscópio de ar/giro (Plot 1) auto-escalou o eixo direito até suportar 235 kPa
+        right_view_range = win.p1.vb2.viewRange()[1]
+        assert right_view_range[1] >= 235.0
+
+        # O Mapa 2D auto-escalou para Turbo
+        assert win.map2d.map_bins == MAP_BINS_TURBO
+
+        # Cards adaptativos exibem telemetria Turbo no ponto de pico (t = 2.0 s)
+        win._update_replay_cards(2.0)
+        assert "Boost" in win.cards["map"].title.text()
+        assert win.cards["lambda2_v"].title.text() == "Pressão Turbo"
+        assert win.cards["lambda2_v"].unit.text() == "bar"
+        assert "+1.35" in win.cards["lambda2_v"].value.text() or "1.35" in win.cards["lambda2_v"].value.text()
+
+        win.close()

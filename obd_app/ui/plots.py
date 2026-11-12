@@ -40,6 +40,23 @@ class DualAxisPlot(pg.PlotWidget):
         self.vb2.setGeometry(self.pi.vb.sceneBoundingRect())
         self.vb2.linkedViewChanged(self.pi.vb, self.vb2.XAxis)
 
+    def set_right_range(self, min_y: float, max_y: float, padding: float = 0.02) -> None:
+        if self.vb2 is not None:
+            self.vb2.setYRange(min_y, max_y, padding=padding)
+
+    def set_left_range(self, min_y: float, max_y: float, padding: float = 0.02) -> None:
+        self.pi.setYRange(min_y, max_y, padding=padding)
+
+    def update_right_scale_for_map(self, max_val: float) -> None:
+        """Ajusta dinamicamente a escala do eixo direito de 105 kPa até 260 kPa para motores turbo."""
+        if self.vb2 is None:
+            return
+        if max_val > 105.0:
+            target = min(260.0, max(120.0, float(((int(max_val) + 19) // 20) * 20)))
+        else:
+            target = 105.0
+        self.vb2.setYRange(0.0, target, padding=0.02)
+
     def add_curve(self, name: str, color: str, right: bool = False, width: float = 1.6) -> pg.PlotDataItem:
         pen = pg.mkPen(color, width=width)
         if right and self.vb2 is not None:

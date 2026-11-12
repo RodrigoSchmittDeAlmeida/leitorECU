@@ -60,6 +60,15 @@ COLORS = {
     "knock_ret_c1": "#FF3D71",
     "knock_v_c1": "#FFB300",
     "lambda_trim": "#00E676",
+    "boost_bar": "#00D2FF",
+    "boost_psi": "#00E5FF",
+    "boost_target_bar": "#FFD740",
+    "wastegate_pct": "#FF7043",
+    "lambda_eq": "#FFD740",
+    "fuel_rail_bar": "#B86BFF",
+    "cac_temp_c": "#84FFFF",
+    "oil_temp": "#FF8A65",
+    "knock_retard_max": "#FF3D71",
 }
 
 STYLE = """

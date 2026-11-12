@@ -237,12 +237,12 @@ class Kw1281Strategy(BaseVehicleStrategy):
     def read_dtcs(self, elm: Any, worker: Any) -> None:
         """Lê códigos de falha da central MP9.0."""
         worker.info.emit("Lendo memória de falhas da Bosch MP9.0...")
-        worker.dtc_result.emit(False, [])
+        worker.dtcs.emit(False, 0, [])
 
     def clear_dtcs(self, elm: Any, worker: Any) -> None:
         """Limpa a memória de falhas da Bosch MP9.0."""
         worker.info.emit("Memória de falhas da Bosch MP9.0 apagada.")
-        worker.dtc_result.emit(False, [])
+        worker.dtcs.emit(False, 0, [])
 
     def reset_adaptation(self, elm: Any, worker: Any) -> None:
         """Reseta as adaptações na EEPROM (Canal 00)."""

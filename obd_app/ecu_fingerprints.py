@@ -73,6 +73,40 @@ PART_NUMBER_DATABASE = [
     ("EMS2204", "Ford Focus/EcoSport 1.6/2.0 Sigma Flex — Continental EMS2204"),
     ("EMS2212", "Ford Ka 1.0 Ti-VCT 3 Cilindros — Continental EMS2212"),
     ("FOMOCO", "Ford Motor Company (PCM UDS)"),
+
+    # VAG Turbo / TSI / TFSI (Bosch MED17.x, ME17.5.20/24 TSI, Simos 12/18 EA888)
+    ("06K907425", "VW/Audi EA888 Gen3 2.0 TSI — Continental Simos 18 (Turbo)"),
+    ("06J906026", "VW Jetta/Passat/Tiguan 2.0 TSI — Bosch MED17.5 (Turbo)"),
+    ("03F906070", "VW 1.2/1.4 TSI — Continental Simos 10/12 (Turbo)"),
+    ("04E906027", "VW Up!/Polo/Golf 1.0 TSI EA211 — Bosch ME17.5.24 (Turbo)"),
+    ("04E906023", "VW EA211 1.4 TSI — Bosch MED17.5.25 / ME17.5.20 (Turbo)"),
+    ("SIMOS18", "VW/Audi EA888 Gen3 2.0 TSI — Simos 18 (Turbo)"),
+    ("SIMOS 18", "VW/Audi EA888 Gen3 2.0 TSI — Simos 18 (Turbo)"),
+    ("SIMOS12", "VW EA211 1.0/1.4 TSI — Simos 12 (Turbo)"),
+    ("SIMOS 12", "VW EA211 1.0/1.4 TSI — Simos 12 (Turbo)"),
+    ("MED17", "Bosch Motronic MED17 Direct Injection (Turbo)"),
+    ("ME17.5.24", "VW 1.0 TSI Total Flex EA211 — Bosch ME17.5.24 (Turbo)"),
+    ("ME17.5.20", "VW 1.4 TSI EA211 — Bosch ME17.5.20 (Turbo)"),
+
+    # Ford EcoBoost (EMS24xx / EMS25xx / MED17 Turbo)
+    ("EMS24", "Ford 1.0/1.5/2.0 EcoBoost — Continental EMS24xx (Turbo)"),
+    ("EMS25", "Ford 1.5/2.0 EcoBoost — Continental EMS25xx (Turbo)"),
+    ("ECOBOOST", "Ford EcoBoost Direct Injection (Turbo)"),
+    ("MED17.0", "Ford Focus/Fusion 2.0 EcoBoost — Bosch MED17 (Turbo)"),
+
+    # Fiat / Jeep GSE Turbo & T-Jet (GSE T200/T270 MG1CS032/10GF, T-Jet ME7.9.10/ME17.3.0)
+    ("MG1CS032", "Fiat/Jeep GSE Turbo T270 1.3 / T200 1.0 — Bosch MG1CS032 (Turbo)"),
+    ("10GF", "Fiat/Jeep GSE Turbo T200/T270 — Magneti Marelli 10GF (Turbo)"),
+    ("T-JET", "Fiat 1.4 16V T-Jet — Bosch ME7.9.10 (Turbo)"),
+    ("ME7.9.10", "Fiat Punto/Bravo/Linea 1.4 16V T-Jet — Bosch ME7.9.10 (Turbo)"),
+    ("ME17.3.0", "Fiat 1.4 MultiAir / T-Jet — Bosch ME17.3.0 (Turbo)"),
+
+    # GM CSS Prime Turbo / Delco (CSS Prime Delco E98/E84)
+    ("DELCO E98", "GM 2.8 CTDI Turbo Diesel — Delco E98 (Turbo)"),
+    ("DELCO E84", "GM Onix/Tracker 1.0/1.2 Turbo Flex — Delco E84 (Turbo)"),
+    ("E84", "GM Onix/Tracker 1.0/1.2 Turbo Flex — Delco E84 (Turbo)"),
+    ("E98", "GM 2.8 CTDI Turbo Diesel — Delco E98 (Turbo)"),
+    ("CSS PRIME", "GM Onix/Tracker 1.0/1.2 Turbo Flex — CSS Prime (Turbo)"),
 ]
 
 
@@ -124,12 +158,42 @@ def identify_ecu(
         display_title = f"ECU Universal ({protocol_name or 'OBD-II'})"
 
     # Determina família da injeção e motorização
+    raw_upper = raw_id.upper()
+    title_upper = (display_title or "").upper()
+
+    # Identificação de turboalimentação
+    turbo_keywords = (
+        "TURBO", "TSI", "TFSI", "T-JET", "TJET", "ECOBOOST", "MED17", "SIMOS 18",
+        "SIMOS18", "SIMOS 12", "SIMOS12", "ME17.5.24", "ME17.5.20", "MG1CS032",
+        "10GF", "ME7.9.10", "ME17.3.0", "E84", "E98", "EMS24", "EMS25",
+        "06K907425", "06J906026", "04E906027", "04E906023", "CSS PRIME"
+    )
+    is_turbo = any(k in raw_upper or k in title_upper for k in turbo_keywords)
+
     if is_mp90:
         ecu_family = "Bosch Motronic MP9.0"
         engine = "VW Boxer 1.6 Ar / AP 1.6-1.8 Mi"
     elif is_me75:
         ecu_family = "Bosch Motronic ME7.5.30"
         engine = "VW EA111 1.0/1.6 8V Total Flex"
+    elif "SIMOS" in raw_upper or "SIMOS" in title_upper:
+        ecu_family = "Continental Simos (VAG Turbo)"
+        engine = "VW/Audi EA888 / EA211 TSI Turbo"
+    elif "MED17" in raw_upper or "MED17" in title_upper:
+        ecu_family = "Bosch Motronic MED17 (Turbo GDI)"
+        engine = "VAG / Ford Direct Injection Turbo"
+    elif "ME17.5" in raw_upper or "ME17.5" in title_upper:
+        ecu_family = "Bosch Motronic ME17.5 TSI (Turbo)"
+        engine = "VW EA211 1.0/1.4 TSI Total Flex"
+    elif "ECOBOOST" in raw_upper or "EMS24" in raw_upper or "EMS25" in raw_upper:
+        ecu_family = "Continental EMS / EcoBoost"
+        engine = "Ford EcoBoost Turbo GDI"
+    elif "MG1CS032" in raw_upper or "10GF" in raw_upper or "T-JET" in raw_upper or "ME7.9.10" in raw_upper:
+        ecu_family = "Bosch MG1 / Marelli 10GF (Fiat GSE Turbo)"
+        engine = "Fiat GSE T200/T270 / T-Jet Turbo"
+    elif "E84" in raw_upper or "E98" in raw_upper or "CSS PRIME" in raw_upper:
+        ecu_family = "Delco (GM CSS Prime Turbo)"
+        engine = "GM Ecotec / CSS Prime 1.0/1.2 Turbo Flex"
     elif is_ford_can:
         ecu_family = "Continental EMS (Ford HS-CAN)"
         engine = "Ford Sigma 1.5 DOHC 16V Flex"
@@ -152,6 +216,7 @@ def identify_ecu(
         "protocol": protocol_name,
         "is_mp90": is_mp90,
         "is_can": is_can,
+        "is_turbo": is_turbo,
         "has_can_modules": bool(can_modules_found),
         "can_modules": can_modules_found,
     }

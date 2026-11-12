@@ -205,7 +205,7 @@ python main.py --demo
 
 ## Suíte de Testes Automatizados
 
-O projeto conta com 59 testes automatizados cobrindo estratégias de inicialização, detecção de falhas, algoritmos de cálculo, integração de interface gráfica e exportação de relatórios:
+O projeto conta com **99 testes automatizados** cobrindo estratégias de inicialização, protocolos aspirados e Turbo/Wideband/GDI, detecção de falhas (Cut-Off, Overboost, Underboost, Knock), algoritmos de cálculo, integração de interface gráfica (1080p, Mapa 2D 250 kPa, Replay CSV) e exportação de relatórios:
 
 ```powershell
 py -3.13 -m pytest tests/ -v
@@ -213,7 +213,7 @@ py -3.13 -m pytest tests/ -v
 
 Resultado da suíte de testes:
 ```text
-============================= 59 passed in 4.67s =============================
+============================= 99 passed in 11.22s =============================
 ```
 
 ---
@@ -262,5 +262,5 @@ leitorECU/
 │       ├── widgets.py              # Cards de telemetria com retenção de picos e bullets coloridos
 │       ├── check.svg               # Marcação vetorial SVG nítida para caixas de seleção
 │       └── style.py                # Design system retangular de alta densidade (QSS)
-└── tests/                          # 59 testes automatizados com pytest
+└── tests/                          # 99 testes automatizados com pytest (inclui suítes Turbo & UI)
 ```

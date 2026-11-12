@@ -53,6 +53,14 @@ class ElmResponse:
 
 def classify(lines: List[str], prompt: bool) -> Optional[str]:
     joined = " ".join(lines).upper()
+    for l in lines:
+        s = l.strip()
+        if _HEX_LINE.match(s):
+            clean = re.sub(r"^[0-9A-Fa-f]{1,2}:\s*", "", s).replace(" ", "").upper()
+            if clean.startswith("7F") and len(clean) >= 4:
+                sid = clean[2:4]
+                nrc = clean[4:6] if len(clean) >= 6 else ""
+                return f"NEGATIVE RESPONSE 7F {sid} {nrc}".strip()
     if any(_HEX_LINE.match(l) for l in lines):
         return None
     for token in ("UNABLE TO CONNECT", "BUS INIT: ...ERROR", "BUS INIT:...ERROR", "BUS ERROR",
@@ -69,8 +77,9 @@ def classify(lines: List[str], prompt: bool) -> Optional[str]:
 
 
 def extract_payload(resp: ElmResponse, mode: int, pid: int, nbytes: int) -> Optional[bytes]:
-    """Procura '4X PP' (ou '61 PP' no modo 21) na resposta e retorna ``nbytes`` de dados."""
+    """Procura '4X PP' (ou '61 PP' no modo 21 / '62 PP PP' no modo 22) na resposta e retorna ``nbytes`` de dados."""
     header = f"{mode + 0x40:02X}{pid:02X}"
+    hlen = len(header)
     dlines = resp.data_lines()
     for i, s in enumerate(dlines):
         idx = s.find(header)
@@ -78,13 +87,13 @@ def extract_payload(resp: ElmResponse, mode: int, pid: int, nbytes: int) -> Opti
             idx = s.find(header, idx + 1)
         if idx == -1:
             continue
-        tail = s[idx + 4:]
-        # Se a resposta KWP2000 quebrou em múltiplas linhas, concatena as linhas seguintes
+        tail = s[idx + hlen:]
+        # Se a resposta KWP2000 ou UDS quebrou em múltiplas linhas, concatena as linhas seguintes
         for extra in dlines[i + 1:]:
             if len(tail) >= 2 * nbytes:
                 break
             if extra.startswith(header):
-                tail += extra[4:]
+                tail += extra[hlen:]
             else:
                 tail += extra
         hexdata = tail[: 2 * nbytes]

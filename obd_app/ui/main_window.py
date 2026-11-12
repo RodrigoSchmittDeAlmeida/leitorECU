@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         self.power_peak: float = 0.0
         self.torque_peak: float = 0.0
         self.last_battery_test: str = "Tensão estável dentro dos padrões operacionais"
+        self.is_turbo: bool = False
 
         self._build_ui()
         self._load_settings()
@@ -617,6 +618,10 @@ class MainWindow(QMainWindow):
 
     def _on_ecu_detected(self, meta: dict):
         self.last_ecu_meta = meta
+        if "is_turbo" in meta:
+            self.is_turbo = bool(meta["is_turbo"])
+        elif meta.get("is_turbo", False):
+            self.is_turbo = True
         display_title = meta.get("display_title", "ECU Detectada")
         protocol = meta.get("protocol", "OBD2")
         self.setWindowTitle(f"leitorECU — {display_title}")
@@ -732,6 +737,23 @@ class MainWindow(QMainWindow):
         sl.addWidget(QLabel("BAUD", objectName="sectionLabel"))
         sl.addWidget(self.serial_baud_cb)
         cl.addWidget(self.serial_box)
+
+        self.demo_box = QWidget()
+        dl = QHBoxLayout(self.demo_box)
+        dl.setContentsMargins(0, 0, 0, 0)
+        dl.setSpacing(6)
+        self.mock_profile_cb = QComboBox()
+        self.mock_profile_cb.addItems([
+            "Aspirado (ME7.5 EA111)",
+            "Turbo (TSI EA888 / 2.0)",
+        ])
+        self.mock_profile_cb.setFixedWidth(160)
+        self.mock_profile_cb.setToolTip("Perfil de simulação no Modo Demo.")
+        self.mock_profile_cb.currentIndexChanged.connect(lambda idx: setattr(self, "is_turbo", idx == 1))
+        dl.addWidget(QLabel("PERFIL", objectName="sectionLabel"))
+        dl.addWidget(self.mock_profile_cb)
+        self.demo_box.setVisible(False)
+        cl.addWidget(self.demo_box)
 
         self.connect_btn = QPushButton("Conectar", objectName="connect")
         self.connect_btn.setCheckable(True)
@@ -919,7 +941,21 @@ class MainWindow(QMainWindow):
         self.p3.add_hline(0, "#607d8b", style=Qt.PenStyle.SolidLine)
         self.p3.add_hline(10, "#ffc107", label="+10%")
         self.p3.add_hline(-10, "#ffc107", label="-10%")
+        turbo_channel_defs = {
+            "boost_bar": ("Pressão Turbo (Boost)", "bar"),
+            "boost_psi": ("Pressão Turbo (PSI)", "psi"),
+            "boost_target_bar": ("Alvo de Turbo", "bar"),
+            "wastegate_pct": ("Wastegate N75", "%"),
+            "lambda_eq": ("Equivalência Lambda", "λ"),
+            "fuel_rail_bar": ("Pressão Rail (GDI)", "bar"),
+            "cac_temp_c": ("Temp. Intercooler (CAC)", "°C"),
+            "oil_temp": ("Temp. Óleo", "°C"),
+            "knock_retard_max": ("Retardo Máx. Detonação", "°"),
+        }
         channel_keys = list(CHANNELS.keys()) + [k for k in DYNAMIC_INFO if k not in CHANNELS]
+        for tk in turbo_channel_defs:
+            if tk not in channel_keys:
+                channel_keys.append(tk)
 
         self.plot_channel_readouts = []
 
@@ -953,7 +989,14 @@ class MainWindow(QMainWindow):
                     "QComboBox::drop-down { width: 12px; border: 0; }"
                 )
                 for key in channel_keys:
-                    label = CHANNELS[key].label if key in CHANNELS else DYNAMIC_INFO[key][0]
+                    if key in CHANNELS:
+                        label = CHANNELS[key].label
+                    elif key in DYNAMIC_INFO:
+                        label = DYNAMIC_INFO[key][0]
+                    elif key in turbo_channel_defs:
+                        label = turbo_channel_defs[key][0]
+                    else:
+                        label = key
                     combo.addItem(f"{binding[3]} {label}", key)
                 combo.setCurrentIndex(max(0, combo.findData(cur_k)))
                 selector_row.addWidget(combo)
@@ -1165,6 +1208,8 @@ class MainWindow(QMainWindow):
         self.auto_log_chk.setChecked(s.value("auto_log", "false") == "true")
         self.audio_alerts.shift_rpm = float(s.value("shift_rpm", 6000.0))
         self.audio_alerts.max_ect_c = float(s.value("max_ect_c", 105.0))
+        if hasattr(self, "mock_profile_cb"):
+            self.mock_profile_cb.setCurrentIndex(int(s.value("demo_profile", 0)))
 
     def _save_settings(self):
         s = self.settings
@@ -1181,12 +1226,16 @@ class MainWindow(QMainWindow):
         s.setValue("shift_rpm", self.audio_alerts.shift_rpm)
         s.setValue("max_ect_c", self.audio_alerts.max_ect_c)
         s.setValue("fast", "true" if self.fast_chk.isChecked() else "false")
+        if hasattr(self, "mock_profile_cb"):
+            s.setValue("demo_profile", self.mock_profile_cb.currentIndex())
 
     # ============================================================ conexão
     def _mode_changed(self, idx: int):
         self.wifi_box.setVisible(idx == MODE_WIFI)
         self.ble_box.setVisible(idx == MODE_BLE)
         self.serial_box.setVisible(idx == MODE_SERIAL)
+        if hasattr(self, "demo_box"):
+            self.demo_box.setVisible(idx == MODE_DEMO)
 
     def _ble_address(self) -> str:
         data = self.ble_dev.currentData()
@@ -1251,6 +1300,20 @@ class MainWindow(QMainWindow):
             transport = KklSerialTransport(port=port, baudrate=baud, timeout=2.0)
         else:
             transport = MockTransport()
+            if hasattr(self, "mock_profile_cb") and self.mock_profile_cb.currentIndex() == 1:
+                self.is_turbo = True
+                if hasattr(transport, "engine"):
+                    eng = transport.engine
+                    if hasattr(eng, "profile"):
+                        eng.profile = "turbo"
+                    if hasattr(eng, "set_profile"):
+                        eng.set_profile("turbo")
+                    if hasattr(eng, "turbo"):
+                        eng.turbo = True
+                    if hasattr(eng, "turbo_mode"):
+                        eng.turbo_mode = True
+            else:
+                self.is_turbo = False
         self._save_settings()
         self._clear_plots()
         self.latest.clear()
@@ -1285,6 +1348,8 @@ class MainWindow(QMainWindow):
         self.wifi_box.setEnabled(False)
         self.ble_box.setEnabled(False)
         self.serial_box.setEnabled(False)
+        if hasattr(self, "demo_box"):
+            self.demo_box.setEnabled(False)
         self.btn_reconnect_vag.setEnabled(True)
         self.connect_btn.setText("Desconectar")
         self.console.appendPlainText(f"===== {datetime.now():%H:%M:%S} conectando ({transport.name} — Auto-Discovery) =====")
@@ -1305,6 +1370,8 @@ class MainWindow(QMainWindow):
         self.wifi_box.setEnabled(True)
         self.ble_box.setEnabled(True)
         self.serial_box.setEnabled(True)
+        if hasattr(self, "demo_box"):
+            self.demo_box.setEnabled(True)
         self.btn_reconnect_vag.setEnabled(False)
         self.proto_badge.setText("SEM PROTOCOLO")
         self.proto_badge.setProperty("state", "offline")
@@ -1391,9 +1458,27 @@ class MainWindow(QMainWindow):
             if k not in self.buffers:
                 self.buffers[k] = SeriesBuffer()
             self.buffers[k].append(t, v)
+        if "map" in values and values["map"] > 105.0:
+            self.p1.update_right_scale_for_map(values["map"])
         if "rpm" in self.latest and "map" in self.latest:
             self.map2d.add_sample(self.latest["rpm"], self.latest["map"], self.latest)
-        self.audio_alerts.check(self.latest.get("rpm", 0.0), self.latest.get("ect"))
+        try:
+            self.audio_alerts.check(
+                self.latest.get("rpm", 0.0),
+                self.latest.get("ect"),
+                boost_bar=self.latest.get("boost_bar"),
+                knock_retard=self.latest.get("knock_retard_max"),
+            )
+        except TypeError:
+            try:
+                self.audio_alerts.check(
+                    self.latest.get("rpm", 0.0),
+                    self.latest.get("ect"),
+                    boost_bar=self.latest.get("boost_bar"),
+                    knock_retard_max=self.latest.get("knock_retard_max"),
+                )
+            except TypeError:
+                self.audio_alerts.check(self.latest.get("rpm", 0.0), self.latest.get("ect"))
 
         if self.auto_log_chk.isChecked():
             tps_val = self.latest.get("tps", 0.0)
@@ -1482,27 +1567,58 @@ class MainWindow(QMainWindow):
         for k in self.dirty:
             if k in self.cards:
                 self.cards[k].set_value(self.latest[k])
-        # Se o veículo possui apenas 1 sonda lambda, adapta dinamicamente o card lambda2_v
-        if "lambda2_v" not in self.latest and "lambda2_v" in self.cards:
+
+        # Adaptação para Turbo / Boost no card 'map'
+        has_turbo_data = (
+            getattr(self, "is_turbo", False)
+            or (self.latest.get("map", 0.0) > 105.0)
+            or any(k in self.latest for k in ("boost_target_bar", "wastegate_pct", "fuel_rail_bar", "turbo_inlet_kpa"))
+        )
+        if has_turbo_data and "map" in self.cards:
+            b_val = self.latest.get("boost_bar")
+            if b_val is None and "map" in self.latest:
+                b_val = (self.latest["map"] - self.latest.get("baro", 101.325)) / 100.0
+            if b_val is not None:
+                if self.cards["map"].title.text() != "MAP / Boost":
+                    self.cards["map"].title.setText("MAP / Boost")
+                # Auto-escala do eixo direito do plot 1
+                self.p1.update_right_scale_for_map(self.latest.get("map", 105.0))
+        elif "map" in self.cards and not has_turbo_data:
+            if self.cards["map"].title.text() != "MAP":
+                self.cards["map"].title.setText("MAP")
+
+        # Se o veículo possui apenas 1 sonda lambda ou opera em regime turbo, adapta dinamicamente o card lambda2_v
+        if "lambda2_v" in self.cards:
             c2 = self.cards["lambda2_v"]
-            if "inj_ms" in self.latest:
-                if c2.title.text() != "Tempo Injeção":
-                    c2.title.setText("Tempo Injeção")
-                    c2.unit.setText("ms")
-                c2.set_value(self.latest["inj_ms"])
-                c2.set_state("normal")
-            elif "inj_pulse_width" in self.latest:
-                if c2.title.text() != "Tempo Injeção":
-                    c2.title.setText("Tempo Injeção")
-                    c2.unit.setText("ms")
-                c2.set_value(self.latest["inj_pulse_width"])
-                c2.set_state("normal")
-            elif "fuel_rate_lph" in self.latest:
-                if c2.title.text() != "Consumo Inst.":
-                    c2.title.setText("Consumo Inst.")
-                    c2.unit.setText("L/h")
-                c2.set_value(self.latest["fuel_rate_lph"])
-                c2.set_state("normal")
+            if has_turbo_data and ("lambda2_v" not in self.latest or getattr(self, "is_turbo", False)) and ("boost_bar" in self.latest or "lambda_eq" in self.latest):
+                if "boost_bar" in self.latest:
+                    c2.set_display("Pressão Turbo", "bar", "{:+.2f}")
+                    b_val = self.latest["boost_bar"]
+                    c2.set_value(b_val)
+                    state = "alarm" if b_val > 1.40 else "normal"
+                    note = "OVERBOOST" if b_val > 1.40 else ("PRESSÃO" if b_val > 0.05 else "VÁCUO")
+                    c2.set_state(state, note)
+                elif "lambda_eq" in self.latest and "lambda2_v" not in self.latest:
+                    c2.set_display("Lambda (λ)", "λ", "{:.3f}")
+                    c2.set_value(self.latest["lambda_eq"])
+                    c2.set_state("normal", "")
+            elif "lambda2_v" not in self.latest:
+                if "inj_ms" in self.latest:
+                    c2.set_display("Tempo Injeção", "ms", "{:.2f}")
+                    c2.set_value(self.latest["inj_ms"])
+                    c2.set_state("normal", "")
+                elif "inj_pulse_width" in self.latest:
+                    c2.set_display("Tempo Injeção", "ms", "{:.2f}")
+                    c2.set_value(self.latest["inj_pulse_width"])
+                    c2.set_state("normal", "")
+                elif "fuel_rate_lph" in self.latest:
+                    c2.set_display("Consumo Inst.", "L/h", "{:.1f}")
+                    c2.set_value(self.latest["fuel_rate_lph"])
+                    c2.set_state("normal", "")
+            else:
+                # Carro aspirado com Sonda 2 ativa (ex: Ford Ka+ 1.5)
+                if c2.title.text() != "Sonda 2 (Pós)":
+                    c2.reset_display()
 
         # Atualiza leituras numéricas ao vivo na barra superior de cada gráfico
         for binding, combo, val_lbl, dot in getattr(self, "plot_channel_readouts", []):
@@ -1511,6 +1627,8 @@ class MainWindow(QMainWindow):
                 v = self.latest[k]
                 if k in CHANNELS:
                     val_lbl.setText(CHANNELS[k].fmt.format(v))
+                elif "bar" in k or "boost" in k or "lambda_eq" in k:
+                    val_lbl.setText(f"{v:+.2f}" if "boost" in k else f"{v:.3f}" if "eq" in k else f"{v:.1f}")
                 elif k in DYNAMIC_INFO:
                     val_lbl.setText(f"{v:.1f}")
                 else:
@@ -1617,8 +1735,51 @@ class MainWindow(QMainWindow):
 
     def _update_card_states(self, now: float):
         decel = self.decel_btn.isChecked()
+        has_turbo_data = (
+            getattr(self, "is_turbo", False)
+            or (self.latest.get("map", 0.0) > 105.0)
+            or any(k in self.latest for k in ("boost_target_bar", "wastegate_pct", "fuel_rail_bar", "turbo_inlet_kpa"))
+        )
         for k, card in self.cards.items():
             max_age = 40.0 if k == "battery" else (12.0 if k in ("ect", "ltft", "speed", "iat") else STALE_S)
+
+            # Tratamento adaptativo especial para 'lambda2_v'
+            if k == "lambda2_v":
+                card2 = card
+                if has_turbo_data and ("lambda2_v" not in self.latest or getattr(self, "is_turbo", False)) and ("boost_bar" in self.latest or "lambda_eq" in self.latest):
+                    if "boost_bar" in self.latest:
+                        card2.set_display("Pressão Turbo", "bar", "{:+.2f}")
+                        b_val = self.latest["boost_bar"]
+                        card2.set_value(b_val)
+                        b_state = "alarm" if b_val > 1.40 else "normal"
+                        b_note = "OVERBOOST" if b_val > 1.40 else ("PRESSÃO" if b_val > 0.05 else "VÁCUO")
+                        card2.set_state(b_state, b_note)
+                        continue
+                    elif "lambda_eq" in self.latest and "lambda2_v" not in self.latest:
+                        card2.set_display("Lambda (λ)", "λ", "{:.3f}")
+                        card2.set_value(self.latest["lambda_eq"])
+                        card2.set_state("normal", "")
+                        continue
+                elif "lambda2_v" not in self.latest:
+                    if "inj_ms" in self.latest:
+                        card2.set_display("Tempo Injeção", "ms", "{:.2f}")
+                        card2.set_value(self.latest["inj_ms"])
+                        card2.set_state("normal", "")
+                        continue
+                    elif "inj_pulse_width" in self.latest:
+                        card2.set_display("Tempo Injeção", "ms", "{:.2f}")
+                        card2.set_value(self.latest["inj_pulse_width"])
+                        card2.set_state("normal", "")
+                        continue
+                    elif "fuel_rate_lph" in self.latest:
+                        card2.set_display("Consumo Inst.", "L/h", "{:.1f}")
+                        card2.set_value(self.latest["fuel_rate_lph"])
+                        card2.set_state("normal", "")
+                        continue
+                else:
+                    if card2.title.text() != "Sonda 2 (Pós)":
+                        card2.reset_display()
+
             if k not in self.stamp or now - self.stamp[k] > max_age:
                 note = "pausado" if decel and k in ("ect", "ltft", "stft", "load", "speed", "iat", "battery") \
                     and k in self.stamp else ""
@@ -1641,42 +1802,52 @@ class MainWindow(QMainWindow):
                     state, note = "alarm", "baixa" if v < 12 else "alta"
                 elif v < 13.0:
                     state, note = "warn", "sem carga?"
+            elif k == "map":
+                if has_turbo_data:
+                    b_val = self.latest.get("boost_bar")
+                    if b_val is None and v > 105.0:
+                        b_val = (v - self.latest.get("baro", 101.325)) / 100.0
+                    if b_val is not None:
+                        if b_val > 1.40:
+                            state, note = "alarm", f"OVERBOOST {b_val:+.2f}b"
+                        elif b_val > 0.05:
+                            state, note = "normal", f"BOOST {b_val:+.2f}b"
+                        else:
+                            state, note = "normal", f"VAC {b_val:+.2f}b"
             elif k == "lambda_v":
                 state, note = self._lambda_state(now)
             elif k == "lambda2_v":
-                card2 = self.cards.get("lambda2_v")
-                if card2 and (k not in self.stamp or now - self.stamp[k] > 4.0) and self.latest.get("rpm", 0) > 450:
-                    if "inj_ms" in self.latest:
-                        card2.title.setText("Tempo Injeção")
-                        card2.unit.setText("ms")
-                        card2.set_value(self.latest["inj_ms"])
-                        card2.set_state("normal", "")
-                        continue
-                    elif "inj_pulse_width" in self.latest:
-                        card2.title.setText("Tempo Injeção")
-                        card2.unit.setText("ms")
-                        card2.set_value(self.latest["inj_pulse_width"])
-                        card2.set_state("normal", "")
-                        continue
-                    elif "fuel_rate_lph" in self.latest:
-                        card2.title.setText("Consumo Inst.")
-                        card2.unit.setText("L/h")
-                        card2.set_value(self.latest["fuel_rate_lph"])
-                        card2.set_state("normal", "")
-                        continue
                 state, note = self._lambda2_state(now)
             elif k == "advance" and v < -5:
                 state, note = "warn", "retardado"
             card.set_state(state, note)
 
     def _lambda_state(self, now: float) -> Tuple[str, str]:
-        t, v = self.buffers["lambda_v"].window(now - 4.0)
         rpm = self.latest.get("rpm", 0)
         ect = self.latest.get("ect") or self.latest.get("cht_temp")
-        if len(v) < 4 or rpm < 650 or self.detector.in_decel:
+        if rpm < 650 or self.detector.in_decel:
             return "normal", ""
         if ect is not None and ect < 65:
             return "normal", "malha aberta"
+
+        # Se sensor Wideband (lambda_eq) estiver ativo, avalia pelo fator lambda real
+        if "lambda_eq" in self.latest:
+            lam = self.latest["lambda_eq"]
+            if lam > 1.50:
+                return "normal", "cut-off"
+            elif lam > 1.08:
+                return "warn", "POBRE (λ > 1.08)"
+            elif lam < 0.90:
+                return ("warn" if lam >= 0.80 else "alarm"), "RICA (λ < 0.90)"
+            elif 0.95 <= lam <= 1.05:
+                return "normal", "ESTEQ (λ ~ 1.0)"
+            else:
+                return "normal", f"λ {lam:.2f}"
+
+        # Sonda convencional Narrowband (Nernst 0..1V) oscilante
+        t, v = self.buffers["lambda_v"].window(now - 4.0)
+        if len(v) < 4:
+            return "normal", ""
         if float(np.ptp(v)) < 0.06:
             m = float(np.mean(v))
             return "alarm", "TRAVADA " + ("RICA" if m > 0.6 else "POBRE" if m < 0.3 else "")
@@ -1771,6 +1942,11 @@ class MainWindow(QMainWindow):
         self.p1.clear_markers()
         self.p2.clear_markers()
         self.p3.clear_markers()
+        self.p1.update_right_scale_for_map(105.0)
+        if "map" in self.cards:
+            self.cards["map"].title.setText("MAP")
+        if "lambda2_v" in self.cards:
+            self.cards["lambda2_v"].reset_display()
         self._clear_plots()
 
     def _open_csv_replay(self):
@@ -1842,6 +2018,24 @@ class MainWindow(QMainWindow):
                 col_keys[idx] = "speed"
             elif "bateria" in clean_k or "battery" in clean_k:
                 col_keys[idx] = "battery"
+            elif "boost_bar" in clean_k or "pressao turbo" in clean_k or "pressão turbo" in clean_k or ("boost" in clean_k and "target" not in clean_k and "psi" not in clean_k):
+                col_keys[idx] = "boost_bar"
+            elif "boost_psi" in clean_k:
+                col_keys[idx] = "boost_psi"
+            elif "boost_target" in clean_k:
+                col_keys[idx] = "boost_target_bar"
+            elif "wastegate" in clean_k or "n75" in clean_k:
+                col_keys[idx] = "wastegate_pct"
+            elif "lambda_eq" in clean_k or "wideband" in clean_k or clean_k == "lambda":
+                col_keys[idx] = "lambda_eq"
+            elif "fuel_rail" in clean_k or "rail_bar" in clean_k or "pressao rail" in clean_k or "pressão rail" in clean_k:
+                col_keys[idx] = "fuel_rail_bar"
+            elif "knock_retard" in clean_k or "knock_ret" in clean_k or "retardo detonacao" in clean_k or "retardo detonação" in clean_k:
+                col_keys[idx] = "knock_retard_max"
+            elif "cac_temp" in clean_k or "intercooler" in clean_k:
+                col_keys[idx] = "cac_temp_c"
+            elif "oil_temp" in clean_k or "temp. oleo" in clean_k or "temp. óleo" in clean_k:
+                col_keys[idx] = "oil_temp"
             else:
                 col_keys[idx] = clean_k
 
@@ -1906,6 +2100,11 @@ class MainWindow(QMainWindow):
             if t_data[k]:
                 self.curves[k].setData(t_data[k], v_data[k])
 
+        if "map" in t_data and v_data["map"]:
+            max_map = max(v_data["map"])
+            if max_map > 105.0:
+                self.p1.update_right_scale_for_map(max_map)
+
         max_t = self._replay_times[-1] if self._replay_times else 30.0
         self.p1.pi.setXRange(0, max_t, padding=0.01)
         self.p2.pi.setXRange(0, max_t, padding=0.01)
@@ -1948,6 +2147,57 @@ class MainWindow(QMainWindow):
                 card.set_state("normal")
             else:
                 card.set_state("stale")
+
+        # Adaptação para Turbo no Replay
+        replay_is_turbo = (
+            getattr(self, "is_turbo", False)
+            or (rec.get("map", 0.0) > 105.0)
+            or any(k in rec for k in ("boost_target_bar", "wastegate_pct", "fuel_rail_bar", "turbo_inlet_kpa"))
+        )
+
+        if "map" in self.cards:
+            if replay_is_turbo:
+                b_val = rec.get("boost_bar")
+                if b_val is None and rec.get("map", 0.0) > 105.0:
+                    b_val = (rec["map"] - rec.get("baro", 101.325)) / 100.0
+                if b_val is not None:
+                    if self.cards["map"].title.text() != "MAP / Boost":
+                        self.cards["map"].title.setText("MAP / Boost")
+                    note = f"BOOST {b_val:+.2f}b" if b_val > 0.05 else f"VAC {b_val:+.2f}b"
+                    self.cards["map"].set_state("normal", note)
+            else:
+                if self.cards["map"].title.text() != "MAP":
+                    self.cards["map"].title.setText("MAP")
+
+        if "lambda2_v" in self.cards:
+            card2 = self.cards["lambda2_v"]
+            if replay_is_turbo and ("lambda2_v" not in rec or getattr(self, "is_turbo", False)) and ("boost_bar" in rec or "lambda_eq" in rec):
+                if "boost_bar" in rec:
+                    card2.set_display("Pressão Turbo", "bar", "{:+.2f}")
+                    b_val = rec["boost_bar"]
+                    card2.set_value(b_val)
+                    note = "OVERBOOST" if b_val > 1.40 else ("BOOST" if b_val > 0.05 else "VÁCUO")
+                    card2.set_state("normal", note)
+                elif "lambda_eq" in rec and "lambda2_v" not in rec:
+                    card2.set_display("Lambda (λ)", "λ", "{:.3f}")
+                    card2.set_value(rec["lambda_eq"])
+                    card2.set_state("normal", "")
+            elif "lambda2_v" not in rec:
+                if "inj_ms" in rec:
+                    card2.set_display("Tempo Injeção", "ms", "{:.2f}")
+                    card2.set_value(rec["inj_ms"])
+                    card2.set_state("normal", "")
+                elif "inj_pulse_width" in rec:
+                    card2.set_display("Tempo Injeção", "ms", "{:.2f}")
+                    card2.set_value(rec["inj_pulse_width"])
+                    card2.set_state("normal", "")
+                elif "fuel_rate_lph" in rec:
+                    card2.set_display("Consumo Inst.", "L/h", "{:.1f}")
+                    card2.set_value(rec["fuel_rate_lph"])
+                    card2.set_state("normal", "")
+            else:
+                if card2.title.text() != "Sonda 2 (Pós)":
+                    card2.reset_display()
 
         for binding, combo, val_lbl, dot in getattr(self, "plot_channel_readouts", []):
             k = binding[2]
@@ -2211,7 +2461,7 @@ class MainWindow(QMainWindow):
         # Picos dos cards
         card_peaks = {}
         for k, card in self.cards.items():
-            card_peaks[k] = (card.peak_min, card.peak_max)
+            card_peaks[k] = (card.min_val, card.max_val)
 
         default_name = f"Laudo_Diagnostico_{datetime.now():%Y%m%d_%H%M%S}.pdf"
         file_path, _ = QFileDialog.getSaveFileName(

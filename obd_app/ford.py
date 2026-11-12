@@ -231,6 +231,64 @@ def _dec_pcm_baro(d: bytes) -> Dict[str, float]:
     return {}
 
 
+def _dec_pcm_boost_target(d: bytes) -> Dict[str, float]:
+    """EcoBoost DID 220462: Pressão de boost desejada/alvo."""
+    if len(d) >= 2:
+        val = float((d[0] << 8) | d[1])
+        kpa = val / 10.0 if val > 400.0 else val
+        if 20.0 <= kpa <= 400.0:
+            rel_bar = max(0.0, (kpa - 101.3) / 100.0)
+            return {"boost_target_bar": round(rel_bar, 3)}
+    return {}
+
+
+def _dec_pcm_wastegate(d: bytes) -> Dict[str, float]:
+    """EcoBoost DID 220333: Posição/Duty cycle do atuador da Wastegate (%)."""
+    if len(d) >= 2:
+        raw = (d[0] << 8) | d[1]
+        wg = (raw * 100.0 / 65535.0) if raw > 255 else float(raw)
+    elif len(d) == 1:
+        wg = (d[0] * 100.0 / 255.0)
+    else:
+        return {}
+    if 0.0 <= wg <= 100.0:
+        return {"wastegate_pct": round(wg, 1)}
+    return {}
+
+
+def _dec_pcm_cac_temp(d: bytes) -> Dict[str, float]:
+    """EcoBoost DID 2203A0: Temp. do Intercooler / Charge Air Cooler (CAC)."""
+    if len(d) >= 2:
+        val = ((d[0] << 8) | d[1]) * 0.1 - 40.0
+    elif len(d) == 1:
+        val = float(d[0] - 40)
+    else:
+        return {}
+    if -40.0 <= val <= 200.0:
+        return {"cac_temp_c": round(val, 1)}
+    return {}
+
+
+def _dec_pcm_fuel_rail(d: bytes) -> Dict[str, float]:
+    """EcoBoost DID 2203E7: Pressão da flauta de alta injeção direta GDI (bar)."""
+    if len(d) >= 2:
+        raw = float((d[0] << 8) | d[1])
+        bar = raw if raw <= 300.0 else raw / 100.0
+        if 0.0 <= bar <= 350.0:
+            return {"fuel_rail_bar": round(bar, 1)}
+    return {}
+
+
+def _dec_pcm_turbo_inlet(d: bytes) -> Dict[str, float]:
+    """EcoBoost DID 2204FE: Pressão na entrada da borboleta / TIP ou turbo (kPa)."""
+    if len(d) >= 2:
+        val = float((d[0] << 8) | d[1])
+        kpa = val / 10.0 if val > 400.0 else val
+        if 10.0 <= kpa <= 400.0:
+            return {"turbo_inlet_kpa": round(kpa, 1)}
+    return {}
+
+
 def _dec_ipc_odometer(d: bytes) -> Dict[str, float]:
     """Odômetro total em km (IPC DID 22DD01)."""
     if len(d) >= 3:
@@ -315,6 +373,13 @@ FORD_DIDS: Dict[str, FordDid] = {
     "pcm_cat_temp": FordDid("pcm_cat_temp", "pcm", "221627", "Temp. Catalisador", "°C", "{:.0f}", _dec_pcm_cat_temp),
     "pcm_baro": FordDid("pcm_baro", "pcm", "220320", "Pressão Barométrica", "kPa", "{:.0f}", _dec_pcm_baro),
 
+    # Sensores Ford EcoBoost Turbo / GDI (sondados com segurança em centrais turbo)
+    "pcm_boost_target": FordDid("pcm_boost_target", "pcm", "220462", "Boost Desejado (EcoBoost)", "bar", "{:.2f}", _dec_pcm_boost_target),
+    "pcm_wastegate": FordDid("pcm_wastegate", "pcm", "220333", "Wastegate Duty Cycle (EcoBoost)", "%", "{:.1f}", _dec_pcm_wastegate),
+    "pcm_cac_temp": FordDid("pcm_cac_temp", "pcm", "2203A0", "Temp. Intercooler (EcoBoost)", "°C", "{:.0f}", _dec_pcm_cac_temp),
+    "pcm_fuel_rail": FordDid("pcm_fuel_rail", "pcm", "2203E7", "Pressão Flauta GDI (EcoBoost)", "bar", "{:.1f}", _dec_pcm_fuel_rail),
+    "pcm_turbo_inlet": FordDid("pcm_turbo_inlet", "pcm", "2204FE", "Pressão Entrada Turbo/TIP (EcoBoost)", "kPa", "{:.0f}", _dec_pcm_turbo_inlet),
+
     # Painel de Instrumentos (IPC 720)
     "ipc_odometer": FordDid("ipc_odometer", "ipc", "22DD01", "Odômetro Total", "km", "{:.0f}", _dec_ipc_odometer),
     "ipc_dashboard": FordDid("ipc_dashboard", "ipc", "222416", "Painel (Comb./Temp. Ext.)", "", "", _dec_ipc_dashboard),
@@ -377,5 +442,12 @@ FORD_CHANNELS_INFO: Dict[str, Tuple[str, str]] = {
     "steering_wheel_angle": ("Ângulo Volante EPAS", "°"),
     "steering_driver_torque": ("Torque Aplicado Volante", "Nm"),
     "steering_motor_current": ("Corrente Motor Direção", "A"),
+
+    # EcoBoost Turbo & GDI
+    "boost_target_bar": ("Pressão Turbo Alvo (EcoBoost)", "bar"),
+    "wastegate_pct": ("Wastegate Atuador (EcoBoost)", "%"),
+    "cac_temp_c": ("Temp. Intercooler CAC (EcoBoost)", "°C"),
+    "fuel_rail_bar": ("Pressão Flauta GDI (EcoBoost)", "bar"),
+    "turbo_inlet_kpa": ("Pressão Entrada Turbo / TIP", "kPa"),
 }
 

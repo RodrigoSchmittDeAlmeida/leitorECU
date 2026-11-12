@@ -357,3 +357,22 @@ Ao realizar modificações ou expansões no código:
 5. **Modo Mudo / Pausa da Linha K**:
    A Linha K do Gol G5 compartilha chicote próximo aos tweeters de áudio. O seletor de cadência com opção de pausa ("Pausar Linha K") evita indução de ruído acústico quando o carro está parado. Mantenha essa funcionalidade preservada.
 
+---
+
+## 14. Suporte a Motores Turbo, Sonda Wideband e Auditoria (ADR-004)
+
+1. **Canais Canônicos de Sobrealimentação & Wideband (`obd_app/pids.py`):**
+   - `boost_bar` e `boost_psi` (pressão relativa `(MAP - BARO) / 100.0`, com fallback `101.325 kPa` no `MathChannelsEngine`), `boost_target_bar`, `wastegate_pct`, `fuel_rail_bar` (GDI alta pressão), `cac_temp_c` (intercooler), `turbo_inlet_kpa`, `oil_press_bar`, `knock_retard_max` (agregado do Bloco 020) e `lambda_eq` ($\lambda$ adimensional separado de `lambda_v` em Volts).
+2. **Protocolos & Fingerprints Turbo:**
+   - **OBD-II Modo 01**: PIDs `0122`, `0123` (Fuel Rail GDI), `0124`/`0134` (Wideband com `lambda_eq`), `016E`, `016F`, `0170` (Boost Control / Wastegate), `0177` (CAC Temp).
+   - **VAG KWP2000 Turbo**: Blocos `114` (`2172`), `115` (`2173`), `118` (`2176`) com verificação estrita de unidade de pressão (`mbar`/`bar`/`kPa`) para não corromper centrais aspiradas (ex.: `032906032AJ`).
+   - **Ford EcoBoost UDS**: DIDs `220462` (Boost Target), `220333` (Wastegate), `2203A0` (CAC Temp), `2203E7` (Rail GDI), `2204FE` (TIP).
+   - **Fingerprints (`ecu_fingerprints.py`)**: famílias `MED17`, `ME17.5.20/24` TSI, `Simos 12/18`, `EcoBoost`, `Fiat/Jeep GSE T200/T270`, `T-Jet` e `GM Delco E98/E84` com flag `is_turbo`.
+3. **Analítica, UI 1080p & Simulador:**
+   - `detector.py` diagnostica **Overboost**, **Underboost / Vazamento**, **Knock Retard** e **Desvio de Trim** sem falsos positivos em Wideband.
+   - `main_window.py` mantém rigorosamente 14 cards (`2x7`), adaptando `MAP` / `Sonda 2` somente quando o veículo é realmente Turbo (`is_turbo`, `map > 105 kPa` ou sensores turbo nativos), preservando integralmente aspirados como Ford Ka+ 1.5 Sigma (`Sonda 2 Pós`) e Gol G5 (`Tempo Injeção`).
+   - `map2d.py` e `plots.py` suportam escala até `250–260 kPa` com auto-expansão e `MockEngine` inclui perfil `turbo_tsi` segregado do perfil aspirado.
+4. **Fluxo Multi-Agente (Obsidian + Skill):**
+   - Documentado em `.agents/skills/leitorecu-multiagent/SKILL.md` com Vault compartilhado em `leitorECU-Obsidian`.
+
+

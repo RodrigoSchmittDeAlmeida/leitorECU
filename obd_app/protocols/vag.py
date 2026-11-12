@@ -75,7 +75,7 @@ class VagKwpStrategy(BaseVehicleStrategy):
 
             # Testa Bloco 033 (Sonda Lambda + STFT)
             r_probe = elm.query_pid("2121")
-            if r_probe.ok:
+            if r_probe.ok and not vag.is_negative(r_probe):
                 self._setup_discovery(worker)
                 worker.info.emit("Sonda Lambda e Fuel Trims ativos via VAG KWP2000 (Blocos 003, 032, 033)!")
                 worker.status.emit("connected", "Conectado — VAG KWP2000 Nativo (Blocos 001..033 Sonda Ativa)")
@@ -99,6 +99,24 @@ class VagKwpStrategy(BaseVehicleStrategy):
         self._vag_queue = [g for g in self.VAG_GROUPS if g not in known]
         self._vag_pending_nodata = []
         self._vag_fail = {}
+        # Promove Bloco 115 para active_fast SOMENTE se não for a central aspirada 032906032AJ
+        # e contiver células de pressão, ou se a central for identificada como turbo
+        is_asp_gol = bool(self.ecu_id and self.ecu_id.upper().startswith("032906032AJ"))
+        has_pressure_115 = any(
+            k.startswith("g115_") and any(term in (v[0] + " " + v[1]).lower() for term in ("mbar", "bar", "kpa", "boost", "pressão", "pressao"))
+            for k, v in self.vag_cells.items()
+        )
+        is_turbo_ecu = False
+        try:
+            from ..ecu_fingerprints import identify_ecu
+            meta = identify_ecu(raw_id=self.ecu_id or "", protocol_name="VAG KWP2000")
+            is_turbo_ecu = bool(meta.get("is_turbo", False))
+        except Exception:
+            pass
+
+        if 115 in self.vag_supported and not is_asp_gol and (has_pressure_115 or is_turbo_ecu):
+            if 0x2173 not in self.active_fast:
+                self.active_fast.append(0x2173)
         if self.vag_cells:
             worker.channels.emit(dict(self.vag_cells))
 
@@ -192,6 +210,14 @@ class VagKwpStrategy(BaseVehicleStrategy):
             # 002 (Inj/Carga/MAP), 004 (Bat/ECT/IAT), 005 (Vel/Cut-Off), 032 (LTFT),
             # 103 (Etanol Flex), 020 (Retardo Detonação), 026 (Tensão Detonação), 062 (TPS/APP)
             interleaved = [0x2102, 0x2104, 0x2105, 0x2120, 0x2167, 0x2104, 0x2114, 0x211A, 0x213E, 0x2120]
+            is_asp_gol = bool(self.ecu_id and self.ecu_id.upper().startswith("032906032AJ"))
+            if not is_asp_gol:
+                if 114 in self.vag_supported and 0x2172 not in interleaved:
+                    interleaved.append(0x2172)
+                if 115 in self.vag_supported and 0x2173 not in self.active_fast and 0x2173 not in interleaved:
+                    interleaved.append(0x2173)
+                if 118 in self.vag_supported and 0x2176 not in interleaved:
+                    interleaved.append(0x2176)
             sec_block = interleaved[cycle % len(interleaved)]
             pids_to_query = list(self.active_fast) + [sec_block]
 
@@ -270,18 +296,14 @@ class VagKwpStrategy(BaseVehicleStrategy):
         r1 = elm.command("14FF00", 6.0)
         worker.log.emit(f"> 14FF00 (Clear DTCs / RAM) -> {' '.join(r1.lines) or r1.error or 'OK'}")
 
-        # 2. Basic Setting Grupo 000 (Ajuste Básico Canal 00 - restaura defaults de fábrica na EEPROM)
-        r2 = elm.command("2800", 5.0)
-        worker.log.emit(f"> 2800 (Ajuste Básico Grupo 000) -> {' '.join(r2.lines) or r2.error or 'OK'}")
+        # 2. Routine Control Grupo 00 (Ajuste Básico / Reset Canal 00 - restaura defaults de fábrica na EEPROM)
+        r2 = elm.command("31010000", 5.0)
+        worker.log.emit(f"> 31010000 (Routine Reset Canal 00) -> {' '.join(r2.lines) or r2.error or 'OK'}")
 
-        # 3. Start Routine 0000 (Start Routine Canal 00)
-        r3 = elm.command("31010000", 5.0)
-        worker.log.emit(f"> 31010000 (Routine Reset Canal 00) -> {' '.join(r3.lines) or r3.error or 'OK'}")
-
-        # 4. Consulta Bloco 032 para atualizar cards e log
+        # 3. Consulta Bloco 032 para atualizar cards e log
         time.sleep(0.4)
         r_trim = elm.query_pid("2120")
-        if r_trim.ok:
+        if r_trim.ok and not vag.is_negative(r_trim):
             data = extract_payload(r_trim, 0x21, 0x20, 6)
             if data:
                 pdef = PIDS.get(0x2120)
