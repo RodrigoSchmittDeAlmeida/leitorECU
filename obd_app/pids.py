@@ -159,6 +159,8 @@ def _dec_vag_group32(d: bytes) -> Dict[str, Optional[float]]:
     out: Dict[str, Optional[float]] = {}
     v1, u1 = decode_vag_cell(d[0], d[1], d[2])
     v2, u2 = decode_vag_cell(d[3], d[4], d[5])
+    if v1 is not None and u1 == "%":
+        out["ltft_idle"] = v1
     if v2 is not None and u2 == "%":
         out["ltft"] = v2
     elif v1 is not None and u1 == "%":
@@ -627,6 +629,7 @@ DYNAMIC_INFO: Dict[str, Tuple[str, str]] = {
     "tps_track1": ("Pista 1 Borboleta EPC", "%"),
     "tps_track2": ("Pista 2 Borboleta EPC", "%"),
     "app_track2": ("Pista 2 Pedal Acelerador", "%"),
+    "ltft_idle": ("LTFT Lenta (032.1)", "%"),
     "boost_bar": ("Pressão de Turbo", "bar"),
     "boost_psi": ("Pressão de Turbo (PSI)", "psi"),
     "boost_target_bar": ("Pressão Turbo Alvo", "bar"),

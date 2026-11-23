@@ -81,3 +81,30 @@ def test_csv_logger_dynamic_columns():
         assert len(lines) == 3
         assert "Temp Cabeça Cilindro [°C]" in lines[0]
 
+
+
+def test_csv_logger_with_math_channels_and_string_safety():
+    """Garante que MathChannelsEngine + CsvLogger + SeriesBuffer gravam linhas reais sem travar em strings."""
+    from obd_app.datalog import SeriesBuffer
+    from obd_app.math_channels import MathChannelsEngine
+
+    engine = MathChannelsEngine()
+    sample = {"rpm": 900.0, "map": 34.0, "battery": 14.1, "speed": 0.0, "tps": 2.0}
+    sample.update(engine.compute(1.0, sample))
+
+    buf = SeriesBuffer()
+    for k, v in sample.items():
+        buf.append(1.0, float(v))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        csv_path = os.path.join(tmpdir, "test_math.csv")
+        logger = CsvLogger(decimal_comma=True)
+        logger.start(csv_path)
+        logger.write(1000.0, 1.0, "rpm+map", {**sample, "custom_note": "ok"})
+        logger.stop()
+
+        with open(csv_path, "r", encoding="utf-8-sig") as f:
+            lines = f.readlines()
+
+        assert len(lines) == 2
+        assert logger.rows == 1

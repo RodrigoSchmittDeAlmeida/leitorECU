@@ -206,10 +206,15 @@ class VagKwpStrategy(BaseVehicleStrategy):
             pids_to_query = list(self.active_fast)
         else:
             # Em todo ciclo lê os 2 blocos de alta velocidade (Bloco 003 + Bloco 033)
-            # E intercala 1 dos blocos complementares a cada ciclo:
-            # 002 (Inj/Carga/MAP), 004 (Bat/ECT/IAT), 005 (Vel/Cut-Off), 032 (LTFT),
-            # 103 (Etanol Flex), 020 (Retardo Detonação), 026 (Tensão Detonação), 062 (TPS/APP)
-            interleaved = [0x2102, 0x2104, 0x2105, 0x2120, 0x2167, 0x2104, 0x2114, 0x211A, 0x213E, 0x2120]
+            # E intercala o Bloco 005 (Velocidade/Carga/Cut-Off) a cada 2 ciclos (~1,5s)
+            # alternando com os demais blocos complementares:
+            # 002 (Inj/Carga/MAP), 004 (Bat/ECT/IAT), 032 (LTFT Lenta+Parcial),
+            # 103 (Flex), 020 (Retardo Detonação), 062 (TPS/APP)
+            interleaved = [
+                0x2105, 0x2102, 0x2105, 0x2104,
+                0x2105, 0x2120, 0x2105, 0x2167,
+                0x2105, 0x2114, 0x2105, 0x213E,
+            ]
             is_asp_gol = bool(self.ecu_id and self.ecu_id.upper().startswith("032906032AJ"))
             if not is_asp_gol:
                 if 114 in self.vag_supported and 0x2172 not in interleaved:

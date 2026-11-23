@@ -170,7 +170,7 @@ class MathChannelsEngine:
                 if self.min_crank_volt is None or volt < self.min_crank_volt:
                     self.min_crank_volt = volt
             bat_eval = self.evaluate_battery_health(volt, rpm=rpm, min_crank_volt=self.min_crank_volt)
-            res["battery_status"] = bat_eval["status"]
+            self.last_battery_status = str(bat_eval["status"])
             res["battery_charging"] = 1.0 if bat_eval["is_charging"] else 0.0
 
         return res

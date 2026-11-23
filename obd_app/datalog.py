@@ -101,7 +101,10 @@ class CsvLogger:
         unknown = [k for k in latest if k not in CHANNELS and k not in self.extra_labels]
         if unknown:
             self.add_columns({k: k for k in unknown})
-        num = (lambda x: f"{x:.3f}".replace(".", ",")) if self.decimal_comma else (lambda x: f"{x:.3f}")
+        if self.decimal_comma:
+            num = lambda x: f"{float(x):.3f}".replace(".", ",") if isinstance(x, (int, float, np.number)) else str(x)
+        else:
+            num = lambda x: f"{float(x):.3f}" if isinstance(x, (int, float, np.number)) else str(x)
         row = [f"{wall_ms:.0f}", num(t_rel), updated]
         for k in CHANNELS:
             v = latest.get(k)

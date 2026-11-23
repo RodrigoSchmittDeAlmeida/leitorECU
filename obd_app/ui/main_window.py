@@ -1389,16 +1389,34 @@ class MainWindow(QMainWindow):
         self.latency_lbl.setText("LATÊNCIA  -- ms")
 
     def _on_status(self, state: str, msg: str):
-        color = {"connected": "#00E676", "connecting": "#FFB300", "error": "#FF3D71", "warning": "#FFB300"}.get(state, "#8B98AB")
+        color = {
+            "connected": "#00E676",
+            "connecting": "#FFB300",
+            "error": "#FF3D71",
+            "ecu_off": "#FF3D71",
+            "warning": "#FFB300",
+        }.get(state, "#8B98AB")
         self.status_lbl.setStyleSheet(f"color:{color}; font-weight:bold;")
         self.status_lbl.setText(msg)
         pill_state = "connected" if state == "connected" else "connecting" if state == "connecting" else "offline"
-        pill_text = "● ONLINE" if state == "connected" else "● CONECTANDO" if state == "connecting" else "● OFFLINE"
+        if state == "connected":
+            pill_text = "● ONLINE"
+        elif state == "connecting":
+            pill_text = "● CONECTANDO"
+        elif state == "ecu_off":
+            pill_text = "● DESCONECTADO (ECU OFF)"
+        else:
+            pill_text = "● OFFLINE"
         self.connection_pill.setText(pill_text)
         self.connection_pill.setProperty("state", pill_state)
         self.connection_pill.style().unpolish(self.connection_pill)
         self.connection_pill.style().polish(self.connection_pill)
         self._set_dtc_enabled(state == "connected")
+        if state == "ecu_off":
+            self.statusBar().showMessage(msg, 20000)
+            self.event_severity.setText("● ECU OFF")
+            self.event_severity.setStyleSheet("color:#FF3D71; font-size:7.5pt; font-weight:800;")
+            self.event_ribbon_text.setText(msg)
 
     def _on_protocol_mode_changed(self, mode_name: str, is_fallback: bool):
         self.proto_badge.setText(mode_name)
@@ -1455,9 +1473,10 @@ class MainWindow(QMainWindow):
             self.latest[k] = v
             self.stamp[k] = t
             self.dirty.add(k)
-            if k not in self.buffers:
-                self.buffers[k] = SeriesBuffer()
-            self.buffers[k].append(t, v)
+            if isinstance(v, (int, float, np.number)):
+                if k not in self.buffers:
+                    self.buffers[k] = SeriesBuffer()
+                self.buffers[k].append(t, float(v))
         if "map" in values and values["map"] > 105.0:
             self.p1.update_right_scale_for_map(values["map"])
         if "rpm" in self.latest and "map" in self.latest:
@@ -1619,6 +1638,22 @@ class MainWindow(QMainWindow):
                 # Carro aspirado com Sonda 2 ativa (ex: Ford Ka+ 1.5)
                 if c2.title.text() != "Sonda 2 (Pós)":
                     c2.reset_display()
+
+        # Elimina duplicação entre 'Correção Sonda' (lambda_trim) e 'STFT' quando LTFT Lenta (Bloco 032.1) existe
+        if "lambda_trim" in self.cards:
+            clt = self.cards["lambda_trim"]
+            if "ltft_idle" in self.latest:
+                clt.set_display("LTFT Lenta", "%", "{:+.1f}")
+                li_val = self.latest["ltft_idle"]
+                clt.set_value(li_val)
+                clt.set_state("alarm" if abs(li_val) > 15.0 else ("warn" if abs(li_val) > 10.0 else "normal"), "")
+                if "ltft" in self.cards and self.cards["ltft"].title.text() != "LTFT Parcial":
+                    self.cards["ltft"].title.setText("LTFT Parcial")
+            else:
+                if clt.title.text() != "Correção Sonda":
+                    clt.reset_display()
+                if "ltft" in self.cards and self.cards["ltft"].title.text() != "LTFT":
+                    self.cards["ltft"].title.setText("LTFT")
 
         # Atualiza leituras numéricas ao vivo na barra superior de cada gráfico
         for binding, combo, val_lbl, dot in getattr(self, "plot_channel_readouts", []):

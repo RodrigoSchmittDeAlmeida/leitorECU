@@ -139,7 +139,7 @@ KNOWN_LABELS: Dict[Tuple[int, int], str] = {
     (101, 1): "RPM", (101, 2): "Carga",
     (101, 3): "Tempo injeção", (101, 4): "Pressão coletor",
     (103, 1): "Teor Etanol Flex (C1)", (103, 2): "Adaptação Flex (C2)",
-    (103, 5): "Teor Etanol Flex", (103, 6): "Adaptação Mistura Flex",
+    (103, 5): "Fator Carga / Etanol Dinâmico", (103, 6): "Adaptação Flex Fixa",
     (103, 7): "Correção Partida Flex", (103, 8): "Status Reconhecimento Flex",
     (107, 1): "RPM", (107, 2): "Correção lambda",
     (107, 3): "Adaptação mistura", (107, 4): "Status regulação",

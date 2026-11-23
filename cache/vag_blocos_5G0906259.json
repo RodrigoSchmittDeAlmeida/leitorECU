@@ -1,0 +1,299 @@
+{
+ "ecu": "5G0906259",
+ "supported": [
+  2,
+  3,
+  4,
+  5,
+  20,
+  26,
+  32,
+  33,
+  62,
+  103,
+  114
+ ],
+ "unsupported": [
+  1,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  21,
+  22,
+  23,
+  24,
+  25,
+  27,
+  28,
+  29,
+  30,
+  31,
+  34,
+  35,
+  36,
+  37,
+  38,
+  39,
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46,
+  47,
+  48,
+  49,
+  50,
+  51,
+  52,
+  53,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  61,
+  63,
+  64,
+  65,
+  66,
+  67,
+  68,
+  69,
+  70,
+  71,
+  72,
+  73,
+  74,
+  75,
+  76,
+  77,
+  78,
+  79,
+  80,
+  81,
+  82,
+  83,
+  84,
+  85,
+  86,
+  87,
+  88,
+  89,
+  90,
+  91,
+  92,
+  93,
+  94,
+  95,
+  96,
+  97,
+  98,
+  99,
+  100,
+  101,
+  102,
+  104,
+  105,
+  106,
+  107,
+  108,
+  109,
+  110,
+  111,
+  112,
+  113
+ ],
+ "cells": {
+  "g002_c1": [
+   "Bloco 002.1 RPM [rpm]",
+   "rpm"
+  ],
+  "g002_c2": [
+   "Bloco 002.2 Carga [%]",
+   "%"
+  ],
+  "g002_c3": [
+   "Bloco 002.3 Tempo injeção [ms]",
+   "ms"
+  ],
+  "g002_c4": [
+   "Bloco 002.4 Pressão coletor [mbar]",
+   "mbar"
+  ],
+  "g003_c1": [
+   "Bloco 003.1 RPM [rpm]",
+   "rpm"
+  ],
+  "g003_c2": [
+   "Bloco 003.2 Pressão coletor [mbar]",
+   "mbar"
+  ],
+  "g003_c3": [
+   "Bloco 003.3 Borboleta [°]",
+   "°"
+  ],
+  "g003_c4": [
+   "Bloco 003.4 Avanço [°]",
+   "°"
+  ],
+  "g004_c1": [
+   "Bloco 004.1 RPM [rpm]",
+   "rpm"
+  ],
+  "g004_c2": [
+   "Bloco 004.2 Bateria [V]",
+   "V"
+  ],
+  "g004_c3": [
+   "Bloco 004.3 Temp. motor [°C]",
+   "°C"
+  ],
+  "g004_c4": [
+   "Bloco 004.4 Temp. ar [°C]",
+   "°C"
+  ],
+  "g005_c1": [
+   "Bloco 005.1 RPM [rpm]",
+   "rpm"
+  ],
+  "g005_c2": [
+   "Bloco 005.2 Carga [%]",
+   "%"
+  ],
+  "g005_c3": [
+   "Bloco 005.3 Velocidade [raw80]",
+   "raw80"
+  ],
+  "g005_c4": [
+   "Bloco 005.4 Estado operação [raw84]",
+   "raw84"
+  ],
+  "g020_c1": [
+   "Bloco 020.1 Retardo detonação cil. 1 [°KW]",
+   "°KW"
+  ],
+  "g020_c2": [
+   "Bloco 020.2 Retardo detonação cil. 2 [°KW]",
+   "°KW"
+  ],
+  "g020_c3": [
+   "Bloco 020.3 Retardo detonação cil. 3 [°KW]",
+   "°KW"
+  ],
+  "g020_c4": [
+   "Bloco 020.4 Retardo detonação cil. 4 [°KW]",
+   "°KW"
+  ],
+  "g026_c1": [
+   "Bloco 026.1 Sensor detonação cil. 1 [V]",
+   "V"
+  ],
+  "g026_c2": [
+   "Bloco 026.2 Sensor detonação cil. 2 [V]",
+   "V"
+  ],
+  "g026_c3": [
+   "Bloco 026.3 Sensor detonação cil. 3 [V]",
+   "V"
+  ],
+  "g026_c4": [
+   "Bloco 026.4 Sensor detonação cil. 4 [V]",
+   "V"
+  ],
+  "g032_c1": [
+   "Bloco 032.1 Adaptação lambda lenta [%]",
+   "%"
+  ],
+  "g032_c2": [
+   "Bloco 032.2 Adaptação lambda parcial [%]",
+   "%"
+  ],
+  "g032_c3": [
+   "Bloco 032.3 Fator adaptação mistura [%]",
+   "%"
+  ],
+  "g032_c4": [
+   "Bloco 032.4 Tensão referência ECU [V]",
+   "V"
+  ],
+  "g033_c1": [
+   "Bloco 033.1 Correção sonda (STFT) [%]",
+   "%"
+  ],
+  "g033_c2": [
+   "Bloco 033.2 Sonda 1 (tensão) [V]",
+   "V"
+  ],
+  "g033_c3": [
+   "Bloco 033.3 [rpm]",
+   "rpm"
+  ],
+  "g033_c4": [
+   "Bloco 033.4 [rpm]",
+   "rpm"
+  ],
+  "g062_c1": [
+   "Bloco 062.1 Borboleta sensor 1 [%]",
+   "%"
+  ],
+  "g062_c2": [
+   "Bloco 062.2 Borboleta sensor 2 [%]",
+   "%"
+  ],
+  "g062_c3": [
+   "Bloco 062.3 Pedal sensor 1 [%]",
+   "%"
+  ],
+  "g062_c4": [
+   "Bloco 062.4 Pedal sensor 2 [%]",
+   "%"
+  ],
+  "g103_c5": [
+   "Bloco 103.5 Teor Etanol Flex [%]",
+   "%"
+  ],
+  "g103_c6": [
+   "Bloco 103.6 Adaptação Mistura Flex [%]",
+   "%"
+  ],
+  "g103_c7": [
+   "Bloco 103.7 Correção Partida Flex [%]",
+   "%"
+  ],
+  "g103_c8": [
+   "Bloco 103.8 Status Reconhecimento Flex [bits]",
+   "bits"
+  ],
+  "g114_c1": [
+   "Bloco 114.1 Carga especificada [%]",
+   "%"
+  ],
+  "g114_c2": [
+   "Bloco 114.2 Carga corrigida [%]",
+   "%"
+  ],
+  "g114_c3": [
+   "Bloco 114.3 Carga real [%]",
+   "%"
+  ],
+  "g114_c4": [
+   "Bloco 114.4 Wastegate / N75 Duty Cycle [%]",
+   "%"
+  ]
+ }
+}

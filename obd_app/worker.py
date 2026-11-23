@@ -179,6 +179,10 @@ class ObdWorker(QThread):
         cycle = 0
         n_resp, n_cycles = 0, 0
         last_rate = time.monotonic()
+        self._ecu_online = True
+        self._last_ecu_ok_ts = time.monotonic()
+        self._engine_running = False
+        self._engine_stopped_ts: Optional[float] = None
 
         while self._running:
             # Em protocolos que retornam respostas multi-frame, fast_reply ('1') deve ficar desligado
@@ -206,8 +210,23 @@ class ObdWorker(QThread):
 
             if n_resp_c > 0:
                 consec_err = 0
+                self._last_ecu_ok_ts = time.monotonic()
+                if not self._ecu_online:
+                    self._ecu_online = True
+                    self.status.emit("connected", f"Conectado: {self.strategy.display_name}")
+                    self.info.emit("ECU voltou a responder (Ignição ON).")
             else:
                 consec_err += 1
+                if consec_err == 2 and self._ecu_online:
+                    self._ecu_online = False
+                    if self._engine_stopped_ts is not None:
+                        latch_s = max(0.0, self._last_ecu_ok_ts - self._engine_stopped_ts)
+                        msg = f"DESCONECTADO / ECU OFF (Power Latch durou {latch_s:.1f}s após desligar motor)"
+                    else:
+                        msg = "DESCONECTADO / ECU SEM RESPOSTA (Ignição desligada)"
+                    self.status.emit("ecu_off", msg)
+                    self.info.emit(msg)
+                    self.log.emit(f"⚡ {msg}")
                 if consec_err >= self.MAX_CONSEC_ERRORS:
                     self._reinit_bus()
                     consec_err = 0
@@ -285,6 +304,15 @@ class ObdWorker(QThread):
         now = time.monotonic()
         t_rel = now - self.t0
         wall_ms = time.time() * 1000.0
+        self._last_ecu_ok_ts = now
+        rpm_val = values.get("rpm")
+        if rpm_val is not None:
+            if rpm_val > 300.0:
+                self._engine_running = True
+                self._engine_stopped_ts = None
+            elif self._engine_running and rpm_val <= 50.0:
+                self._engine_running = False
+                self._engine_stopped_ts = now
 
         # Enriquecimento automático de telemetria: consumo instantâneo e eficiência volumétrica
         try:
