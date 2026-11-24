@@ -113,10 +113,12 @@ Desenvolvido em **Flutter** para eliminar a dependência de notebook durante col
   - **Smartphones (`< 840 dp`)**: Navegação inferior ergonômica via `NavigationBar` e grade de cards otimizada em 2 colunas para leitura rápida com uma mão.
   - **Tablets (`>= 840 dp`)**: Barra lateral fixa via `NavigationRail`, distribuição multi-coluna ampliada no painel e cabeçalho estendido com taxa de amostragem (`R/S`, `C/S` e latência em `ms`).
 - **Painel Focado em Dados e Ações Rápidas**: Topo permanente com status de conexão, protocolo ativo e botão **GRAVAR / PARAR** com contador ao vivo de amostras, seguido pelos cards de telemetria com *Peak Hold* e seção expansível de canais extras.
+- **Gráfico Individual ao Tocar nos Cards**: Tocar em qualquer card principal ou canal extra abre um gráfico exclusivo daquele parâmetro (tanto **ao vivo** quanto em **Modo Replay**) com cartões **Atual / Mínimo / Média / Máximo**, janelas (`15s`, `30s`, `60s`, `Tudo`), congelamento, linhas de referência diagnósticas, **Crosshair por toque/arrasto** e botão **Fixar nos Gráficos**.
 - **Gráficos em Aba Dedicada**: Os três gráficos sincronizados de duplo eixo Y (`Ar e Giro`, `Combustão e Ignição`, `Fuel Trims e Elétrica`) ficam isolados na aba **Gráficos**, sem competir por espaço visual com os cards do painel.
 - **Mapa 2D, Funções e Performance no Celular**: Matriz térmica interativa RPM × MAP (com escala automática Turbo até 250 kPa), leitura/limpeza de DTCs, Readiness, Freeze Frame, módulos CAN estendidos e cronômetro de arrancada/frenagem integrados.
-- **Biblioteca Interna de Logs e Exportação**: Aba **Logs** dedicada listando todas as sessões salvas no aparelho com data, tamanho, número de amostras e duração — permitindo **abrir qualquer sessão em Modo Replay com Crosshair**, **importar CSVs externos**, ou **exportar e compartilhar em `.csv` / `.msl`** diretamente para outros aplicativos pelo menu nativo do sistema.
-- **Conexão Bluetooth BLE / Wi-Fi / Modo Demo**: Descoberta e pareamento BLE via GATT (`flutter_blue_plus`), socket TCP para adaptadores Wi-Fi, manutenção de tela ativa (*Wakelock*) opcional durante gravações e simulador integrado para demonstração offline.
+- **Biblioteca Interna de Logs e Exportação Multiformato**: Aba **Logs** dedicada listando todas as sessões salvas no aparelho com data, tamanho, número de amostras e duração — permitindo **abrir qualquer sessão em Modo Replay com Crosshair**, **importar CSVs externos**, ou exportar e compartilhar diretamente no celular em **Excel (`.xlsx`)** multi-abas (`Resumo`, `Telemetria` e `Eventos`), **Relatório Web interativo (`.html`)** com gráficos SVG, **Relatório PDF (`.pdf`)** vetorial, **JSON (`.json`)**, **CSV (`.csv`)** e **MegaLogViewer (`.msl`)**.
+- **Execução Contínua em Segundo Plano & Conexão BLE / Wi-Fi / Demo**: Descoberta BLE via GATT (`flutter_blue_plus`), socket TCP para adaptadores Wi-Fi, simulador integrado e **Android Foreground Service** nativo com `PARTIAL_WAKE_LOCK`, `WifiLock` e notificação persistente para manter a coleta ativa com o app minimizado ou a tela apagada — com botão **Liberar 2º Plano** (isenção de otimização de bateria) e opção de manter tela acesa na janela de conexão.
+- **Cálculo Contínuo em Pacotes Parciais e Standby**: Mesclagem automática do último estado conhecido de sensores para que pacotes parciais não zerem métricas estimadas (como consumo em `L/h` e `VE %`), proteção contra lacunas de suspensão no cálculo de distância (`trip_km`) e aceleração longitudinal (`accel_g`), além de proteção contra duplicação de unidades nos cabeçalhos CSV.
 
 ---
 
@@ -159,6 +161,13 @@ python main.py --demo
 ```
 
 Dependências principais: `PyQt6 >= 6.5`, `pyqtgraph >= 0.13`, `numpy >= 1.24`, `bleak >= 0.21` e `pyserial >= 3.5`.
+
+### Requisitos e Compilação (Mobile & Tablet — Flutter)
+```powershell
+cd leitorECU_mobile
+flutter pub get
+flutter build apk --release
+```
 
 ---
 
@@ -212,4 +221,14 @@ leitorECU/
     ├── worker.py                   # Thread de aquisição em alta frequência e Power Latch
     ├── protocols/                  # Motor de protocolos (UniversalAutoDiscovery, CAN, K-Line, OBD-II)
     └── ui/                         # Design system, cards, osciloscópio triplo e Mapa 2D
+
+leitorECU_mobile/                   # Aplicativo Android/iOS em Flutter (Mobile & Tablet)
+├── pubspec.yaml                    # Dependências Flutter (BLE, Wakelock, FilePicker, SharePlus)
+├── android/                        # Manifest, Foreground Service nativo (WakeLock/WifiLock) e Gradle
+└── lib/
+    ├── analytics/                  # Detector de eventos, canais matemáticos, DTCs e Readiness
+    ├── core/                       # Modelos de canais/perfis, ELM327, protocolos, transportes e Foreground Service
+    ├── state/                      # Controlador reativo de telemetria, gravação e Replay
+    ├── storage/                    # Logger CSV, parser de Replay e exportadores (.xlsx, .html, .pdf, .json, .msl)
+    └── ui/                         # Telas responsivas, gráfico dedicado por card, Mapa 2D e tema Motorsport
 ```

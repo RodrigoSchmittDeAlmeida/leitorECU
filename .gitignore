@@ -23,3 +23,27 @@ build/
 dist/
 *.spec
 
+# Flutter / Dart / Android / iOS (leitorECU_mobile)
+**/.dart_tool/
+**/.flutter-plugins*
+**/.pub-cache/
+**/.pub/
+**/.gradle/
+**/.kotlin/
+**/.cxx/
+**/captures/
+**/local.properties
+**/key.properties
+**/*.keystore
+**/*.jks
+**/*.iml
+**/GeneratedPluginRegistrant.*
+**/ephemeral/
+**/ios/Flutter/.last_build_id
+**/ios/Pods/
+**/ios/.symlinks/
+**/coverage/
+app.*.symbols
+app.*.map.json
+
+
