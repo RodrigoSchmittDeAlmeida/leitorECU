@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import '../core/models/channel_def.dart';
 import '../storage/csv_replay_parser.dart';
+import 'fuel_estimator.dart';
+import 'math_channels.dart';
 
 /// Estatísticas descritivas completas para um canal numérico de telemetria.
 class ChannelStatistics {
@@ -60,6 +62,21 @@ class DiagnosticFinding {
   });
 }
 
+/// Ponto agregado de curva de potência e torque para o Dinamômetro Virtual.
+class DynoPoint {
+  final int rpmBin;
+  final double powerHp;
+  final double torqueKgfm;
+  final int sampleCount;
+
+  const DynoPoint({
+    required this.rpmBin,
+    required this.powerHp,
+    required this.torqueKgfm,
+    required this.sampleCount,
+  });
+}
+
 /// Relatório analítico completo de um único arquivo de log CSV.
 class LogAnalysisReport {
   final String fileName;
@@ -77,6 +94,8 @@ class LogAnalysisReport {
   final List<DiagnosticFinding> findings;
   final List<ReplayEvent> events;
   final bool isTurboDetected;
+  final List<DynoPoint> dynoCurve;
+  final bool recalculated;
 
   const LogAnalysisReport({
     required this.fileName,
@@ -94,6 +113,8 @@ class LogAnalysisReport {
     required this.findings,
     required this.events,
     required this.isTurboDetected,
+    this.dynoCurve = const [],
+    this.recalculated = false,
   });
 }
 
@@ -157,6 +178,10 @@ class LogAnalyzer {
   static LogAnalysisReport analyze(
     ReplayDataset ds, {
     String fileName = 'log.csv',
+    bool recalculateDerived = false,
+    double displacementL = 1.6,
+    double injectorCcMin = 275.0,
+    double injectorDeadTimeMs = 0.85,
   }) {
     final n = ds.length;
     if (n == 0) {
@@ -182,12 +207,75 @@ class LogAnalyzer {
         ],
         events: ds.events,
         isTurboDetected: ds.isTurboDetected,
+        dynoCurve: const [],
+        recalculated: recalculateDerived,
       );
+    }
+
+    final ReplayDataset effectiveDs;
+    if (recalculateDerived) {
+      final mathEngine = MathChannelsEngine(
+        displacementL: displacementL,
+        injectorCcMin: injectorCcMin,
+        injectorDeadTimeMs: injectorDeadTimeMs,
+      );
+      final recalculatedRecords = <Map<String, double>>[];
+      final discoveredKeys = <String>{...ds.availableChannels};
+      for (var i = 0; i < n; i++) {
+        final copy = Map<String, double>.from(ds.records[i]);
+        final t = i < ds.times.length ? ds.times[i] : i.toDouble();
+        final fuelEst = FuelEstimator.estimateFuelMetrics(
+          copy,
+          displacementL: displacementL,
+          injectorCcMin: injectorCcMin,
+          deadTimeMs: injectorDeadTimeMs,
+        );
+        for (final key in const [
+          'fuel_rate_lph',
+          'fuel_econ_kml',
+          'volumetric_eff',
+        ]) {
+          final val = fuelEst[key];
+          if (val != null && val.isFinite) {
+            copy[key] = val;
+            discoveredKeys.add(key);
+          }
+        }
+        final mathRes = mathEngine.compute(t, copy);
+        for (final key in const [
+          'fuel_rate_lph',
+          'fuel_econ_kml',
+          'volumetric_eff',
+          'power_hp',
+          'torque_kgfm',
+          'trip_liters',
+          'trip_km',
+          'trip_avg_kml',
+          'boost_bar',
+          'boost_psi',
+        ]) {
+          final val = mathRes[key];
+          if (val != null && val.isFinite) {
+            copy[key] = val;
+            discoveredKeys.add(key);
+          }
+        }
+        recalculatedRecords.add(copy);
+      }
+      effectiveDs = ReplayDataset(
+        availableChannels: discoveredKeys.toList(growable: false),
+        times: ds.times,
+        records: recalculatedRecords,
+        events: ds.events,
+        isTurboDetected: ds.isTurboDetected,
+      );
+    } else {
+      effectiveDs = ds;
     }
 
     // 1. Coleta valores por canal preservando ordem temporal
     final channelValues = <String, List<double>>{};
-    for (final k in ds.availableChannels) {
+    for (final k in effectiveDs.availableChannels) {
       channelValues[k] = <double>[];
     }
 
@@ -198,12 +286,12 @@ class LogAnalyzer {
     var fuelConsumedFromRateL = 0.0;
     var fuelConsumedFromKmlL = 0.0;
 
-    double? lastSpeed = ds.records.first['speed'];
+    double? lastSpeed = effectiveDs.records.first['speed'];
     if (lastSpeed != null && (!lastSpeed.isFinite || lastSpeed < 0.0)) {
       lastSpeed = null;
     }
-    double? lastFuelRate =
-        ds.records.first['fuel_rate_lph'] ?? ds.records.first['fuel_rate'];
+    double? lastFuelRate = effectiveDs.records.first['fuel_rate_lph'] ??
+        effectiveDs.records.first['fuel_rate'];
     if (lastFuelRate != null && (!lastFuelRate.isFinite || lastFuelRate < 0.0)) {
       lastFuelRate = null;
     }
@@ -213,7 +301,7 @@ class LogAnalyzer {
     var cutoffCount = 0;
 
     for (var i = 0; i < n; i++) {
-      final rec = ds.records[i];
+      final rec = effectiveDs.records[i];
       for (final entry in rec.entries) {
         final v = entry.value;
         if (!v.isFinite) continue;
@@ -302,10 +390,11 @@ class LogAnalyzer {
 
     // 2. Estatísticas por canal
     final orderedKeys = <String>[
-      for (final k in ds.availableChannels)
+      for (final k in effectiveDs.availableChannels)
         if ((channelValues[k]?.isNotEmpty ?? false)) k,
       for (final e in channelValues.entries)
-        if (e.value.isNotEmpty && !ds.availableChannels.contains(e.key)) e.key,
+        if (e.value.isNotEmpty && !effectiveDs.availableChannels.contains(e.key))
+          e.key,
     ];
 
     final stats = <ChannelStatistics>[];
@@ -353,16 +442,19 @@ class LogAnalyzer {
 
     // 3. Regras de diagnóstico determinístico
     final findings = _evaluateFindings(
-      ds: ds,
+      ds: effectiveDs,
       byKey: byKey,
-      durationSec: ds.durationSec,
+      durationSec: effectiveDs.durationSec,
       standbyGapCount: standbyGapCount,
     );
+
+    // 4. Curva de Dinamômetro Virtual (plena carga em bins de 250 RPM)
+    final dynoCurve = _extractDynoCurve(effectiveDs.records);
 
     return LogAnalysisReport(
       fileName: fileName,
       sampleCount: n,
-      durationSec: ds.durationSec,
+      durationSec: effectiveDs.durationSec,
       distanceKm: distanceKm,
       avgSampleRateHz: avgSampleRateHz,
       standbyGapCount: standbyGapCount,
@@ -373,9 +465,59 @@ class LogAnalyzer {
       channelStats: List<ChannelStatistics>.unmodifiable(stats),
       byKey: Map<String, ChannelStatistics>.unmodifiable(byKey),
       findings: List<DiagnosticFinding>.unmodifiable(findings),
-      events: List<ReplayEvent>.unmodifiable(ds.events),
+      events: List<ReplayEvent>.unmodifiable(effectiveDs.events),
       isTurboDetected: effectiveIsTurbo,
+      dynoCurve: dynoCurve,
+      recalculated: recalculateDerived,
     );
+  }
+
+  static List<DynoPoint> _extractDynoCurve(List<Map<String, double>> records) {
+    final bins = <int, List<({double hp, double torque})>>{};
+    for (final rec in records) {
+      final rpm = rec['rpm'] ?? 0.0;
+      final map = rec['map'] ?? 0.0;
+      final tps = rec['tps'];
+      final powerHp = rec['power_hp'] ?? 0.0;
+      if (!rpm.isFinite || !map.isFinite || !powerHp.isFinite) continue;
+      if (tps != null && !tps.isFinite) continue;
+
+      final isFullLoad = (tps != null && tps >= 70.0) || map >= 88.0;
+      if (!isFullLoad || rpm < 1200.0 || powerHp <= 0.0) continue;
+
+      final rpmBin = (rpm / 250.0).round() * 250;
+      if (rpmBin < 1250 || rpmBin > 6750) continue;
+
+      final rawTorque = rec['torque_kgfm'];
+      final torqueKgfm =
+          (rawTorque != null && rawTorque.isFinite && rawTorque > 0.0)
+              ? rawTorque
+              : (powerHp * 716.2) / rpm;
+      bins.putIfAbsent(rpmBin, () => <({double hp, double torque})>[]).add(
+            (hp: powerHp, torque: torqueKgfm),
+          );
+    }
+
+    final curve = <DynoPoint>[];
+    final sortedBins = bins.keys.toList()..sort();
+    for (final rpmBin in sortedBins) {
+      final samples = bins[rpmBin]!;
+      samples.sort((a, b) => b.hp.compareTo(a.hp));
+      final topCount = math.max(1, (samples.length / 2.0).ceil());
+      var sumHp = 0.0;
+      var sumTorque = 0.0;
+      for (var i = 0; i < topCount; i++) {
+        sumHp += samples[i].hp;
+        sumTorque += samples[i].torque;
+      }
+      curve.add(DynoPoint(
+        rpmBin: rpmBin,
+        powerHp: sumHp / topCount,
+        torqueKgfm: sumTorque / topCount,
+        sampleCount: samples.length,
+      ));
+    }
+    return List<DynoPoint>.unmodifiable(curve);
   }
 
   static final RegExp _rawVagKeyRe = RegExp(r'^g\d{3}_c\d+$', caseSensitive: false);
@@ -695,8 +837,55 @@ class LogAnalyzer {
           detail:
               '${tempStat.label} atingiu máxima de ${tempStat.max.toStringAsFixed(1)} °C (>= 105 °C). Verifique eletroventilador, nível e termostática.',
         ));
+      } else if (tempStat.max >= 103.0) {
+        warns.add(DiagnosticFinding(
+          severity: 'warn',
+          category: 'Arrefecimento',
+          title: 'Temperatura elevada detectada (${tempStat.max.toStringAsFixed(0)} °C)',
+          detail:
+              '${tempStat.label} atingiu máxima de ${tempStat.max.toStringAsFixed(1)} °C (>= 103 °C). Monitore o acionamento do eletroventilador.',
+        ));
       }
-      if (durationSec >= 180.0 && tempStat.median < 75.0) {
+
+      if (tempStat.max >= 96.0) {
+        var fanCycleConfirmed = tempStat.last <= tempStat.max - 4.0;
+        double? peakHot;
+        double? cooledTo;
+        for (final rec in ds.records) {
+          final tv = rec[tempStat.key];
+          if (tv == null || !tv.isFinite) continue;
+          if (tv >= 96.0 && (peakHot == null || tv > peakHot)) {
+            peakHot = tv;
+          }
+          if (peakHot != null && tv <= peakHot - 4.0) {
+            fanCycleConfirmed = true;
+            cooledTo = tv;
+            break;
+          }
+        }
+        if (fanCycleConfirmed) {
+          final peakVal = peakHot ?? tempStat.max;
+          final coolVal = cooledTo ?? tempStat.last;
+          infos.add(DiagnosticFinding(
+            severity: 'ok',
+            category: 'Arrefecimento',
+            title: 'Ciclo de Eletroventilador Confirmado',
+            detail:
+                '${tempStat.label} atingiu ${peakVal.toStringAsFixed(1)} °C e resfriou para ${coolVal.toStringAsFixed(1)} °C, confirmando atuação do eletroventilador.',
+          ));
+        }
+      }
+
+      final avgSpeed = byKey['speed']?.mean ?? 0.0;
+      if (durationSec >= 360.0 && avgSpeed >= 30.0 && tempStat.median < 75.0) {
+        warns.add(DiagnosticFinding(
+          severity: 'warn',
+          category: 'Arrefecimento',
+          title: 'Termostática Possivelmente Travada Aberta',
+          detail:
+              'Em percurso de ${(durationSec / 60.0).toStringAsFixed(1)} min com velocidade média de ${avgSpeed.toStringAsFixed(1)} km/h, ${tempStat.label} manteve mediana de ${tempStat.median.toStringAsFixed(1)} °C (< 75 °C).',
+        ));
+      } else if (durationSec >= 180.0 && tempStat.median < 75.0) {
         warns.add(DiagnosticFinding(
           severity: 'warn',
           category: 'Arrefecimento',

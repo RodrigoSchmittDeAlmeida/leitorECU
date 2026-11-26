@@ -42,6 +42,7 @@ class ReplayPlayerBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -70,8 +71,11 @@ class ReplayPlayerBar extends StatelessWidget {
           ),
           decoration: BoxDecoration(
             color: const Color(0xFF0E2530),
-            border: Border.all(color: MotorsportColors.info),
-            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: tokens.accent,
+              width: tokens.cardBorderWidth,
+            ),
+            borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -80,9 +84,9 @@ class ReplayPlayerBar extends StatelessWidget {
               // 1. Cabeçalho de status claro + contador + sair
               Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.replay,
-                    color: MotorsportColors.info,
+                    color: tokens.accent,
                     size: 18,
                   ),
                   const SizedBox(width: 6),
@@ -94,7 +98,7 @@ class ReplayPlayerBar extends StatelessWidget {
                       style: MotorsportTheme.tabularStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: MotorsportColors.info,
+                        color: tokens.accent,
                       ),
                     ),
                   ),
@@ -105,40 +109,61 @@ class ReplayPlayerBar extends StatelessWidget {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: MotorsportColors.surfaceAlt,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: MotorsportColors.border),
+                      color: tokens.surfaceAlt,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: tokens.border),
                     ),
                     child: Text(
                       sampleLabel,
+                      maxLines: 1,
                       style: MotorsportTheme.tabularStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: MotorsportColors.text,
+                        color: tokens.text,
                       ),
                     ),
                   ),
                   const SizedBox(width: 6),
-                  OutlinedButton.icon(
-                    onPressed: c.exitReplayMode,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: MotorsportColors.alarm,
-                      side: const BorderSide(color: MotorsportColors.alarm),
-                      minimumSize: const Size(0, 40),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
+                  Flexible(
+                    flex: 0,
+                    child: OutlinedButton(
+                      onPressed: c.exitReplayMode,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: MotorsportColors.alarm,
+                        side: BorderSide(
+                          color: MotorsportColors.alarm,
+                          width: tokens.highContrast ? 1.5 : 1.0,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        minimumSize: const Size(0, 40),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
                       ),
-                    ),
-                    icon: const Icon(Icons.close, size: 15),
-                    label: Text(
-                      exitLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.close, size: 15),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                exitLabel,
+                                maxLines: 1,
+                                softWrap: false,
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -165,14 +190,17 @@ class ReplayPlayerBar extends StatelessWidget {
                     onPressed:
                         hasSamples ? () => c.stepReplaySamples(-1) : null,
                   ),
-                  ElevatedButton.icon(
+                  ElevatedButton(
                     onPressed: hasSamples ? c.toggleReplayPlay : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: c.replayPlaying
                           ? MotorsportColors.warning
-                          : MotorsportColors.info,
-                      foregroundColor: MotorsportColors.base,
+                          : tokens.accent,
+                      foregroundColor: tokens.base,
                       side: BorderSide.none,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                       minimumSize: const Size(40, 40),
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       padding: const EdgeInsets.symmetric(
@@ -180,16 +208,29 @@ class ReplayPlayerBar extends StatelessWidget {
                         vertical: 8,
                       ),
                     ),
-                    icon: Icon(
-                      c.replayPlaying ? Icons.pause : Icons.play_arrow,
-                      size: 18,
-                    ),
-                    label: Text(
-                      c.replayPlaying ? 'Pausar' : 'Reproduzir',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          c.replayPlaying ? Icons.pause : Icons.play_arrow,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              c.replayPlaying ? 'Pausar' : 'Reproduzir',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   _ReplayStepButton(
@@ -211,12 +252,15 @@ class ReplayPlayerBar extends StatelessWidget {
                           ? () => c.setReplaySpeed(_nextSpeed(c.replaySpeed))
                           : null,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: MotorsportColors.info,
+                        foregroundColor: tokens.accent,
                         side: BorderSide(
-                          color: MotorsportColors.info.withValues(alpha: 0.65),
+                          color: tokens.accent.withValues(alpha: 0.65),
+                          width: tokens.highContrast ? 1.5 : 1.0,
                         ),
-                        backgroundColor:
-                            MotorsportColors.info.withValues(alpha: 0.10),
+                        backgroundColor: tokens.accent.withValues(alpha: 0.10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         minimumSize: const Size(40, 40),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         padding: const EdgeInsets.symmetric(
@@ -224,15 +268,41 @@ class ReplayPlayerBar extends StatelessWidget {
                           vertical: 8,
                         ),
                       ),
-                      child: Text(
-                        speedLabel,
-                        style: MotorsportTheme.tabularStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: MotorsportColors.info,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          speedLabel,
+                          maxLines: 1,
+                          softWrap: false,
+                          style: MotorsportTheme.tabularStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: tokens.accent,
+                          ),
                         ),
                       ),
                     ),
+                  ),
+                  _ReplayStepButton(
+                    icon: Icons.calculate_outlined,
+                    label: 'Recalcular',
+                    tooltip:
+                        'Recalcular potência, torque e consumo com calibração atual',
+                    accentColor: tokens.accent,
+                    onPressed: hasSamples
+                        ? () async {
+                            final ok = await c.recalculateReplayDerived();
+                            if (ok && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Canais derivados recalculados com a calibração atual!',
+                                  ),
+                                ),
+                              );
+                            }
+                          }
+                        : null,
                   ),
                   Container(
                     constraints: const BoxConstraints(minHeight: 40),
@@ -241,16 +311,21 @@ class ReplayPlayerBar extends StatelessWidget {
                       vertical: 8,
                     ),
                     decoration: BoxDecoration(
-                      color: MotorsportColors.surfaceAlt,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: MotorsportColors.border),
+                      color: tokens.surfaceAlt,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: tokens.border),
                     ),
-                    child: Text(
-                      '${_formatClock(elapsed)} / ${_formatClock(totalDur)}',
-                      style: MotorsportTheme.tabularStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: MotorsportColors.text,
+                    alignment: Alignment.center,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '${_formatClock(elapsed)} / ${_formatClock(totalDur)}',
+                        maxLines: 1,
+                        style: MotorsportTheme.tabularStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: tokens.text,
+                        ),
                       ),
                     ),
                   ),
@@ -272,8 +347,8 @@ class ReplayPlayerBar extends StatelessWidget {
                   value: val,
                   min: minT,
                   max: maxT,
-                  activeColor: MotorsportColors.info,
-                  inactiveColor: MotorsportColors.border,
+                  activeColor: tokens.accent,
+                  inactiveColor: tokens.border,
                   onChangeStart: (_) => c.pauseReplay(),
                   onChanged: c.scrubReplay,
                 ),
@@ -299,49 +374,75 @@ class _ReplayStepButton extends StatelessWidget {
     required this.label,
     required this.tooltip,
     required this.onPressed,
+    this.accentColor,
   });
 
   final IconData? icon;
   final String label;
   final String tooltip;
   final VoidCallback? onPressed;
+  final Color? accentColor;
 
   @override
   Widget build(BuildContext context) {
+    final tokens = MotorsportTheme.tokensOf(context);
+    final fg = accentColor ?? tokens.text;
+    final br = accentColor != null
+        ? accentColor!.withValues(alpha: 0.65)
+        : tokens.border;
+    final bg = accentColor != null
+        ? accentColor!.withValues(alpha: 0.10)
+        : tokens.surfaceAlt;
+
     final style = OutlinedButton.styleFrom(
-      foregroundColor: MotorsportColors.text,
-      backgroundColor: MotorsportColors.surfaceAlt,
-      side: const BorderSide(color: MotorsportColors.border),
+      foregroundColor: fg,
+      backgroundColor: bg,
+      side: BorderSide(
+        color: br,
+        width: tokens.highContrast ? 1.5 : 1.0,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
       minimumSize: const Size(40, 40),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 8),
     );
 
-    final child = icon == null
-        ? OutlinedButton(
-            onPressed: onPressed,
-            style: style,
-            child: Text(
-              label,
-              style: MotorsportTheme.tabularStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: MotorsportColors.text,
+    final child = OutlinedButton(
+      onPressed: onPressed,
+      style: style,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16),
+            const SizedBox(width: 4),
+          ],
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: icon == null
+                    ? MotorsportTheme.tabularStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: fg,
+                      )
+                    : TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: fg,
+                      ),
               ),
             ),
-          )
-        : OutlinedButton.icon(
-            onPressed: onPressed,
-            style: style,
-            icon: Icon(icon, size: 16),
-            label: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          );
+          ),
+        ],
+      ),
+    );
 
     return Tooltip(message: tooltip, child: child);
   }
@@ -360,6 +461,7 @@ class _InstantFeedbackStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final rpm = values['rpm'];
     final speed = values['speed'];
     final ect = values['ect'];
@@ -404,12 +506,11 @@ class _InstantFeedbackStrip extends StatelessWidget {
       decoration: BoxDecoration(
         color: hasEvent
             ? MotorsportColors.warnBg
-            : MotorsportColors.surfaceAlt.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(4),
+            : tokens.surfaceAlt.withValues(alpha: 0.75),
+        borderRadius: BorderRadius.circular(6),
         border: Border.all(
-          color: hasEvent
-              ? MotorsportColors.warnBorder
-              : MotorsportColors.borderSubtle,
+          color: hasEvent ? MotorsportColors.warnBorder : tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
         ),
       ),
       child: Column(
@@ -424,6 +525,8 @@ class _InstantFeedbackStrip extends StatelessWidget {
                 for (final p in pills)
                   Text(
                     p.text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: MotorsportTheme.tabularStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -438,9 +541,7 @@ class _InstantFeedbackStrip extends StatelessWidget {
               Icon(
                 hasEvent ? Icons.warning_amber_rounded : Icons.touch_app,
                 size: 14,
-                color: hasEvent
-                    ? MotorsportColors.warning
-                    : MotorsportColors.muted,
+                color: hasEvent ? MotorsportColors.warning : tokens.muted,
               ),
               const SizedBox(width: 6),
               Expanded(
@@ -453,9 +554,7 @@ class _InstantFeedbackStrip extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: hasEvent ? FontWeight.w700 : FontWeight.w500,
-                    color: hasEvent
-                        ? MotorsportColors.warning
-                        : MotorsportColors.muted,
+                    color: hasEvent ? MotorsportColors.warning : tokens.muted,
                   ),
                 ),
               ),

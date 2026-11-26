@@ -55,6 +55,16 @@ class DecelDetector:
         self._trim_drift_start: Optional[float] = None
         self._last_trim_drift_alert: float = -1e9
 
+        # Monitor de Termostática & Eletroventilador
+        self._last_thermal_t: Optional[float] = None
+        self._warmup_run_sec: float = 0.0
+        self._low_thermostat_start: Optional[float] = None
+        self._last_thermostat_alert: float = -1e9
+        self._peak_ect_cycle: float = 0.0
+        self._fan_cool_alerted: bool = False
+        self._last_fan_cycle_alert: float = -1e9
+        self._last_overheat_alert: float = -1e9
+
         self._reset_episode()
 
     def reset(self) -> None:
@@ -72,6 +82,14 @@ class DecelDetector:
         self._last_knock_alert = -1e9
         self._trim_drift_start = None
         self._last_trim_drift_alert = -1e9
+        self._last_thermal_t = None
+        self._warmup_run_sec = 0.0
+        self._low_thermostat_start = None
+        self._last_thermostat_alert = -1e9
+        self._peak_ect_cycle = 0.0
+        self._fan_cool_alerted = False
+        self._last_fan_cycle_alert = -1e9
+        self._last_overheat_alert = -1e9
         self._reset_episode()
 
     def _reset_episode(self):
@@ -228,6 +246,68 @@ class DecelDetector:
                     self._trim_drift_start = None
             else:
                 self._trim_drift_start = None
+
+        # --- Diagnóstico Térmico: Monitor de Termostática & Eletroventilador
+        if self._last_thermal_t is not None:
+            dt = t - self._last_thermal_t
+            if 0.0 < dt <= 5.0 and fresh("rpm") and latest["rpm"] >= 650.0:
+                self._warmup_run_sec += dt
+        self._last_thermal_t = t
+
+        if fresh("ect") and fresh("rpm") and latest["rpm"] >= 650.0:
+            ect = latest["ect"]
+            spd = latest.get("speed", 0.0)
+            if self._warmup_run_sec >= 360.0 and spd >= 40.0 and ect < 75.0:
+                if self._low_thermostat_start is None:
+                    self._low_thermostat_start = t
+                elif (t - self._low_thermostat_start >= 20.0) and (t - self._last_thermostat_alert >= 60.0):
+                    self._last_thermostat_alert = t
+                    ev.append(Event(
+                        t,
+                        "warn",
+                        f"TERMOSTÁTICA POSSIVELMENTE ABERTA: ECT em {ect:.1f} °C em movimento após aquecimento (< 75 °C)",
+                    ))
+            else:
+                self._low_thermostat_start = None
+        else:
+            self._low_thermostat_start = None
+
+        if fresh("ect"):
+            ect = latest["ect"]
+            if ect >= 108.0:
+                if t - self._last_overheat_alert >= 10.0:
+                    self._last_overheat_alert = t
+                    ev.append(Event(
+                        t,
+                        "alarm",
+                        f"SUPERAQUECIMENTO CRÍTICO: ECT em {ect:.1f} °C — pare o veículo e verifique o arrefecimento!",
+                    ))
+            elif ect >= 103.0:
+                if t - self._last_overheat_alert >= 20.0:
+                    self._last_overheat_alert = t
+                    ev.append(Event(
+                        t,
+                        "warn",
+                        f"TEMPERATURA ELEVADA: ECT em {ect:.1f} °C — monitore o eletroventilador",
+                    ))
+
+            if ect >= 96.0:
+                self._peak_ect_cycle = max(self._peak_ect_cycle, ect)
+                self._fan_cool_alerted = False
+            if (
+                self._peak_ect_cycle >= 96.0
+                and not self._fan_cool_alerted
+                and ect <= self._peak_ect_cycle - 5.0
+                and (t - self._last_fan_cycle_alert >= 45.0)
+            ):
+                self._last_fan_cycle_alert = t
+                ev.append(Event(
+                    t,
+                    "info",
+                    f"Ciclo do eletroventilador OK: ECT resfriou de {self._peak_ect_cycle:.0f} °C para {ect:.0f} °C",
+                ))
+                self._fan_cool_alerted = True
+                self._peak_ect_cycle = ect
 
         if not fresh("rpm"):
             return ev

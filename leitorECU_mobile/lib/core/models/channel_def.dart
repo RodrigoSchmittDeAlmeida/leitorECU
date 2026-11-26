@@ -104,6 +104,11 @@ const Map<String, ChannelDef> coreChannels = {
   'knock_retard_max': ChannelDef('knock_retard_max', 'Retardo Detonação Máx', '°KW', decimals: 1),
 };
 
+const Map<String, ChannelDef> extraChannels = {
+  'cluster_fuel_liters': ChannelDef('cluster_fuel_liters', 'Tanque (Painel)', 'L', decimals: 1),
+  'cluster_fuel_ohms': ChannelDef('cluster_fuel_ohms', 'Sensor Nível (Boia)', 'Ω', decimals: 0),
+};
+
 const Map<String, (String, String)> dynamicChannelInfo = {
   'stft_b2': ('STFT Banco 2', '%'),
   'ltft_b2': ('LTFT Banco 2', '%'),
@@ -162,6 +167,8 @@ const Map<String, (String, String)> dynamicChannelInfo = {
   'inj_pulse_width': ('Tempo de Injeção', 'ms'),
   'accel_g': ('Aceleração Longitudinal', 'G'),
   'trip_fuel_liters': ('Combustível Viagem', 'L'),
+  'cluster_fuel_liters': ('Tanque (Painel)', 'L'),
+  'cluster_fuel_ohms': ('Sensor Nível (Boia)', 'Ω'),
 };
 
 ({String label, String unit}) describeChannel(
@@ -175,6 +182,10 @@ const Map<String, (String, String)> dynamicChannelInfo = {
   final ext = extra[key];
   if (ext != null) {
     return (label: ext.$1, unit: ext.$2);
+  }
+  final extDef = extraChannels[key];
+  if (extDef != null) {
+    return (label: extDef.label, unit: extDef.unit);
   }
   final dyn = dynamicChannelInfo[key];
   if (dyn != null) {

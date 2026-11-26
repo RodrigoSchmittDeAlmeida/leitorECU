@@ -231,8 +231,8 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       await pumpUntilFound(tester, find.text('Abrir Replay'));
       expect(find.text('Abrir Replay'), findsAtLeastNWidgets(1));
-      expect(find.text('Exportar CSV'), findsAtLeastNWidgets(1));
-      expect(find.text('Exportar .msl'), findsAtLeastNWidgets(1));
+      expect(find.text('Analisar'), findsAtLeastNWidgets(1));
+      expect(find.text('Exportar'), findsAtLeastNWidgets(1));
 
       await tester.runAsync(() => controller.loadReplayFromPath(logs!.first.path));
       await tester.tap(find.text('Painel').last);
@@ -368,12 +368,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 150));
 
     expect(find.text('Abrir Replay'), findsAtLeastNWidgets(1));
-    expect(find.text('Exportar CSV'), findsAtLeastNWidgets(1));
-    expect(find.text('Exportar .msl'), findsAtLeastNWidgets(1));
-    expect(find.text('Exportar (Excel / HTML / PDF)'), findsAtLeastNWidgets(1));
+    expect(find.text('Analisar'), findsAtLeastNWidgets(1));
+    expect(find.text('Exportar'), findsAtLeastNWidgets(1));
 
-    await tester.ensureVisible(find.text('Exportar (Excel / HTML / PDF)').first);
-    await tester.tap(find.text('Exportar (Excel / HTML / PDF)').first);
+    await tester.ensureVisible(find.text('Exportar').first);
+    await tester.tap(find.text('Exportar').first);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));
 
@@ -382,6 +381,8 @@ void main() {
     expect(find.text('Relatório Web (.html)'), findsOneWidget);
     expect(find.text('Relatório PDF (.pdf)'), findsOneWidget);
     expect(find.text('JSON (.json)'), findsOneWidget);
+    expect(find.text('CSV Original (.csv)'), findsOneWidget);
+    expect(find.text('MegaLogViewer (.msl)'), findsOneWidget);
     expect(errors, isEmpty);
   });
 
@@ -610,5 +611,129 @@ void main() {
     await pumpUntilFound(tester, find.text('Comparar com IA'), maxTries: 40);
     expect(find.text('Comparar com IA'), findsOneWidget);
     expect(errors, isEmpty);
+  });
+
+  testWidgets('360x780 @ 1.30x fontScale HighContrast: zero overflow across all tabs, Flex A/F, 0x17, Settings Presets & DynoChart', (tester) async {
+    final errors = <FlutterErrorDetails>[];
+    final prevOnError = FlutterError.onError;
+    FlutterError.onError = (d) {
+      errors.add(d);
+      prevOnError?.call(d);
+    };
+    addTearDown(() => FlutterError.onError = prevOnError);
+
+    final tempDir = Directory.systemTemp.createTempSync('leitorecu_360_all6_');
+    addTearDown(() {
+      try {
+        tempDir.deleteSync(recursive: true);
+      } catch (_) {}
+    });
+
+    File('${tempDir.path}${Platform.pathSeparator}freeway_wot.csv').writeAsStringSync(
+      'timestamp_ms;tempo_s;atualizado;rpm;map;tps;ect;iat;speed;battery;inj_ms;fuel_rate_lph;power_hp;torque_kgfm\n'
+      '1000;0,0;rpm;1800;96;82;88;32;40;14,1;6,5;8,0;25,0;10,0\n'
+      '2000;1,0;rpm;2500;99;88;89;32;60;14,1;9,0;12,0;35,0;10,0\n'
+      '3000;2,0;rpm;5250;98;92;90;33;115;14,1;11,5;22,0;66,0;9,0\n',
+    );
+
+    final controller = TelemetryController(
+      logRepository: LogRepository(directoryOverride: tempDir),
+    );
+    final settings = AppSettingsController(secureStorage: SecureKeyStorage());
+    await settings.setFontScale(1.3);
+    await settings.setHighContrast(true);
+    addTearDown(controller.dispose);
+
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(LeitorEcuApp(controller: controller, settings: settings));
+    await tester.pump(const Duration(milliseconds: 120));
+
+    controller.emitSample({
+      'rpm': 2400.0,
+      'map': 55.0,
+      'ect': 86.0,
+      'ltft': -17.9,
+      'stft': -1.2,
+      'lambda_v': 0.45,
+      'g103_c5': 99.6,
+      'g103_c6': 100.0,
+      'g103_c8': 1.0,
+      'fuel_sys1': 2.0,
+    });
+    await tester.pump(const Duration(milliseconds: 80));
+
+    // Varre todas as 5 abas em 360x780 @ 1.30x fontScale
+    for (final tab in const ['Gráficos', 'Mapa 2D', 'Funções', 'Logs']) {
+      await tester.tap(find.text(tab).last);
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+
+    // Verifica FlexAfStatusCard e Painel 0x17 na aba Funções
+    await tester.tap(find.text('Funções').last);
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.dragUntilVisible(
+      find.text('Saúde Flex / A/F (Bosch ME7.5.30)'),
+      find.byType(ListView).last,
+      const Offset(0, -200),
+    );
+    expect(find.text('Saúde Flex / A/F (Bosch ME7.5.30)'), findsOneWidget);
+    await tester.dragUntilVisible(
+      find.text('Ler Tanque (0x17)'),
+      find.byType(ListView).last,
+      const Offset(0, -200),
+    );
+    expect(find.text('Ler Tanque (0x17)'), findsOneWidget);
+
+    // Verifica Presets de Motor nas Configurações
+    await tester.tap(find.byTooltip('Configurações'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.dragUntilVisible(
+      find.text('VW Gol 1.0 EA111 Flex'),
+      find.byType(ListView).last,
+      const Offset(0, -250),
+    );
+    await tester.ensureVisible(find.text('VW Gol 1.0 EA111 Flex'));
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tap(find.text('VW Gol 1.0 EA111 Flex'));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(settings.enginePreset, equals(EnginePreset.gol10Flex));
+    expect(controller.mathEngine.displacementL, equals(1.0));
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    // Volta para Gol 1.6 e testa Análise + Recálculo + Dinamômetro Virtual
+    await settings.selectEnginePreset(EnginePreset.gol16Flex);
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(controller.mathEngine.injectorCcMin, equals(275.0));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(360, 780), textScaler: TextScaler.linear(1.3)),
+          child: LogAnalysisScreen(
+            controller: controller,
+            settings: settings,
+            initialLogPath: '${tempDir.path}${Platform.pathSeparator}freeway_wot.csv',
+          ),
+        ),
+      ),
+    );
+    await pumpUntilFound(tester, find.text('Dinamômetro Virtual (cv × kgfm × RPM)'));
+    expect(find.text('Dinamômetro Virtual (cv × kgfm × RPM)'), findsOneWidget);
+    await tester.ensureVisible(find.text('Recalcular Fórmula'));
+    await tester.tap(find.text('Recalcular Fórmula'));
+    await tester.pump(const Duration(milliseconds: 150));
+    await pumpUntilFound(tester, find.textContaining('Recalculado com calibração atual'));
+    expect(find.textContaining('Recalculado com calibração atual'), findsOneWidget);
+
+    expect(errors, isEmpty, reason: errors.map((e) => e.exceptionAsString()).join('\n'));
   });
 }

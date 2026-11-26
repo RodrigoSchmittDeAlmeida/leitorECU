@@ -94,7 +94,7 @@ class ObdWorker(QThread):
         self._running = False
 
     def request(self, cmd: str) -> None:
-        """Enfileira comando para a thread: 'read_dtc' | 'clear_dtc' | 'scan_vag' | 'scan_ford'"""
+        """Enfileira comando para a thread: 'read_dtc' | 'clear_dtc' | 'read_cluster' | 'scan_vag' | 'scan_ford'"""
         self._cmds.put(cmd)
 
     # ---------------------------------------------------------------- Ciclo de Vida da Thread
@@ -254,6 +254,8 @@ class ObdWorker(QThread):
                 self._read_readiness()
             elif cmd == "read_freeze_frame":
                 self._read_freeze_frame()
+            elif cmd == "read_cluster":
+                self.strategy.read_instrument_cluster(self.elm, self)
             elif cmd in ("reconnect_vag", "force_vag_kwp"):
                 self.log.emit("Forçando reconexão ao protocolo VAG KWP2000 Nativo...")
                 self.vehicle_profile = PROFILE_VW_GOL
@@ -316,7 +318,12 @@ class ObdWorker(QThread):
 
         # Enriquecimento automático de telemetria: consumo instantâneo e eficiência volumétrica
         try:
-            fuel_metrics = estimate_fuel_metrics(values)
+            fuel_metrics = estimate_fuel_metrics(
+                values,
+                displacement_l=self.math_engine.displacement_l,
+                injector_cc_min=self.math_engine.injector_cc_min,
+                dead_time_ms=self.math_engine.dead_time_ms,
+            )
             for fk, fv in fuel_metrics.items():
                 if fk not in values:
                     values[fk] = fv

@@ -9,7 +9,12 @@ from __future__ import annotations
 from typing import Dict, Optional, Tuple
 
 
-def estimate_fuel_metrics(latest: Dict[str, float], displacement_l: float = 1.6) -> Dict[str, float]:
+def estimate_fuel_metrics(
+    latest: Dict[str, float],
+    displacement_l: float = 1.6,
+    injector_cc_min: float = 275.0,
+    dead_time_ms: float = 0.85,
+) -> Dict[str, float]:
     """Calcula 'fuel_rate_lph', 'fuel_econ_kml' e 'volumetric_eff' a partir da telemetria."""
     rpm = latest.get("rpm", 0.0)
     map_kpa = latest.get("map", 0.0)
@@ -43,8 +48,6 @@ def estimate_fuel_metrics(latest: Dict[str, float], displacement_l: float = 1.6)
     # 1. Estimativa via Tempo de Injeção real (mais precisa)
     if inj_ms is not None and inj_ms > 0.05:
         # Bico Flex a ~4.0 bar (ex.: VW EA111 1.6 TotalFlex ~275 cc/min) com dead-time ~0.85 ms
-        injector_cc_min = 275.0
-        dead_time_ms = 0.85
         eff_inj_ms = max(0.0, inj_ms - dead_time_ms)
         # 4 cilindros, 2 injeções por volta do virabrequim (ciclo 4 tempos)
         # injector_cc_min / 60.0 converte cc/min para cc/s por bico a 100% de duty cycle
@@ -87,8 +90,15 @@ def estimate_fuel_metrics(latest: Dict[str, float], displacement_l: float = 1.6)
 class FuelConsumptionEstimator:
     """Calculador orientado a objetos para estimativa de consumo instantâneo."""
 
-    def __init__(self, displacement_l: float = 1.6):
+    def __init__(
+        self,
+        displacement_l: float = 1.6,
+        injector_cc_min: float = 275.0,
+        dead_time_ms: float = 0.85,
+    ):
         self.displacement_l = displacement_l
+        self.injector_cc_min = injector_cc_min
+        self.dead_time_ms = dead_time_ms
 
     def estimate_instant_consumption(
         self,
@@ -111,7 +121,12 @@ class FuelConsumptionEstimator:
         }
         if inj_ms is not None:
             sample["inj_ms"] = inj_ms
-        res = estimate_fuel_metrics(sample, self.displacement_l)
+        res = estimate_fuel_metrics(
+            sample,
+            self.displacement_l,
+            injector_cc_min=self.injector_cc_min,
+            dead_time_ms=self.dead_time_ms,
+        )
         return (
             res.get("fuel_rate_lph", 0.0),
             res.get("fuel_econ_kml", 0.0),

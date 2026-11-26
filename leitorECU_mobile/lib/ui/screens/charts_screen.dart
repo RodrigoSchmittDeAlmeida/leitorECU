@@ -7,6 +7,7 @@ import '../../state/telemetry_controller.dart';
 import '../theme/motorsport_theme.dart';
 import '../widgets/dual_axis_chart.dart';
 import '../widgets/replay_player_bar.dart';
+import '../widgets/uniform_action_button.dart';
 
 /// Aba Gráficos: osciloscópio separado com 3 gráficos Dual-Axis, auto-escala turbo e Crosshair em Replay.
 class ChartsScreen extends StatefulWidget {
@@ -188,63 +189,87 @@ class _ChartsScreenState extends State<ChartsScreen> {
 
   Widget _buildToolbar(BuildContext context, TelemetryController c, bool replay) {
     final tokens = MotorsportTheme.tokensOf(context);
+    final isWide =
+        MediaQuery.sizeOf(context).width >= MotorsportTheme.tabletBreakpoint;
+    final statusText = Text(
+      replay
+          ? 'Arraste nos gráficos para mover o Crosshair sincronizado'
+          : 'Janela ao vivo: ${c.plotWindowSec}s · 3 eixos duplos',
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: tokens.muted,
+        fontSize: 11.5,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+
+    final freezeBtn = UniformActionButton(
+      label: _frozen ? 'Retomar' : 'Congelar',
+      icon: _frozen ? Icons.play_arrow : Icons.pause,
+      variant: _frozen
+          ? UniformActionVariant.warn
+          : UniformActionVariant.neutral,
+      active: _frozen,
+      height: 38,
+      onTap: replay
+          ? null
+          : () {
+              setState(() {
+                _frozen = !_frozen;
+                if (_frozen) {
+                  _frozenNow = c.currentTimeSec;
+                }
+              });
+            },
+    );
+
+    final clearBtn = UniformActionButton(
+      label: 'Limpar',
+      icon: Icons.cleaning_services_outlined,
+      variant: UniformActionVariant.neutral,
+      height: 38,
+      onTap: replay
+          ? null
+          : () {
+              for (final b in c.buffers.values) {
+                b.clear();
+              }
+              c.clearEvents();
+            },
+    );
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: tokens.surfaceAlt,
         border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 6,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          ElevatedButton.icon(
-            onPressed: replay
-                ? null
-                : () {
-                    setState(() {
-                      _frozen = !_frozen;
-                      if (_frozen) {
-                        _frozenNow = c.currentTimeSec;
-                      }
-                    });
-                  },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _frozen ? const Color(0xFF493512) : tokens.elevated,
-              foregroundColor: _frozen ? const Color(0xFFFFE2A1) : tokens.text,
-              side: BorderSide(
-                color: _frozen ? MotorsportColors.warning : tokens.border,
-              ),
+      child: isWide
+          ? Row(
+              children: [
+                SizedBox(width: 120, child: freezeBtn),
+                const SizedBox(width: 8),
+                SizedBox(width: 120, child: clearBtn),
+                const SizedBox(width: 12),
+                Expanded(child: statusText),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: freezeBtn),
+                    const SizedBox(width: 8),
+                    Expanded(child: clearBtn),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                statusText,
+              ],
             ),
-            icon: Icon(_frozen ? Icons.play_arrow : Icons.pause, size: 16),
-            label: Text(_frozen ? 'Retomar' : 'Congelar'),
-          ),
-          OutlinedButton.icon(
-            onPressed: replay
-                ? null
-                : () {
-                    for (final b in c.buffers.values) {
-                      b.clear();
-                    }
-                    c.clearEvents();
-                  },
-            icon: const Icon(Icons.cleaning_services_outlined, size: 16),
-            label: const Text('Limpar'),
-          ),
-          Text(
-            replay
-                ? 'Arraste nos gráficos para mover o Crosshair sincronizado'
-                : 'Janela ao vivo: ${c.plotWindowSec}s · 3 eixos duplos',
-            style: TextStyle(
-              color: tokens.muted,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
     );
   }
 

@@ -221,56 +221,64 @@ class DualAxisChartWidget extends StatelessWidget {
             decoration: BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 4),
-          PopupMenuButton<String>(
-            tooltip: 'Selecionar canal (${trace.slotLabel})',
-            padding: EdgeInsets.zero,
-            color: MotorsportColors.elevated,
-            onSelected: (val) => onSelectChannel(index, val),
-            itemBuilder: (ctx) => channelOptions
-                .map(
-                  (opt) => PopupMenuItem<String>(
-                    value: opt.key,
-                    height: 34,
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(
-                            color: MotorsportColors.colorForChannel(opt.key),
-                            shape: BoxShape.circle,
+          Flexible(
+            child: PopupMenuButton<String>(
+              tooltip: 'Selecionar canal (${trace.slotLabel})',
+              padding: EdgeInsets.zero,
+              color: MotorsportColors.elevated,
+              onSelected: (val) => onSelectChannel(index, val),
+              itemBuilder: (ctx) => channelOptions
+                  .map(
+                    (opt) => PopupMenuItem<String>(
+                      value: opt.key,
+                      height: 34,
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            margin: const EdgeInsets.only(right: 8),
+                            decoration: BoxDecoration(
+                              color: MotorsportColors.colorForChannel(opt.key),
+                              shape: BoxShape.circle,
+                            ),
                           ),
-                        ),
-                        Expanded(
-                          child: Text(
-                            opt.unit.isNotEmpty ? '${opt.label} [${opt.unit}]' : opt.label,
-                            style: const TextStyle(fontSize: 12, color: MotorsportColors.text),
+                          Expanded(
+                            child: Text(
+                              opt.unit.isNotEmpty ? '${opt.label} [${opt.unit}]' : opt.label,
+                              style: const TextStyle(fontSize: 12, color: MotorsportColors.text),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      '${trace.slotLabel} ${currentOption.label}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: MotorsportColors.text,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
-                )
-                .toList(),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${trace.slotLabel} ${currentOption.label}',
-                  style: const TextStyle(
-                    color: MotorsportColors.text,
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Icon(Icons.arrow_drop_down, size: 14, color: MotorsportColors.muted),
-              ],
+                  const Icon(Icons.arrow_drop_down, size: 14, color: MotorsportColors.muted),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 4),
           Text(
             trace.readout,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: MotorsportTheme.tabularStyle(
               fontSize: 11,
               fontWeight: FontWeight.w800,

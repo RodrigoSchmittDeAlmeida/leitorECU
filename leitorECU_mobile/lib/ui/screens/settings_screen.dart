@@ -2,8 +2,9 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/settings/app_settings.dart';
 import '../theme/motorsport_theme.dart';
+import '../widgets/uniform_action_button.dart';
 
-/// Tela de Configurações: Aparência, Acessibilidade e Inteligência Artificial (LLM).
+/// Tela de Configurações: Aparência, Veículo & Motor, Acessibilidade e Inteligência Artificial (LLM).
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -27,8 +28,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _modelCtrl;
   late final TextEditingController _baseUrlCtrl;
   late final TextEditingController _apiKeyCtrl;
+  late final TextEditingController _dispCtrl;
+  late final TextEditingController _massCtrl;
+  late final TextEditingController _injCtrl;
+  late final TextEditingController _deadCtrl;
+  late final TextEditingController _priceCtrl;
+
   final FocusNode _modelFocus = FocusNode();
   final FocusNode _baseUrlFocus = FocusNode();
+  final FocusNode _dispFocus = FocusNode();
+  final FocusNode _massFocus = FocusNode();
+  final FocusNode _injFocus = FocusNode();
+  final FocusNode _deadFocus = FocusNode();
+  final FocusNode _priceFocus = FocusNode();
 
   late AiProviderKind _lastProvider;
   bool _obscureKey = true;
@@ -41,6 +53,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _modelCtrl = TextEditingController(text: widget.settings.aiModel);
     _baseUrlCtrl = TextEditingController(text: widget.settings.aiCustomBaseUrl);
     _apiKeyCtrl = TextEditingController();
+    _dispCtrl = TextEditingController(
+      text: _formatDisplacement(widget.settings.engineDisplacementL),
+    );
+    _massCtrl = TextEditingController(
+      text: widget.settings.vehicleMassKg.toStringAsFixed(0),
+    );
+    _injCtrl = TextEditingController(
+      text: widget.settings.injectorCcMin.toStringAsFixed(0),
+    );
+    _deadCtrl = TextEditingController(
+      text: widget.settings.injectorDeadTimeMs.toStringAsFixed(2),
+    );
+    _priceCtrl = TextEditingController(
+      text: widget.settings.fuelPriceBrl.toStringAsFixed(2),
+    );
     widget.settings.addListener(_syncControllersFromSettings);
   }
 
@@ -50,9 +77,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _modelCtrl.dispose();
     _baseUrlCtrl.dispose();
     _apiKeyCtrl.dispose();
+    _dispCtrl.dispose();
+    _massCtrl.dispose();
+    _injCtrl.dispose();
+    _deadCtrl.dispose();
+    _priceCtrl.dispose();
     _modelFocus.dispose();
     _baseUrlFocus.dispose();
+    _dispFocus.dispose();
+    _massFocus.dispose();
+    _injFocus.dispose();
+    _deadFocus.dispose();
+    _priceFocus.dispose();
     super.dispose();
+  }
+
+  static String _formatDisplacement(double v) {
+    if ((v * 10 - (v * 10).round()).abs() < 0.01) {
+      return v.toStringAsFixed(1);
+    }
+    return v.toStringAsFixed(2);
+  }
+
+  void _syncEngineControllers({bool force = false}) {
+    final s = widget.settings;
+    final dispStr = _formatDisplacement(s.engineDisplacementL);
+    if ((force || !_dispFocus.hasFocus) && _dispCtrl.text != dispStr) {
+      _dispCtrl.text = dispStr;
+    }
+    final massStr = s.vehicleMassKg.toStringAsFixed(0);
+    if ((force || !_massFocus.hasFocus) && _massCtrl.text != massStr) {
+      _massCtrl.text = massStr;
+    }
+    final injStr = s.injectorCcMin.toStringAsFixed(0);
+    if ((force || !_injFocus.hasFocus) && _injCtrl.text != injStr) {
+      _injCtrl.text = injStr;
+    }
+    final deadStr = s.injectorDeadTimeMs.toStringAsFixed(2);
+    if ((force || !_deadFocus.hasFocus) && _deadCtrl.text != deadStr) {
+      _deadCtrl.text = deadStr;
+    }
+    final priceStr = s.fuelPriceBrl.toStringAsFixed(2);
+    if ((force || !_priceFocus.hasFocus) && _priceCtrl.text != priceStr) {
+      _priceCtrl.text = priceStr;
+    }
   }
 
   void _syncControllersFromSettings() {
@@ -65,6 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _baseUrlCtrl.text = widget.settings.aiCustomBaseUrl;
     }
     _lastProvider = widget.settings.aiProvider;
+    _syncEngineControllers();
   }
 
   void _showSnack(String message) {
@@ -126,6 +195,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _showSnack('Chave de API removida.');
   }
 
+  Future<void> _applyEngineCalibration() async {
+    double? parseNum(String raw) =>
+        double.tryParse(raw.trim().replaceAll(',', '.'));
+
+    final disp = parseNum(_dispCtrl.text);
+    final mass = parseNum(_massCtrl.text);
+    final inj = parseNum(_injCtrl.text);
+    final dead = parseNum(_deadCtrl.text);
+    final price = parseNum(_priceCtrl.text);
+
+    if (disp == null ||
+        disp <= 0.0 ||
+        mass == null ||
+        mass <= 0.0 ||
+        inj == null ||
+        inj <= 0.0 ||
+        dead == null ||
+        dead < 0.0 ||
+        price == null ||
+        price < 0.0) {
+      _showSnack('Verifique os valores numéricos antes de aplicar a calibração.');
+      return;
+    }
+
+    FocusScope.of(context).unfocus();
+    await widget.settings.setEngineCalibration(
+      displacementL: disp,
+      vehicleMassKg: mass,
+      injectorCcMin: inj,
+      injectorDeadTimeMs: dead,
+      fuelPriceBrl: price,
+    );
+    _syncEngineControllers(force: true);
+    _showSnack('Calibração do motor aplicada.');
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.settings;
@@ -150,6 +255,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(height: 8),
                 _buildAppearanceSection(s, tokens),
+                const SizedBox(height: 20),
+                _SectionHeader(
+                  icon: Icons.directions_car_outlined,
+                  title: 'Veículo & Calibração do Motor',
+                  tokens: tokens,
+                ),
+                const SizedBox(height: 8),
+                _buildVehicleEngineSection(s, tokens),
                 const SizedBox(height: 20),
                 _SectionHeader(
                   icon: Icons.auto_awesome_outlined,
@@ -354,16 +467,175 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }).toList(),
             ),
             const SizedBox(height: 16),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: OutlinedButton.icon(
-                onPressed: () async {
-                  await s.resetAppearance();
-                  _showSnack('Aparência padrão restaurada.');
-                },
-                icon: const Icon(Icons.restore, size: 18),
-                label: const Text('Restaurar Aparência Padrão'),
+            UniformActionButton(
+              label: 'Restaurar Aparência Padrão',
+              icon: Icons.restore,
+              variant: UniformActionVariant.neutral,
+              onTap: () async {
+                await s.resetAppearance();
+                _showSnack('Aparência padrão restaurada.');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVehicleEngineSection(
+    AppSettingsController s,
+    MotorsportVisualTokens tokens,
+  ) {
+    Widget buildField({
+      required TextEditingController controller,
+      required FocusNode focusNode,
+      required String label,
+      bool decimal = true,
+    }) {
+      return TextField(
+        controller: controller,
+        focusNode: focusNode,
+        keyboardType: TextInputType.numberWithOptions(decimal: decimal),
+        textInputAction: TextInputAction.next,
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 10,
+          ),
+          label: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
+
+    return Material(
+      color: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: tokens.border, width: tokens.cardBorderWidth),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Preset de Motor / Veículo',
+              style: TextStyle(
+                color: tokens.text,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
               ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: EnginePreset.values.map((preset) {
+                final selected = s.enginePreset == preset;
+                return ChoiceChip(
+                  label: Text(
+                    preset.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  selected: selected,
+                  onSelected: (_) async {
+                    await s.selectEnginePreset(preset);
+                    _syncEngineControllers(force: true);
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow = constraints.maxWidth < 340;
+                final dispField = buildField(
+                  controller: _dispCtrl,
+                  focusNode: _dispFocus,
+                  label: 'Cilindrada (L)',
+                );
+                final massField = buildField(
+                  controller: _massCtrl,
+                  focusNode: _massFocus,
+                  label: 'Massa (kg)',
+                  decimal: false,
+                );
+                final injField = buildField(
+                  controller: _injCtrl,
+                  focusNode: _injFocus,
+                  label: 'Bico (cc/min)',
+                  decimal: false,
+                );
+                final deadField = buildField(
+                  controller: _deadCtrl,
+                  focusNode: _deadFocus,
+                  label: 'Dead-time (ms)',
+                );
+                final priceField = buildField(
+                  controller: _priceCtrl,
+                  focusNode: _priceFocus,
+                  label: r'Preço Comb. (R$/L)',
+                );
+
+                if (narrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      dispField,
+                      const SizedBox(height: 10),
+                      massField,
+                      const SizedBox(height: 10),
+                      injField,
+                      const SizedBox(height: 10),
+                      deadField,
+                      const SizedBox(height: 10),
+                      priceField,
+                    ],
+                  );
+                }
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(child: dispField),
+                        const SizedBox(width: 8),
+                        Expanded(child: massField),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: injField),
+                        const SizedBox(width: 8),
+                        Expanded(child: deadField),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(child: priceField),
+                        const SizedBox(width: 8),
+                        const Expanded(child: SizedBox.shrink()),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            UniformActionButton(
+              label: 'Aplicar Calibração do Motor',
+              icon: Icons.check_circle_outline,
+              variant: UniformActionVariant.primary,
+              onTap: _applyEngineCalibration,
             ),
           ],
         ),
@@ -493,20 +765,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ],
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            UniformButtonGrid(
+              columns: 2,
               children: [
-                FilledButton.icon(
-                  onPressed: _busyKeyAction ? null : _handleSaveApiKey,
-                  icon: const Icon(Icons.key_outlined, size: 18),
-                  label: const Text('Salvar Chave'),
+                UniformActionButton(
+                  label: 'Salvar Chave',
+                  icon: Icons.key_outlined,
+                  variant: UniformActionVariant.primary,
+                  onTap: _busyKeyAction ? null : _handleSaveApiKey,
                 ),
-                OutlinedButton.icon(
-                  onPressed:
+                UniformActionButton(
+                  label: 'Remover Chave',
+                  icon: Icons.delete_outline,
+                  variant: UniformActionVariant.danger,
+                  onTap:
                       (!_busyKeyAction && s.hasApiKey) ? _handleClearApiKey : null,
-                  icon: const Icon(Icons.delete_outline, size: 18),
-                  label: const Text('Remover Chave'),
                 ),
               ],
             ),

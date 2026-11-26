@@ -11,6 +11,8 @@ import '../../state/telemetry_controller.dart';
 import '../../storage/csv_replay_parser.dart';
 import '../../storage/log_repository.dart';
 import '../theme/motorsport_theme.dart';
+import '../widgets/dyno_curve_chart.dart';
+import '../widgets/uniform_action_button.dart';
 import 'settings_screen.dart';
 
 /// Tela de análise estatística de logs CSV, comparação entre 2 logs e parecer por IA.
@@ -40,6 +42,7 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
 
   bool _compareMode = false;
   bool _onlySignificant = false;
+  bool _recalculateDerived = false;
   bool _loadingLogs = true;
   bool _analyzingFiles = false;
   String? _fileLoadError;
@@ -163,13 +166,27 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
 
     try {
       final dsA = await CsvReplayParser.parseFile(pathA);
-      final repA = LogAnalyzer.analyze(dsA, fileName: _labelForPath(pathA));
+      final repA = LogAnalyzer.analyze(
+        dsA,
+        fileName: _labelForPath(pathA),
+        recalculateDerived: _recalculateDerived,
+        displacementL: widget.settings.engineDisplacementL,
+        injectorCcMin: widget.settings.injectorCcMin,
+        injectorDeadTimeMs: widget.settings.injectorDeadTimeMs,
+      );
 
       LogAnalysisReport? repB;
       LogComparisonReport? comp;
       if (_compareMode && pathB != null) {
         final dsB = await CsvReplayParser.parseFile(pathB);
-        repB = LogAnalyzer.analyze(dsB, fileName: _labelForPath(pathB));
+        repB = LogAnalyzer.analyze(
+          dsB,
+          fileName: _labelForPath(pathB),
+          recalculateDerived: _recalculateDerived,
+          displacementL: widget.settings.engineDisplacementL,
+          injectorCcMin: widget.settings.injectorCcMin,
+          injectorDeadTimeMs: widget.settings.injectorDeadTimeMs,
+        );
         comp = LogAnalyzer.compare(repA, repB);
       }
 
@@ -227,7 +244,11 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
       ),
     );
     if (!mounted) return;
-    setState(() {});
+    if (_recalculateDerived) {
+      await _reanalyzeSelected();
+    } else {
+      setState(() {});
+    }
   }
 
   Future<void> _runAiAnalysis() async {
@@ -346,43 +367,58 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
         top: false,
         child: _loadingLogs
             ? const Center(child: CircularProgressIndicator())
-            : ListView(
+            : SingleChildScrollView(
                 padding: EdgeInsets.all(isTablet ? 14 : 10),
-                children: [
-                  _buildModeBar(),
-                  const SizedBox(height: 10),
-                  _buildFileSelectors(),
-                  if (_fileLoadError != null) ...[
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildModeBar(),
                     const SizedBox(height: 10),
-                    _buildErrorBanner(_fileLoadError!),
+                    _buildFileSelectors(),
+                    if (_fileLoadError != null) ...[
+                      const SizedBox(height: 10),
+                      _buildErrorBanner(_fileLoadError!),
+                    ],
+                    if (_analyzingFiles) ...[
+                      const SizedBox(height: 12),
+                      const LinearProgressIndicator(),
+                    ],
+                    if (_logs.isEmpty && _reportA == null) ...[
+                      const SizedBox(height: 12),
+                      _buildEmptyState(),
+                    ] else if (!_compareMode && _reportA != null) ...[
+                      const SizedBox(height: 12),
+                      _buildSingleKpiSection(_reportA!),
+                      const SizedBox(height: 12),
+                      DynoCurveChart(
+                        curveA: _reportA!.dynoCurve,
+                        labelA: _reportA!.fileName,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildAiCard(),
+                      const SizedBox(height: 12),
+                      _buildFindingsSection(_reportA!.findings),
+                      const SizedBox(height: 12),
+                      _buildSingleStatsSection(_reportA!),
+                    ] else if (_compareMode && _comparison != null) ...[
+                      const SizedBox(height: 12),
+                      _buildComparisonKpiSection(_comparison!),
+                      const SizedBox(height: 12),
+                      DynoCurveChart(
+                        curveA: _comparison!.reportA.dynoCurve,
+                        curveB: _comparison!.reportB.dynoCurve,
+                        labelA: _comparison!.reportA.fileName,
+                        labelB: _comparison!.reportB.fileName,
+                      ),
+                      const SizedBox(height: 12),
+                      _buildAiCard(),
+                      const SizedBox(height: 12),
+                      _buildComparisonHighlights(_comparison!),
+                      const SizedBox(height: 12),
+                      _buildComparisonDeltasSection(_comparison!),
+                    ],
                   ],
-                  if (_analyzingFiles) ...[
-                    const SizedBox(height: 12),
-                    const LinearProgressIndicator(),
-                  ],
-                  if (_logs.isEmpty && _reportA == null) ...[
-                    const SizedBox(height: 12),
-                    _buildEmptyState(),
-                  ] else if (!_compareMode && _reportA != null) ...[
-                    const SizedBox(height: 12),
-                    _buildSingleKpiSection(_reportA!),
-                    const SizedBox(height: 12),
-                    _buildAiCard(),
-                    const SizedBox(height: 12),
-                    _buildFindingsSection(_reportA!.findings),
-                    const SizedBox(height: 12),
-                    _buildSingleStatsSection(_reportA!),
-                  ] else if (_compareMode && _comparison != null) ...[
-                    const SizedBox(height: 12),
-                    _buildComparisonKpiSection(_comparison!),
-                    const SizedBox(height: 12),
-                    _buildAiCard(),
-                    const SizedBox(height: 12),
-                    _buildComparisonHighlights(_comparison!),
-                    const SizedBox(height: 12),
-                    _buildComparisonDeltasSection(_comparison!),
-                  ],
-                ],
+                ),
               ),
       ),
     );
@@ -422,12 +458,19 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildFileSelectors() {
+    final tokens = MotorsportTheme.tokensOf(context);
+    final ccStr = widget.settings.injectorCcMin.toStringAsFixed(0);
+    final dispStr = widget.settings.engineDisplacementL.toStringAsFixed(1);
+
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(6),
+        color: tokens.surface,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -454,22 +497,79 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
             ),
           ],
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          UniformButtonGrid(
+            columns: 2,
+            tabletColumns: 3,
             children: [
-              OutlinedButton.icon(
-                onPressed: _importCsv,
-                icon: const Icon(Icons.file_open_outlined, size: 17),
-                label: const Text('Importar CSV'),
+              UniformActionButton(
+                label: 'Importar CSV',
+                icon: Icons.file_open_outlined,
+                variant: UniformActionVariant.info,
+                onTap: _importCsv,
               ),
-              OutlinedButton.icon(
-                onPressed: _loadInitialData,
-                icon: const Icon(Icons.refresh, size: 17),
-                label: const Text('Atualizar Lista'),
+              UniformActionButton(
+                label: 'Atualizar Lista',
+                icon: Icons.refresh,
+                variant: UniformActionVariant.neutral,
+                onTap: _loadInitialData,
+              ),
+              UniformActionButton(
+                label: 'Recalcular Fórmula',
+                icon: Icons.calculate_outlined,
+                variant: UniformActionVariant.info,
+                active: _recalculateDerived,
+                tooltip:
+                    'Reprocessa potência (Speed-Density), torque e consumo ($ccStr cc/min)',
+                onTap: () {
+                  setState(() => _recalculateDerived = !_recalculateDerived);
+                  _reanalyzeSelected();
+                },
               ),
             ],
           ),
+          const SizedBox(height: 6),
+          Text(
+            'Reprocessa potência (Speed-Density), torque e consumo ($ccStr cc/min)',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: tokens.muted, fontSize: 11),
+          ),
+          if (_recalculateDerived) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: tokens.accent.withValues(alpha: 0.14),
+                border: Border.all(
+                  color: tokens.accent.withValues(alpha: 0.65),
+                  width: tokens.cardBorderWidth,
+                ),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.check_circle_outline,
+                    size: 15,
+                    color: tokens.accent,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      'Recalculado com calibração atual (${dispStr}L · $ccStr cc/min)',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: tokens.accent,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -480,24 +580,26 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
     required String? value,
     required ValueChanged<String?> onChanged,
   }) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final hasValue = value != null && _logs.any((e) => e.path == value);
     final effectiveValue = hasValue ? value : null;
 
     return InputDecorator(
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: MotorsportColors.muted, fontSize: 12),
+        labelStyle: TextStyle(color: tokens.muted, fontSize: 12),
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: effectiveValue,
           isExpanded: true,
-          dropdownColor: MotorsportColors.elevated,
-          hint: const Text(
+          dropdownColor: tokens.elevated,
+          hint: Text(
             'Selecione um log CSV',
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: MotorsportColors.muted, fontSize: 13),
+            style: TextStyle(color: tokens.muted, fontSize: 13),
           ),
           items: [
             for (final entry in _logs)
@@ -509,8 +611,8 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                       : entry.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: MotorsportColors.text,
+                  style: TextStyle(
+                    color: tokens.text,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -524,38 +626,48 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildEmptyState() {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(6),
+        color: tokens.surface,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.analytics_outlined, color: MotorsportColors.muted, size: 38),
+          Icon(Icons.analytics_outlined, color: tokens.muted, size: 38),
           const SizedBox(height: 10),
-          const Text(
+          Text(
             'Nenhum log disponível para análise',
             textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: MotorsportColors.text,
+              color: tokens.text,
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
+          Text(
             'Grave um log na aba Logs ou toque em "Importar CSV" acima para calcular estatísticas e obter parecer da IA.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: MotorsportColors.muted, fontSize: 12),
+            style: TextStyle(color: tokens.muted, fontSize: 12),
           ),
           const SizedBox(height: 12),
-          ElevatedButton.icon(
-            onPressed: _importCsv,
-            icon: const Icon(Icons.file_open_outlined, size: 17),
-            label: const Text('Importar CSV'),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: UniformActionButton(
+              label: 'Importar CSV',
+              icon: Icons.file_open_outlined,
+              variant: UniformActionVariant.info,
+              onTap: _importCsv,
+            ),
           ),
         ],
       ),
@@ -659,6 +771,7 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildKpiWrap(List<_KpiData> items) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return LayoutBuilder(
       builder: (context, constraints) {
         const gap = 8.0;
@@ -676,9 +789,12 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: MotorsportColors.surface,
-                    border: Border.all(color: MotorsportColors.borderSubtle),
-                    borderRadius: BorderRadius.circular(6),
+                    color: tokens.surface,
+                    border: Border.all(
+                      color: tokens.borderSubtle,
+                      width: tokens.cardBorderWidth,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -688,21 +804,24 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                         item.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: MotorsportColors.muted,
+                        style: TextStyle(
+                          color: tokens.muted,
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        item.value,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: MotorsportTheme.tabularStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: item.accent,
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          item.value,
+                          maxLines: 1,
+                          style: MotorsportTheme.tabularStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: item.accent,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -710,8 +829,8 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                         item.subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: MotorsportColors.stale,
+                        style: TextStyle(
+                          color: tokens.stale,
                           fontSize: 10.5,
                         ),
                       ),
@@ -726,6 +845,7 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildAiCard() {
+    final tokens = MotorsportTheme.tokensOf(context);
     final settings = widget.settings;
     final provider = settings.aiProvider;
     final model = settings.aiModel.trim().isNotEmpty
@@ -736,24 +856,29 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
+        color: tokens.surface,
         border: Border.all(
-          color: hasKey ? MotorsportColors.info.withValues(alpha: 0.45) : MotorsportColors.border,
+          color: hasKey
+              ? tokens.accent.withValues(alpha: 0.45)
+              : tokens.border,
+          width: tokens.cardBorderWidth,
         ),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              const Icon(Icons.auto_awesome, color: MotorsportColors.info, size: 18),
+              Icon(Icons.auto_awesome, color: tokens.accent, size: 18),
               const SizedBox(width: 8),
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Diagnóstico por Inteligência Artificial',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: MotorsportColors.text,
+                    color: tokens.text,
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
@@ -762,7 +887,11 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
               IconButton(
                 tooltip: 'Configurar Provedor / Chave',
                 onPressed: _openSettings,
-                icon: const Icon(Icons.settings_outlined, size: 18, color: MotorsportColors.muted),
+                icon: Icon(
+                  Icons.settings_outlined,
+                  size: 18,
+                  color: tokens.muted,
+                ),
                 visualDensity: VisualDensity.compact,
               ),
             ],
@@ -772,8 +901,8 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
             spacing: 8,
             runSpacing: 4,
             children: [
-              _buildChipTag(provider.label, MotorsportColors.info),
-              _buildChipTag(model, MotorsportColors.muted),
+              _buildChipTag(provider.label, tokens.accent),
+              _buildChipTag(model, tokens.muted),
             ],
           ),
           const SizedBox(height: 10),
@@ -783,57 +912,46 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
               decoration: BoxDecoration(
                 color: MotorsportColors.warnBg,
                 border: Border.all(color: MotorsportColors.warnBorder),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(6),
               ),
-              child: const Text(
+              child: Text(
                 'Nenhuma chave de API configurada. Cadastre sua chave do Gemini, OpenAI ou endpoint compatível para gerar diagnósticos assistidos por IA.',
-                style: TextStyle(color: MotorsportColors.text, fontSize: 12),
+                style: TextStyle(color: tokens.text, fontSize: 12),
               ),
             ),
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ElevatedButton.icon(
-                onPressed: _openSettings,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0E2530),
-                  foregroundColor: MotorsportColors.info,
-                  side: const BorderSide(color: MotorsportColors.info),
+            UniformButtonGrid(
+              columns: 1,
+              tabletColumns: 2,
+              children: [
+                UniformActionButton(
+                  label: 'Configurar Chave de API',
+                  icon: Icons.vpn_key_outlined,
+                  variant: UniformActionVariant.info,
+                  onTap: _openSettings,
                 ),
-                icon: const Icon(Icons.vpn_key_outlined, size: 17),
-                label: const Text('Configurar Chave de API'),
-              ),
+              ],
             ),
           ] else ...[
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            UniformButtonGrid(
+              columns: _aiResult != null ? 2 : 1,
+              tabletColumns: 2,
               children: [
-                ElevatedButton.icon(
-                  onPressed: (_aiLoading || _analyzingFiles) ? null : _runAiAnalysis,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0E2530),
-                    foregroundColor: MotorsportColors.info,
-                    side: const BorderSide(color: MotorsportColors.info),
-                  ),
-                  icon: _aiLoading
-                      ? const SizedBox(
-                          width: 15,
-                          height: 15,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.psychology_outlined, size: 18),
-                  label: Text(
-                    _aiLoading
-                        ? 'Analisando...'
-                        : (_compareMode ? 'Comparar com IA' : 'Analisar com IA'),
-                  ),
+                UniformActionButton(
+                  label: _aiLoading
+                      ? 'Analisando...'
+                      : (_compareMode ? 'Comparar com IA' : 'Analisar com IA'),
+                  icon: Icons.psychology_outlined,
+                  variant: UniformActionVariant.info,
+                  active: _aiLoading,
+                  onTap: (_aiLoading || _analyzingFiles) ? null : _runAiAnalysis,
                 ),
                 if (_aiResult != null)
-                  OutlinedButton.icon(
-                    onPressed: _copyAiResult,
-                    icon: const Icon(Icons.copy, size: 16),
-                    label: const Text('Copiar Parecer'),
+                  UniformActionButton(
+                    label: 'Copiar Parecer',
+                    icon: Icons.copy,
+                    variant: UniformActionVariant.neutral,
+                    onTap: _copyAiResult,
                   ),
               ],
             ),
@@ -848,20 +966,21 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                 decoration: BoxDecoration(
                   color: MotorsportColors.alarmBg,
                   border: Border.all(color: MotorsportColors.alarmBorder),
-                  borderRadius: BorderRadius.circular(4),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
                       _aiError!,
-                      style: const TextStyle(color: MotorsportColors.text, fontSize: 12),
+                      style: TextStyle(color: tokens.text, fontSize: 12),
                     ),
                     const SizedBox(height: 8),
-                    OutlinedButton.icon(
-                      onPressed: _runAiAnalysis,
-                      icon: const Icon(Icons.refresh, size: 16),
-                      label: const Text('Tentar Novamente'),
+                    UniformActionButton(
+                      label: 'Tentar Novamente',
+                      icon: Icons.refresh,
+                      variant: UniformActionVariant.danger,
+                      onTap: _runAiAnalysis,
                     ),
                   ],
                 ),
@@ -872,17 +991,22 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: MotorsportColors.surfaceAlt,
-                  border: Border.all(color: MotorsportColors.border),
-                  borderRadius: BorderRadius.circular(4),
+                  color: tokens.surfaceAlt,
+                  border: Border.all(
+                    color: tokens.border,
+                    width: tokens.cardBorderWidth,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
                       'Parecer · ${_aiResult!.providerLabel} (${_aiResult!.model})',
-                      style: const TextStyle(
-                        color: MotorsportColors.info,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: tokens.accent,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -890,8 +1014,8 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                     const SizedBox(height: 8),
                     SelectableText(
                       _aiResult!.analysisMarkdown,
-                      style: const TextStyle(
-                        color: MotorsportColors.text,
+                      style: TextStyle(
+                        color: tokens.text,
                         fontSize: 12.5,
                         height: 1.45,
                       ),
@@ -907,20 +1031,26 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildFindingsSection(List<DiagnosticFinding> findings) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(6),
+        color: tokens.surface,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'Diagnóstico Automático (Regras Offline)',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: MotorsportColors.text,
+              color: tokens.text,
               fontSize: 14,
               fontWeight: FontWeight.w800,
             ),
@@ -936,6 +1066,7 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildFindingTile(DiagnosticFinding f) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final (Color accent, Color bg, Color border, String badgeText) = switch (f.severity) {
       'alarm' => (
           MotorsportColors.alarm,
@@ -956,9 +1087,9 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
           'OK',
         ),
       _ => (
-          MotorsportColors.info,
-          MotorsportColors.surfaceAlt,
-          MotorsportColors.border,
+          tokens.accent,
+          tokens.surfaceAlt,
+          tokens.border,
           'INFO',
         ),
     };
@@ -967,8 +1098,8 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: bg,
-        border: Border.all(color: border),
-        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: border, width: tokens.cardBorderWidth),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -979,14 +1110,16 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               _buildChipTag(badgeText, accent),
-              _buildChipTag(f.category, MotorsportColors.muted),
+              _buildChipTag(f.category, tokens.muted),
             ],
           ),
           const SizedBox(height: 6),
           Text(
             f.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: accent == MotorsportColors.info ? MotorsportColors.text : accent,
+              color: accent == tokens.accent ? tokens.text : accent,
               fontSize: 13,
               fontWeight: FontWeight.w800,
             ),
@@ -994,8 +1127,8 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
           const SizedBox(height: 3),
           Text(
             f.detail,
-            style: const TextStyle(
-              color: MotorsportColors.text,
+            style: TextStyle(
+              color: tokens.text,
               fontSize: 12,
               height: 1.35,
             ),
@@ -1006,20 +1139,26 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildComparisonHighlights(LogComparisonReport comp) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(6),
+        color: tokens.surface,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             'Resumo Comparativo (A vs B)',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: MotorsportColors.text,
+              color: tokens.text,
               fontSize: 14,
               fontWeight: FontWeight.w800,
             ),
@@ -1031,14 +1170,17 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     '• ',
-                    style: TextStyle(color: MotorsportColors.info, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      color: tokens.accent,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   Expanded(
                     child: Text(
                       h,
-                      style: const TextStyle(color: MotorsportColors.text, fontSize: 12.5),
+                      style: TextStyle(color: tokens.text, fontSize: 12.5),
                     ),
                   ),
                 ],
@@ -1049,12 +1191,16 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
             const Divider(height: 12),
             Text(
               'Alertas Log A: ${comp.reportA.findings.map((f) => '[${f.severity.toUpperCase()}] ${f.title}').join(' · ')}',
-              style: const TextStyle(color: MotorsportColors.muted, fontSize: 11.5),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: tokens.muted, fontSize: 11.5),
             ),
             const SizedBox(height: 4),
             Text(
               'Alertas Log B: ${comp.reportB.findings.map((f) => '[${f.severity.toUpperCase()}] ${f.title}').join(' · ')}',
-              style: const TextStyle(color: MotorsportColors.muted, fontSize: 11.5),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: tokens.muted, fontSize: 11.5),
             ),
           ],
         ],
@@ -1104,6 +1250,7 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildComparisonDeltasSection(LogComparisonReport comp) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final filtered = comp.deltas.where((d) {
       if (_onlySignificant && !d.isSignificant) return false;
       if (_searchQuery.isEmpty) return true;
@@ -1118,7 +1265,12 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
         _buildChannelSearchHeader(
           title: 'Comparação por Canal (${filtered.length})',
           trailing: FilterChip(
-            label: const Text('Apenas significativos', style: TextStyle(fontSize: 11.5)),
+            label: Text(
+              'Apenas significativos',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 11.5, color: tokens.text),
+            ),
             selected: _onlySignificant,
             onSelected: (v) => setState(() => _onlySignificant = v),
           ),
@@ -1154,6 +1306,7 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
     required String title,
     Widget? trailing,
   }) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1165,8 +1318,10 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
           children: [
             Text(
               title,
-              style: const TextStyle(
-                color: MotorsportColors.text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: tokens.text,
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
               ),
@@ -1179,12 +1334,12 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
           controller: _searchCtrl,
           decoration: InputDecoration(
             hintText: 'Filtrar canal por nome, chave ou unidade...',
-            hintStyle: const TextStyle(color: MotorsportColors.muted, fontSize: 12.5),
-            prefixIcon: const Icon(Icons.search, size: 18, color: MotorsportColors.muted),
+            hintStyle: TextStyle(color: tokens.muted, fontSize: 12.5),
+            prefixIcon: Icon(Icons.search, size: 18, color: tokens.muted),
             suffixIcon: _searchQuery.isNotEmpty
                 ? IconButton(
                     onPressed: _searchCtrl.clear,
-                    icon: const Icon(Icons.clear, size: 17, color: MotorsportColors.muted),
+                    icon: Icon(Icons.clear, size: 17, color: tokens.muted),
                   )
                 : null,
           ),
@@ -1194,31 +1349,39 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildNoChannelMatch() {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(6),
+        color: tokens.surface,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: const Text(
+      child: Text(
         'Nenhum canal encontrado com os filtros atuais.',
         textAlign: TextAlign.center,
-        style: TextStyle(color: MotorsportColors.muted, fontSize: 12.5),
+        style: TextStyle(color: tokens.muted, fontSize: 12.5),
       ),
     );
   }
 
   Widget _buildChannelStatCard(ChannelStatistics s) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final color = MotorsportColors.colorForChannel(s.key);
     final unitSuffix = s.unit.isNotEmpty ? ' ${s.unit}' : '';
 
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(6),
+        color: tokens.surface,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1236,8 +1399,8 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                   s.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: MotorsportColors.text,
+                  style: TextStyle(
+                    color: tokens.text,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1254,7 +1417,7 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
             '${s.key} · ${s.count} amostras',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: MotorsportColors.stale, fontSize: 10.5),
+            style: TextStyle(color: tokens.stale, fontSize: 10.5),
           ),
           const SizedBox(height: 8),
           LayoutBuilder(
@@ -1313,8 +1476,11 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
                         decoration: BoxDecoration(
-                          color: MotorsportColors.surfaceAlt,
-                          border: Border.all(color: MotorsportColors.borderSubtle),
+                          color: tokens.surfaceAlt,
+                          border: Border.all(
+                            color: tokens.borderSubtle,
+                            width: tokens.cardBorderWidth,
+                          ),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Column(
@@ -1325,20 +1491,24 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                               m.$1,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: MotorsportColors.muted,
+                              style: TextStyle(
+                                color: tokens.muted,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              m.$2,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: MotorsportTheme.tabularStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                m.$2,
+                                maxLines: 1,
+                                style: MotorsportTheme.tabularStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: tokens.text,
+                                ),
                               ),
                             ),
                           ],
@@ -1355,6 +1525,7 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildComparisonDeltaCard(ChannelComparisonDelta d) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final color = MotorsportColors.colorForChannel(d.key);
     final unitSuffix = d.unit.isNotEmpty ? ' ${d.unit}' : '';
     final dec = _decimalsFor(d.key);
@@ -1365,13 +1536,14 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
+        color: tokens.surface,
         border: Border.all(
           color: d.isSignificant
               ? MotorsportColors.warning.withValues(alpha: 0.7)
-              : MotorsportColors.borderSubtle,
+              : tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
         ),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1389,8 +1561,8 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
                   d.label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: MotorsportColors.text,
+                  style: TextStyle(
+                    color: tokens.text,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
@@ -1458,48 +1630,75 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
     required String delta,
     bool highlight = false,
   }) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: MotorsportColors.surfaceAlt,
-        border: Border.all(color: MotorsportColors.borderSubtle),
+        color: tokens.surfaceAlt,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: MotorsportColors.muted,
+            style: TextStyle(
+              color: tokens.muted,
               fontSize: 10.5,
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 2),
-          Wrap(
-            spacing: 8,
-            runSpacing: 2,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              Text(
-                value,
-                style: MotorsportTheme.tabularStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              Text(
-                delta,
-                style: MotorsportTheme.tabularStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: highlight ? MotorsportColors.warning : MotorsportColors.info,
-                ),
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              return Wrap(
+                spacing: 8,
+                runSpacing: 2,
+                alignment: WrapAlignment.spaceBetween,
+                children: [
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        value,
+                        maxLines: 1,
+                        style: MotorsportTheme.tabularStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: tokens.text,
+                        ),
+                      ),
+                    ),
+                  ),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        delta,
+                        maxLines: 1,
+                        style: MotorsportTheme.tabularStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: highlight
+                              ? MotorsportColors.warning
+                              : tokens.accent,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ],
       ),
@@ -1528,16 +1727,17 @@ class _LogAnalysisScreenState extends State<LogAnalysisScreen> {
   }
 
   Widget _buildErrorBanner(String msg) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: MotorsportColors.alarmBg,
         border: Border.all(color: MotorsportColors.alarmBorder),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         msg,
-        style: const TextStyle(color: MotorsportColors.text, fontSize: 12),
+        style: TextStyle(color: tokens.text, fontSize: 12),
       ),
     );
   }

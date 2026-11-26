@@ -4,17 +4,22 @@ import 'package:material_ui/material_ui.dart';
 import '../../analytics/math_channels.dart';
 import '../../core/models/channel_def.dart';
 import '../../core/models/vehicle_profile.dart';
+import '../../core/settings/app_settings.dart';
 import '../../state/telemetry_controller.dart';
 import '../theme/motorsport_theme.dart';
+import '../widgets/flex_af_status_card.dart';
+import '../widgets/uniform_action_button.dart';
 
-/// Aba Funções: DTCs, I/M Readiness, Freeze Frame, VAG Reset, Ford Módulos, Arrancada & Power Latch.
+/// Aba Funções: DTCs, Flex A/F, VAG KWP2000, Painel 0x17, Arrancada, Ford HS-CAN & Console.
 class FunctionsScreen extends StatefulWidget {
   const FunctionsScreen({
     super.key,
     required this.controller,
+    this.settings,
   });
 
   final TelemetryController controller;
+  final AppSettingsController? settings;
 
   @override
   State<FunctionsScreen> createState() => _FunctionsScreenState();
@@ -23,6 +28,8 @@ class FunctionsScreen extends StatefulWidget {
 class _FunctionsScreenState extends State<FunctionsScreen> {
   late TextEditingController _massCtrl;
   late TextEditingController _priceCtrl;
+  final FocusNode _massFocus = FocusNode();
+  final FocusNode _priceFocus = FocusNode();
 
   @override
   void initState() {
@@ -39,7 +46,20 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
   void dispose() {
     _massCtrl.dispose();
     _priceCtrl.dispose();
+    _massFocus.dispose();
+    _priceFocus.dispose();
     super.dispose();
+  }
+
+  void _syncEngineInputs(TelemetryController c) {
+    final massStr = c.mathEngine.vehicleMassKg.toStringAsFixed(0);
+    if (!_massFocus.hasFocus && _massCtrl.text != massStr) {
+      _massCtrl.text = massStr;
+    }
+    final priceStr = c.mathEngine.fuelPriceBrl.toStringAsFixed(2);
+    if (!_priceFocus.hasFocus && _priceCtrl.text != priceStr) {
+      _priceCtrl.text = priceStr;
+    }
   }
 
   Future<void> _confirmClearDtcs(TelemetryController c) async {
@@ -114,17 +134,25 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
       listenable: widget.controller,
       builder: (context, _) {
         final c = widget.controller;
-        final isTablet = MediaQuery.sizeOf(context).width >= MotorsportTheme.tabletBreakpoint;
+        _syncEngineInputs(c);
+        final isTablet =
+            MediaQuery.sizeOf(context).width >= MotorsportTheme.tabletBreakpoint;
+
+        final showFlexCard = c.vehicleProfile != VehicleProfileId.fordKa ||
+            c.latest.containsKey('g103_c6') ||
+            c.latest.containsKey('ltft');
 
         final cards = <Widget>[
-          _buildDiagnosticsCard(c),
-          _buildVagAndPowerCard(c),
-          _buildPerformanceCard(c),
-          _buildFordModulesCard(c),
-          _buildEventsConsoleCard(c),
+          _buildDiagnosticsCard(context, c),
+          if (showFlexCard) FlexAfStatusCard(controller: c),
+          _buildVagAndPowerCard(context, c),
+          _buildPerformanceCard(context, c),
+          _buildFordModulesCard(context, c),
+          _buildEventsConsoleCard(context, c),
         ];
 
         if (isTablet) {
+          final lastIdx = cards.length - 1;
           return SingleChildScrollView(
             padding: const EdgeInsets.all(12),
             child: LayoutBuilder(
@@ -135,11 +163,9 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                   spacing: gap,
                   runSpacing: gap,
                   children: [
-                    SizedBox(width: colW, child: cards[0]),
-                    SizedBox(width: colW, child: cards[1]),
-                    SizedBox(width: colW, child: cards[2]),
-                    SizedBox(width: colW, child: cards[3]),
-                    SizedBox(width: constraints.maxWidth, child: cards[4]),
+                    for (var i = 0; i < lastIdx; i++)
+                      SizedBox(width: colW, child: cards[i]),
+                    SizedBox(width: constraints.maxWidth, child: cards[lastIdx]),
                   ],
                 );
               },
@@ -157,41 +183,42 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
     );
   }
 
-  Widget _buildDiagnosticsCard(TelemetryController c) {
+  Widget _buildDiagnosticsCard(BuildContext context, TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final online = c.isConnected;
-    return _SectionCard(
+    return UniformSectionCard(
       title: 'Diagnóstico, DTCs & Emissões',
       icon: Icons.build_circle_outlined,
       accent: MotorsportColors.alarm,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          UniformButtonGrid(
+            columns: 2,
             children: [
-              ElevatedButton.icon(
-                onPressed: online ? c.requestReadDtcs : null,
-                icon: const Icon(Icons.search, size: 16),
-                label: const Text('Ler Falhas'),
+              UniformActionButton(
+                label: 'Ler Falhas',
+                icon: Icons.search,
+                variant: UniformActionVariant.info,
+                onTap: online ? c.requestReadDtcs : null,
               ),
-              ElevatedButton.icon(
-                onPressed: online ? () => _confirmClearDtcs(c) : null,
-                style: ElevatedButton.styleFrom(
-                  foregroundColor: MotorsportColors.alarm,
-                ),
-                icon: const Icon(Icons.delete_sweep, size: 16),
-                label: const Text('Limpar DTCs'),
+              UniformActionButton(
+                label: 'Limpar DTCs',
+                icon: Icons.delete_sweep,
+                variant: UniformActionVariant.danger,
+                onTap: online ? () => _confirmClearDtcs(c) : null,
               ),
-              OutlinedButton.icon(
-                onPressed: online ? c.requestReadiness : null,
-                icon: const Icon(Icons.fact_check_outlined, size: 16),
-                label: const Text('I/M Readiness'),
+              UniformActionButton(
+                label: 'I/M Readiness',
+                icon: Icons.fact_check_outlined,
+                variant: UniformActionVariant.neutral,
+                onTap: online ? c.requestReadiness : null,
               ),
-              OutlinedButton.icon(
-                onPressed: online ? c.requestFreezeFrame : null,
-                icon: const Icon(Icons.ac_unit, size: 16),
-                label: const Text('Freeze Frame'),
+              UniformActionButton(
+                label: 'Freeze Frame',
+                icon: Icons.ac_unit,
+                variant: UniformActionVariant.neutral,
+                onTap: online ? c.requestFreezeFrame : null,
               ),
             ],
           ),
@@ -223,9 +250,9 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                 margin: const EdgeInsets.only(bottom: 4),
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
-                  color: MotorsportColors.plot,
+                  color: tokens.plot,
                   border: Border.all(color: MotorsportColors.alarmBorder),
-                  borderRadius: BorderRadius.circular(3),
+                  borderRadius: BorderRadius.circular(4),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -242,7 +269,7 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                     Expanded(
                       child: Text(
                         d.description,
-                        style: const TextStyle(fontSize: 11.5, color: MotorsportColors.text),
+                        style: TextStyle(fontSize: 11.5, color: tokens.text),
                       ),
                     ),
                   ],
@@ -251,23 +278,26 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
           ],
           if (c.readinessReport != null) ...[
             const SizedBox(height: 10),
-            _buildReadinessSummary(c.readinessReport!),
+            _buildReadinessSummary(tokens, c.readinessReport!),
           ],
           if (c.freezeFrameData != null) ...[
             const SizedBox(height: 10),
-            _buildFreezeFrameSummary(c.freezeFrameData!),
+            _buildFreezeFrameSummary(tokens, c.freezeFrameData!),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildReadinessSummary(ReadinessReport rep) {
+  Widget _buildReadinessSummary(
+    MotorsportVisualTokens tokens,
+    ReadinessReport rep,
+  ) {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: MotorsportColors.plot,
-        border: Border.all(color: MotorsportColors.borderSubtle),
+        color: tokens.plot,
+        border: Border.all(color: tokens.borderSubtle),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
@@ -275,8 +305,8 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
         children: [
           Text(
             'I/M Readiness: ${rep.readyCount}/${rep.supportedCount} prontos (DTCs: ${rep.dtcCount})',
-            style: const TextStyle(
-              color: MotorsportColors.info,
+            style: TextStyle(
+              color: tokens.accent,
               fontSize: 11.5,
               fontWeight: FontWeight.w800,
             ),
@@ -290,13 +320,17 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                   decoration: BoxDecoration(
-                    color: m.completed ? const Color(0xFF173E28) : const Color(0xFF4C3912),
+                    color: m.completed
+                        ? const Color(0xFF173E28)
+                        : const Color(0xFF4C3912),
                     borderRadius: BorderRadius.circular(3),
                   ),
                   child: Text(
                     '${m.completed ? "✔" : "✖"} ${m.name}',
                     style: TextStyle(
-                      color: m.completed ? MotorsportColors.ok : MotorsportColors.warning,
+                      color: m.completed
+                          ? MotorsportColors.ok
+                          : MotorsportColors.warning,
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
                     ),
@@ -309,12 +343,15 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
     );
   }
 
-  Widget _buildFreezeFrameSummary(FreezeFrameData ff) {
+  Widget _buildFreezeFrameSummary(
+    MotorsportVisualTokens tokens,
+    FreezeFrameData ff,
+  ) {
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: MotorsportColors.plot,
-        border: Border.all(color: MotorsportColors.borderSubtle),
+        color: tokens.plot,
+        border: Border.all(color: tokens.borderSubtle),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Column(
@@ -342,7 +379,7 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                     style: MotorsportTheme.tabularStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: MotorsportColors.text,
+                      color: tokens.text,
                     ),
                   );
                 }(),
@@ -353,9 +390,11 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
     );
   }
 
-  Widget _buildVagAndPowerCard(TelemetryController c) {
+  Widget _buildVagAndPowerCard(BuildContext context, TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final online = c.isConnected;
-    final volt = c.latest['obd_pin16_v'] ?? c.latest['battery'] ?? c.latest['ecu_volt'];
+    final volt =
+        c.latest['obd_pin16_v'] ?? c.latest['battery'] ?? c.latest['ecu_volt'];
     final rpm = c.latest['rpm'] ?? 0.0;
     final batEval = volt != null
         ? MathChannelsEngine.evaluateBatteryHealth(
@@ -366,35 +405,40 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
         : null;
     final klinePaused = c.pollDelayMs < 0;
 
-    return _SectionCard(
-      title: 'VAG KWP2000 & Monitor Elétrico / Power Latch',
+    return UniformSectionCard(
+      title: 'VAG KWP2000, Painel 0x17 & Power Latch',
       icon: Icons.bolt,
       accent: MotorsportColors.warning,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          UniformButtonGrid(
+            columns: 2,
             children: [
-              ElevatedButton.icon(
-                onPressed: online ? c.requestForceVagKwp : null,
-                icon: const Icon(Icons.sync, size: 16),
-                label: const Text('Forçar VAG KWP'),
+              UniformActionButton(
+                label: 'Forçar VAG KWP',
+                icon: Icons.sync,
+                variant: UniformActionVariant.info,
+                onTap: online ? c.requestForceVagKwp : null,
               ),
-              OutlinedButton.icon(
-                onPressed: online ? c.requestScanAll : null,
-                icon: const Icon(Icons.radar, size: 16),
-                label: const Text('Varrer Blocos 001..255'),
+              UniformActionButton(
+                label: c.clusterBusy ? 'Lendo Painel...' : 'Ler Tanque (0x17)',
+                icon: Icons.local_gas_station_outlined,
+                variant: UniformActionVariant.info,
+                onTap: online && !c.clusterBusy ? c.requestReadCluster : null,
               ),
-              ElevatedButton.icon(
-                onPressed: online ? () => _confirmResetAdaptation(c) : null,
-                style: ElevatedButton.styleFrom(
-                  foregroundColor: MotorsportColors.warning,
-                  side: const BorderSide(color: MotorsportColors.warnBorder),
-                ),
-                icon: const Icon(Icons.restart_alt, size: 16),
-                label: const Text('Reset Adaptação'),
+              UniformActionButton(
+                label: 'Varrer Blocos',
+                icon: Icons.radar,
+                variant: UniformActionVariant.neutral,
+                tooltip: 'Varrer Blocos 001..255',
+                onTap: online ? c.requestScanAll : null,
+              ),
+              UniformActionButton(
+                label: 'Reset Adaptação',
+                icon: Icons.restart_alt,
+                variant: UniformActionVariant.warn,
+                onTap: online ? () => _confirmResetAdaptation(c) : null,
               ),
             ],
           ),
@@ -402,18 +446,89 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: MotorsportColors.plot,
+              color: tokens.plot,
               border: Border.all(
-                color: c.isEcuOff ? MotorsportColors.alarm : MotorsportColors.borderSubtle,
+                color: tokens.borderSubtle,
+                width: tokens.cardBorderWidth,
               ),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(6),
             ),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.battery_charging_full, color: MotorsportColors.info, size: 18),
+                    Icon(Icons.speed_outlined, color: tokens.accent, size: 16),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Painel de Instrumentos (Módulo 0x17)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: tokens.text,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _MetricChip(
+                        'Tanque',
+                        c.clusterFuelLiters != null
+                            ? '${c.clusterFuelLiters!.toStringAsFixed(1)} L'
+                            : '-- L',
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _MetricChip(
+                        'Boia',
+                        c.clusterFuelOhms != null
+                            ? '${c.clusterFuelOhms!.toStringAsFixed(0)} Ω'
+                            : '-- Ω',
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _MetricChip(
+                        'Odômetro',
+                        c.clusterOdometerKm != null
+                            ? '${c.clusterOdometerKm!.toStringAsFixed(0)} km'
+                            : '-- km',
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: tokens.plot,
+              border: Border.all(
+                color: c.isEcuOff ? MotorsportColors.alarm : tokens.borderSubtle,
+                width: tokens.cardBorderWidth,
+              ),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.battery_charging_full,
+                      color: tokens.accent,
+                      size: 18,
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -423,27 +538,9 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                         style: MotorsportTheme.tabularStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
-                          color: MotorsportColors.info,
+                          color: tokens.accent,
                         ),
                       ),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: online
-                          ? () {
-                              c.pollDelayMs = klinePaused ? 0 : -1;
-                              c.emitInfo(
-                                c.pollDelayMs < 0
-                                    ? 'Linha K pausada (Keepalive ativo, sem ruído no som).'
-                                    : 'Linha K retomada em taxa máxima.',
-                              );
-                            }
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: klinePaused ? const Color(0xFF493512) : MotorsportColors.elevated,
-                        foregroundColor: klinePaused ? MotorsportColors.warning : MotorsportColors.text,
-                      ),
-                      icon: Icon(klinePaused ? Icons.play_arrow : Icons.volume_off, size: 16),
-                      label: Text(klinePaused ? 'Retomar Linha K' : 'Pausar Linha K'),
                     ),
                   ],
                 ),
@@ -455,7 +552,7 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                   style: TextStyle(
                     color: batEval != null && batEval.status.contains('fault')
                         ? MotorsportColors.alarm
-                        : MotorsportColors.muted,
+                        : tokens.muted,
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
                   ),
@@ -466,10 +563,29 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                       ? 'Último Power Latch: ${c.lastPowerLatchDurationSec!.toStringAsFixed(1)} s após desligar o motor'
                       : 'Último Power Latch: aguardando ciclo de desligamento (ECU OFF)',
                   style: TextStyle(
-                    color: c.isEcuOff ? MotorsportColors.alarm : MotorsportColors.stale,
+                    color: c.isEcuOff ? MotorsportColors.alarm : tokens.stale,
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                   ),
+                ),
+                const SizedBox(height: 10),
+                UniformActionButton(
+                  label: klinePaused ? 'Retomar Linha K' : 'Pausar Linha K',
+                  icon: klinePaused ? Icons.play_arrow : Icons.volume_off,
+                  variant: klinePaused
+                      ? UniformActionVariant.warn
+                      : UniformActionVariant.neutral,
+                  active: klinePaused,
+                  onTap: online
+                      ? () {
+                          c.pollDelayMs = klinePaused ? 0 : -1;
+                          c.emitInfo(
+                            c.pollDelayMs < 0
+                                ? 'Linha K pausada (Keepalive ativo, sem ruído no som).'
+                                : 'Linha K retomada em taxa máxima.',
+                          );
+                        }
+                      : null,
                 ),
               ],
             ),
@@ -479,13 +595,51 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
     );
   }
 
-  Widget _buildPerformanceCard(TelemetryController c) {
+  Widget _buildPerformanceCard(BuildContext context, TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final rec = c.perfTimer.record;
     final latest = c.latest;
 
     String fmtSec(double? v) => v == null ? '-- s' : '${v.toStringAsFixed(2)} s';
 
-    return _SectionCard(
+    final perfChips = [
+      _MetricChip('0–60 km/h', fmtSec(rec.time0to60)),
+      _MetricChip('0–100 km/h', fmtSec(rec.time0to100)),
+      _MetricChip('80–120 km/h', fmtSec(rec.time80to120)),
+      _MetricChip('100–200 km/h', fmtSec(rec.time100to200)),
+      _MetricChip('201m (1/8)', fmtSec(rec.time201m)),
+      _MetricChip('402m (1/4)', fmtSec(rec.time402m)),
+      _MetricChip('100–0 Fren.', fmtSec(rec.braking100to0)),
+      _MetricChip('G Máx', '${rec.maxG.toStringAsFixed(2)} G'),
+      _MetricChip('V Máx', '${rec.maxSpeed.toStringAsFixed(1)} km/h'),
+    ];
+
+    final tripChips = [
+      _MetricChip(
+        'Combustível',
+        '${(latest['trip_liters'] ?? c.mathEngine.tripLiters).toStringAsFixed(3)} L',
+      ),
+      _MetricChip(
+        'Distância',
+        '${(latest['trip_km'] ?? c.mathEngine.tripKm).toStringAsFixed(2)} km',
+      ),
+      _MetricChip(
+        'Custo Viagem',
+        'R\$ ${(latest['trip_cost_brl'] ?? 0.0).toStringAsFixed(2)}',
+      ),
+      _MetricChip(
+        'Média',
+        (latest['trip_avg_kml'] ?? 0.0) > 0
+            ? '${latest['trip_avg_kml']!.toStringAsFixed(1)} km/l'
+            : '-- km/l',
+      ),
+      _MetricChip(
+        'Potência / Torque',
+        '${(latest['power_hp'] ?? 0.0).toStringAsFixed(1)} cv · ${(latest['torque_kgfm'] ?? 0.0).toStringAsFixed(1)} kgfm',
+      ),
+    ];
+
+    return UniformSectionCard(
       title: 'Cronômetro de Arrancada (Dragy) & Viagem',
       icon: Icons.timer_outlined,
       accent: MotorsportColors.ok,
@@ -496,8 +650,9 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
             children: [
               Expanded(
                 child: Text(
-                  c.lastPerfEvent ?? 'Estado: ${c.perfTimer.state} — Aguardando largada',
-                  maxLines: 1,
+                  c.lastPerfEvent ??
+                      'Estado: ${c.perfTimer.state} — Aguardando largada',
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: MotorsportColors.ok,
@@ -506,61 +661,59 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                   ),
                 ),
               ),
-              OutlinedButton.icon(
-                onPressed: () {
-                  c.perfTimer.reset();
-                  c.mathEngine.resetTrip();
-                  c.emitInfo('Cronômetro e integradores da viagem zerados.');
-                },
-                icon: const Icon(Icons.refresh, size: 15),
-                label: const Text('Zerar'),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 96,
+                child: UniformActionButton(
+                  label: 'Zerar',
+                  icon: Icons.refresh,
+                  height: 36,
+                  variant: UniformActionVariant.neutral,
+                  onTap: () {
+                    c.perfTimer.reset();
+                    c.mathEngine.resetTrip();
+                    c.emitInfo('Cronômetro e integradores da viagem zerados.');
+                  },
+                ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MetricChip('0–60 km/h', fmtSec(rec.time0to60)),
-              _MetricChip('0–100 km/h', fmtSec(rec.time0to100)),
-              _MetricChip('80–120 km/h', fmtSec(rec.time80to120)),
-              _MetricChip('100–200 km/h', fmtSec(rec.time100to200)),
-              _MetricChip('201m (1/8)', fmtSec(rec.time201m)),
-              _MetricChip('402m (1/4)', fmtSec(rec.time402m)),
-              _MetricChip('100–0 Fren.', fmtSec(rec.braking100to0)),
-              _MetricChip('G Máx', '${rec.maxG.toStringAsFixed(2)} G'),
-              _MetricChip('V Máx', '${rec.maxSpeed.toStringAsFixed(1)} km/h'),
             ],
           ),
           const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _MetricChip(
-                'Combustível',
-                '${(latest['trip_liters'] ?? c.mathEngine.tripLiters).toStringAsFixed(3)} L',
-              ),
-              _MetricChip(
-                'Distância',
-                '${(latest['trip_km'] ?? c.mathEngine.tripKm).toStringAsFixed(2)} km',
-              ),
-              _MetricChip(
-                'Custo Viagem',
-                'R\$ ${(latest['trip_cost_brl'] ?? 0.0).toStringAsFixed(2)}',
-              ),
-              _MetricChip(
-                'Média',
-                (latest['trip_avg_kml'] ?? 0.0) > 0
-                    ? '${latest['trip_avg_kml']!.toStringAsFixed(1)} km/l'
-                    : '-- km/l',
-              ),
-              _MetricChip(
-                'Potência / Torque',
-                '${(latest['power_hp'] ?? 0.0).toStringAsFixed(1)} cv · ${(latest['torque_kgfm'] ?? 0.0).toStringAsFixed(1)} kgfm',
-              ),
-            ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cols = constraints.maxWidth >= 500 ? 3 : 2;
+              const gap = 6.0;
+              final itemW = (constraints.maxWidth - gap * (cols - 1)) / cols;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  for (final chip in perfChips)
+                    SizedBox(width: itemW, child: chip),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cols = constraints.maxWidth >= 500 ? 3 : 2;
+              const gap = 6.0;
+              final itemW = (constraints.maxWidth - gap * (cols - 1)) / cols;
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  for (var i = 0; i < tripChips.length; i++)
+                    SizedBox(
+                      width: (i == tripChips.length - 1 && cols == 2)
+                          ? constraints.maxWidth
+                          : itemW,
+                      child: tripChips[i],
+                    ),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 10),
           Row(
@@ -568,12 +721,25 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
               Expanded(
                 child: TextField(
                   controller: _massCtrl,
+                  focusNode: _massFocus,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Massa (kg)'),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                    label: Text(
+                      'Massa (kg)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   onChanged: (v) {
-                    final parsed = double.tryParse(v);
+                    final parsed = double.tryParse(v.replaceAll(',', '.'));
                     if (parsed != null && parsed >= 400 && parsed <= 4000) {
                       c.mathEngine.vehicleMassKg = parsed;
+                      widget.settings?.setEngineCalibration(vehicleMassKg: parsed);
                     }
                   },
                 ),
@@ -582,12 +748,27 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
               Expanded(
                 child: TextField(
                   controller: _priceCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: r'Preço Comb. (R$/L)'),
+                  focusNode: _priceFocus,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                    label: Text(
+                      r'Preço Comb. (R$/L)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                   onChanged: (v) {
                     final parsed = double.tryParse(v.replaceAll(',', '.'));
                     if (parsed != null && parsed > 0 && parsed < 50) {
                       c.mathEngine.fuelPriceBrl = parsed;
+                      widget.settings?.setEngineCalibration(fuelPriceBrl: parsed);
                     }
                   },
                 ),
@@ -596,10 +777,10 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
           ),
           if (c.perfTimer.history.isNotEmpty) ...[
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'HISTÓRICO DE PUXADAS',
               style: TextStyle(
-                color: MotorsportColors.muted,
+                color: tokens.muted,
                 fontSize: 10.5,
                 fontWeight: FontWeight.w800,
               ),
@@ -613,7 +794,7 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                   style: MotorsportTheme.tabularStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: MotorsportColors.text,
+                    color: tokens.text,
                   ),
                 ),
               ),
@@ -623,7 +804,8 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
     );
   }
 
-  Widget _buildFordModulesCard(TelemetryController c) {
+  Widget _buildFordModulesCard(BuildContext context, TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final l = c.latest;
     final hasFord = l.keys.any(
       (k) =>
@@ -634,143 +816,259 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
           k == 'odometer_km',
     );
 
-    return _SectionCard(
-      title: 'Módulos Ford HS-CAN (BCM · ABS 4 Rodas · EPAS · IPC)',
+    final statusSummary = c.ecuMetadata.canModules.isNotEmpty
+        ? 'Módulos CAN: ${c.ecuMetadata.canModules.join(" · ")}'
+        : (hasFord
+            ? 'Telemetria multimodular ativa'
+            : 'BCM · ABS 4 Rodas · EPAS · IPC');
+
+    return UniformSectionCard(
+      title: 'Módulos Ford HS-CAN (BCM · ABS · EPAS · IPC)',
       icon: Icons.directions_car_outlined,
-      accent: MotorsportColors.info,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              ElevatedButton.icon(
-                onPressed: c.isConnected ? c.requestScanAll : null,
-                icon: const Icon(Icons.lan_outlined, size: 16),
-                label: const Text('Identificar Módulos'),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  c.ecuMetadata.canModules.isNotEmpty
-                      ? 'Módulos CAN: ${c.ecuMetadata.canModules.join(" · ")}'
-                      : (hasFord ? 'Telemetria multimodular ativa' : 'Aguardando leitura HS-CAN'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: MotorsportColors.muted, fontSize: 11.5),
-                ),
-              ),
-            ],
+      accent: tokens.accent,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: ValueKey<bool>(hasFord),
+          initiallyExpanded: hasFord,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 8),
+          iconColor: tokens.accent,
+          collapsedIconColor: tokens.muted,
+          title: Text(
+            statusSummary,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: hasFord ? tokens.text : tokens.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          const SizedBox(height: 10),
-          if (!hasFord)
-            const Text(
-              'Conecte em um Ford HS-CAN (ou Demo Ford Ka+ Sigma) para visualizar portas, faróis, velocidades das 4 rodas e EPAS.',
-              style: TextStyle(color: MotorsportColors.stale, fontSize: 12),
-            )
-          else ...[
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                _StatusBadge('DE', (l['door_fl'] ?? 0) > 0.5, activeLabel: 'ABERTA', idleLabel: 'Fechada', alarmOnActive: true),
-                _StatusBadge('DD', (l['door_fr'] ?? 0) > 0.5, activeLabel: 'ABERTA', idleLabel: 'Fechada', alarmOnActive: true),
-                _StatusBadge('TE', (l['door_rl'] ?? 0) > 0.5, activeLabel: 'ABERTA', idleLabel: 'Fechada', alarmOnActive: true),
-                _StatusBadge('TD', (l['door_rr'] ?? 0) > 0.5, activeLabel: 'ABERTA', idleLabel: 'Fechada', alarmOnActive: true),
-                _StatusBadge('Mala', (l['door_trunk'] ?? 0) > 0.5, activeLabel: 'ABERTO', idleLabel: 'Fechado', alarmOnActive: true),
-                _StatusBadge('Capô', (l['door_hood'] ?? 0) > 0.5, activeLabel: 'ABERTO', idleLabel: 'Fechado', alarmOnActive: true),
-                _StatusBadge('Farol Baixo', (l['low_beam'] ?? 0) > 0.5, activeLabel: 'ON', idleLabel: 'OFF'),
-                _StatusBadge('Farol Alto', (l['high_beam'] ?? 0) > 0.5, activeLabel: 'ON', idleLabel: 'OFF'),
-                _StatusBadge('Neblina', (l['fog_lights'] ?? 0) > 0.5, activeLabel: 'ON', idleLabel: 'OFF'),
-              ],
+          children: [
+            UniformActionButton(
+              label: 'Identificar Módulos',
+              icon: Icons.lan_outlined,
+              variant: UniformActionVariant.info,
+              onTap: c.isConnected ? c.requestScanAll : null,
             ),
             const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _MetricChip('Roda DE', '${(l['wheel_speed_fl'] ?? 0).toStringAsFixed(1)} km/h'),
-                _MetricChip('Roda DD', '${(l['wheel_speed_fr'] ?? 0).toStringAsFixed(1)} km/h'),
-                _MetricChip('Roda TE', '${(l['wheel_speed_rl'] ?? 0).toStringAsFixed(1)} km/h'),
-                _MetricChip('Roda TD', '${(l['wheel_speed_rr'] ?? 0).toStringAsFixed(1)} km/h'),
-                _MetricChip('Freio', '${(l['brake_pressure'] ?? 0).toStringAsFixed(1)} bar'),
-                _MetricChip('Volante EPAS', '${(l['steering_wheel_angle'] ?? 0).toStringAsFixed(1)}°'),
-                _MetricChip('Corrente EPAS', '${(l['steering_motor_current'] ?? 0).toStringAsFixed(1)} A'),
-                if (l.containsKey('odometer_km'))
-                  _MetricChip('Odômetro', '${l['odometer_km']!.toStringAsFixed(0)} km'),
-              ],
-            ),
+            if (!hasFord)
+              Text(
+                'Conecte em um Ford HS-CAN (ou Demo Ford Ka+ Sigma) para visualizar portas, faróis, velocidades das 4 rodas e EPAS.',
+                style: TextStyle(color: tokens.stale, fontSize: 12),
+              )
+            else ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  _StatusBadge(
+                    'DE',
+                    (l['door_fl'] ?? 0) > 0.5,
+                    activeLabel: 'ABERTA',
+                    idleLabel: 'Fechada',
+                    alarmOnActive: true,
+                  ),
+                  _StatusBadge(
+                    'DD',
+                    (l['door_fr'] ?? 0) > 0.5,
+                    activeLabel: 'ABERTA',
+                    idleLabel: 'Fechada',
+                    alarmOnActive: true,
+                  ),
+                  _StatusBadge(
+                    'TE',
+                    (l['door_rl'] ?? 0) > 0.5,
+                    activeLabel: 'ABERTA',
+                    idleLabel: 'Fechada',
+                    alarmOnActive: true,
+                  ),
+                  _StatusBadge(
+                    'TD',
+                    (l['door_rr'] ?? 0) > 0.5,
+                    activeLabel: 'ABERTA',
+                    idleLabel: 'Fechada',
+                    alarmOnActive: true,
+                  ),
+                  _StatusBadge(
+                    'Mala',
+                    (l['door_trunk'] ?? 0) > 0.5,
+                    activeLabel: 'ABERTO',
+                    idleLabel: 'Fechado',
+                    alarmOnActive: true,
+                  ),
+                  _StatusBadge(
+                    'Capô',
+                    (l['door_hood'] ?? 0) > 0.5,
+                    activeLabel: 'ABERTO',
+                    idleLabel: 'Fechado',
+                    alarmOnActive: true,
+                  ),
+                  _StatusBadge(
+                    'Farol Baixo',
+                    (l['low_beam'] ?? 0) > 0.5,
+                    activeLabel: 'ON',
+                    idleLabel: 'OFF',
+                  ),
+                  _StatusBadge(
+                    'Farol Alto',
+                    (l['high_beam'] ?? 0) > 0.5,
+                    activeLabel: 'ON',
+                    idleLabel: 'OFF',
+                  ),
+                  _StatusBadge(
+                    'Neblina',
+                    (l['fog_lights'] ?? 0) > 0.5,
+                    activeLabel: 'ON',
+                    idleLabel: 'OFF',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final cols = constraints.maxWidth >= 500 ? 3 : 2;
+                  const gap = 6.0;
+                  final itemW = (constraints.maxWidth - gap * (cols - 1)) / cols;
+                  final fordChips = [
+                    _MetricChip(
+                      'Roda DE',
+                      '${(l['wheel_speed_fl'] ?? 0).toStringAsFixed(1)} km/h',
+                    ),
+                    _MetricChip(
+                      'Roda DD',
+                      '${(l['wheel_speed_fr'] ?? 0).toStringAsFixed(1)} km/h',
+                    ),
+                    _MetricChip(
+                      'Roda TE',
+                      '${(l['wheel_speed_rl'] ?? 0).toStringAsFixed(1)} km/h',
+                    ),
+                    _MetricChip(
+                      'Roda TD',
+                      '${(l['wheel_speed_rr'] ?? 0).toStringAsFixed(1)} km/h',
+                    ),
+                    _MetricChip(
+                      'Freio',
+                      '${(l['brake_pressure'] ?? 0).toStringAsFixed(1)} bar',
+                    ),
+                    _MetricChip(
+                      'Volante EPAS',
+                      '${(l['steering_wheel_angle'] ?? 0).toStringAsFixed(1)}°',
+                    ),
+                    _MetricChip(
+                      'Corrente EPAS',
+                      '${(l['steering_motor_current'] ?? 0).toStringAsFixed(1)} A',
+                    ),
+                    if (l.containsKey('odometer_km'))
+                      _MetricChip(
+                        'Odômetro',
+                        '${l['odometer_km']!.toStringAsFixed(0)} km',
+                      ),
+                  ];
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final chip in fordChips)
+                        SizedBox(width: itemW, child: chip),
+                    ],
+                  );
+                },
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildEventsConsoleCard(TelemetryController c) {
-    return _SectionCard(
-      title: 'Eventos (${c.events.length}) · Ajustes ELM327 · Console (${c.consoleLogs.length})',
+  Widget _buildEventsConsoleCard(BuildContext context, TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
+    return UniformSectionCard(
+      title:
+          'Eventos (${c.events.length}) · Ajustes ELM327 · Console (${c.consoleLogs.length})',
       icon: Icons.terminal,
-      accent: MotorsportColors.muted,
+      accent: tokens.muted,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          SwitchListTile.adaptive(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            title: Text(
+              'Resposta rápida',
+              style: TextStyle(
+                color: tokens.text,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            value: c.fastReply,
+            onChanged: (v) {
+              c.fastReply = v;
+              c.saveSettings();
+              setState(() {});
+            },
+          ),
+          SwitchListTile.adaptive(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            title: Text(
+              'Console bruto',
+              style: TextStyle(
+                color: tokens.text,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            value: c.rawLog,
+            onChanged: (v) {
+              c.rawLog = v;
+              setState(() {});
+            },
+          ),
+          SwitchListTile.adaptive(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            visualDensity: VisualDensity.compact,
+            title: Text(
+              'Auto-Log ao conectar',
+              style: TextStyle(
+                color: tokens.text,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            value: c.autoRecord,
+            onChanged: (v) {
+              c.autoRecord = v;
+              c.saveSettings();
+              setState(() {});
+            },
+          ),
+          const SizedBox(height: 8),
+          UniformButtonGrid(
+            columns: 2,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Switch(
-                    value: c.fastReply,
-                    onChanged: (v) {
-                      c.fastReply = v;
-                      c.saveSettings();
-                      setState(() {});
-                    },
-                  ),
-                  const Text('Resposta rápida', style: TextStyle(fontSize: 12)),
-                ],
+              UniformActionButton(
+                label: 'Limpar Eventos',
+                icon: Icons.notifications_off_outlined,
+                variant: UniformActionVariant.neutral,
+                onTap: c.clearEvents,
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Switch(
-                    value: c.rawLog,
-                    onChanged: (v) {
-                      c.rawLog = v;
-                      setState(() {});
-                    },
-                  ),
-                  const Text('Console bruto', style: TextStyle(fontSize: 12)),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Switch(
-                    value: c.autoRecord,
-                    onChanged: (v) {
-                      c.autoRecord = v;
-                      c.saveSettings();
-                      setState(() {});
-                    },
-                  ),
-                  const Text('Auto-Log ao conectar', style: TextStyle(fontSize: 12)),
-                ],
-              ),
-              OutlinedButton(
-                onPressed: c.clearEvents,
-                child: const Text('Limpar Eventos'),
-              ),
-              OutlinedButton(
-                onPressed: c.clearConsoleLogs,
-                child: const Text('Limpar Console'),
+              UniformActionButton(
+                label: 'Limpar Console',
+                icon: Icons.clear_all,
+                variant: UniformActionVariant.neutral,
+                onTap: c.clearConsoleLogs,
               ),
             ],
           ),
           if (c.events.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             InkWell(
               borderRadius: BorderRadius.circular(6),
               onTap: () => _showExpandedLogSheet(
@@ -785,7 +1083,7 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                           ? MotorsportColors.alarm
                           : (ev.level == 'warn'
                               ? MotorsportColors.warning
-                              : MotorsportColors.info),
+                              : tokens.accent),
                     ),
                 ],
                 onClear: c.clearEvents,
@@ -794,8 +1092,11 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                 constraints: const BoxConstraints(maxHeight: 150),
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: MotorsportColors.plot,
-                  border: Border.all(color: MotorsportColors.border),
+                  color: tokens.plot,
+                  border: Border.all(
+                    color: tokens.border,
+                    width: tokens.cardBorderWidth,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Column(
@@ -806,19 +1107,19 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                       children: [
                         Text(
                           'EVENTOS (${c.events.length})',
-                          style: const TextStyle(
-                            color: MotorsportColors.muted,
+                          style: TextStyle(
+                            color: tokens.muted,
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                         const Spacer(),
-                        const Icon(Icons.open_in_full, size: 13, color: MotorsportColors.info),
+                        Icon(Icons.open_in_full, size: 13, color: tokens.accent),
                         const SizedBox(width: 4),
-                        const Text(
+                        Text(
                           'Toque para expandir',
                           style: TextStyle(
-                            color: MotorsportColors.info,
+                            color: tokens.accent,
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                           ),
@@ -845,7 +1146,7 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                                       ? MotorsportColors.alarm
                                       : (ev.level == 'warn'
                                           ? MotorsportColors.warning
-                                          : MotorsportColors.info),
+                                          : tokens.accent),
                                 ),
                               ),
                             ),
@@ -873,7 +1174,7 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                           ? MotorsportColors.warning
                           : (line.contains('ACEITO') || line.contains('✓')
                               ? MotorsportColors.ok
-                              : MotorsportColors.text),
+                              : tokens.text),
                     ),
                 ],
                 onClear: c.clearConsoleLogs,
@@ -882,8 +1183,11 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                 constraints: const BoxConstraints(maxHeight: 150),
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: MotorsportColors.plot,
-                  border: Border.all(color: MotorsportColors.border),
+                  color: tokens.plot,
+                  border: Border.all(
+                    color: tokens.border,
+                    width: tokens.cardBorderWidth,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Column(
@@ -894,19 +1198,19 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                       children: [
                         Text(
                           'CONSOLE (${c.consoleLogs.length})',
-                          style: const TextStyle(
-                            color: MotorsportColors.muted,
+                          style: TextStyle(
+                            color: tokens.muted,
                             fontSize: 10,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                         const Spacer(),
-                        const Icon(Icons.open_in_full, size: 13, color: MotorsportColors.info),
+                        Icon(Icons.open_in_full, size: 13, color: tokens.accent),
                         const SizedBox(width: 4),
-                        const Text(
+                        Text(
                           'Toque para expandir',
                           style: TextStyle(
-                            color: MotorsportColors.info,
+                            color: tokens.accent,
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                           ),
@@ -924,10 +1228,10 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                               line,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: 'monospace',
                                 fontSize: 10.5,
-                                color: MotorsportColors.muted,
+                                color: tokens.muted,
                               ),
                             ),
                         ],
@@ -950,15 +1254,16 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
     required List<(String text, Color color)> lines,
     required VoidCallback onClear,
   }) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final fullText = lines.map((e) => e.$1).join('\n');
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      backgroundColor: MotorsportColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        side: BorderSide(color: MotorsportColors.border),
+      backgroundColor: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        side: BorderSide(color: tokens.border),
       ),
       builder: (ctx) {
         final maxH = MediaQuery.sizeOf(ctx).height * 0.85;
@@ -973,15 +1278,15 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                   padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
                   child: Row(
                     children: [
-                      Icon(icon, size: 18, color: MotorsportColors.info),
+                      Icon(icon, size: 18, color: tokens.accent),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: MotorsportColors.text,
+                          style: TextStyle(
+                            color: tokens.text,
                             fontSize: 14.5,
                             fontWeight: FontWeight.w800,
                           ),
@@ -989,12 +1294,16 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                       ),
                       IconButton(
                         tooltip: 'Copiar tudo',
-                        icon: const Icon(Icons.copy, size: 18, color: MotorsportColors.info),
+                        icon: Icon(Icons.copy, size: 18, color: tokens.accent),
                         onPressed: () async {
                           await Clipboard.setData(ClipboardData(text: fullText));
                           if (!ctx.mounted) return;
                           ScaffoldMessenger.of(ctx).showSnackBar(
-                            const SnackBar(content: Text('Conteúdo copiado para a área de transferência.')),
+                            const SnackBar(
+                              content: Text(
+                                'Conteúdo copiado para a área de transferência.',
+                              ),
+                            ),
                           );
                         },
                       ),
@@ -1007,22 +1316,22 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
                       ),
                       IconButton(
                         tooltip: 'Fechar',
-                        icon: const Icon(Icons.close, size: 20, color: MotorsportColors.muted),
+                        icon: Icon(Icons.close, size: 20, color: tokens.muted),
                         onPressed: () => Navigator.of(ctx).pop(),
                       ),
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: MotorsportColors.borderSubtle),
+                Divider(height: 1, color: tokens.borderSubtle),
                 Expanded(
                   child: Container(
-                    color: MotorsportColors.plot,
+                    color: tokens.plot,
                     padding: const EdgeInsets.all(12),
                     child: ListView.separated(
                       itemCount: lines.length,
-                      separatorBuilder: (_, _) => const Divider(
+                      separatorBuilder: (_, _) => Divider(
                         height: 8,
-                        color: MotorsportColors.borderSubtle,
+                        color: tokens.borderSubtle,
                       ),
                       itemBuilder: (_, idx) {
                         final item = lines[idx];
@@ -1048,57 +1357,6 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
   }
 }
 
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({
-    required this.title,
-    required this.icon,
-    required this.accent,
-    required this.child,
-  });
-
-  final String title;
-  final IconData icon;
-  final Color accent;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(icon, color: accent, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: MotorsportColors.text,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          child,
-        ],
-      ),
-    );
-  }
-}
-
 class _MetricChip extends StatelessWidget {
   const _MetricChip(this.label, this.value);
 
@@ -1107,12 +1365,16 @@ class _MetricChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: MotorsportColors.plot,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(4),
+        color: tokens.plot,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1120,19 +1382,27 @@ class _MetricChip extends StatelessWidget {
         children: [
           Text(
             label,
-            style: const TextStyle(
-              color: MotorsportColors.muted,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: tokens.muted,
               fontSize: 10,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 2),
-          Text(
-            value,
-            style: MotorsportTheme.tabularStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: MotorsportColors.text,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              softWrap: false,
+              style: MotorsportTheme.tabularStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: tokens.text,
+              ),
             ),
           ),
         ],
@@ -1158,19 +1428,23 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final color = active
         ? (alarmOnActive ? MotorsportColors.alarm : MotorsportColors.ok)
-        : MotorsportColors.muted;
+        : tokens.muted;
     final bg = active
         ? (alarmOnActive ? MotorsportColors.alarmBg : const Color(0xFF173E28))
-        : MotorsportColors.plot;
+        : tokens.plot;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        border: Border.all(color: active ? color : MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(3),
+        border: Border.all(
+          color: active ? color : tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
         '$name: ${active ? activeLabel : idleLabel}',

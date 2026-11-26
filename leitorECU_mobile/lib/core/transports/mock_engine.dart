@@ -30,6 +30,7 @@ class MockEngine {
   String header = '7E0';
   String protocol = '6';
   bool vagMode = false;
+  String _targetAddr = '01';
   bool enableRandomDrops = false;
 
   final DateTime _t0;
@@ -304,6 +305,7 @@ class MockEngine {
   ({String response, double latencySec}) _at(String cmd) {
     if (cmd == 'ATZ') {
       protocolReady = false;
+      _targetAddr = '01';
       return (response: '\r\rELM327 v1.5', latencySec: 0.01);
     }
     if (cmd == 'ATI') {
@@ -321,13 +323,23 @@ class MockEngine {
     }
     if (cmd.startsWith('ATSH')) {
       header = cmd.substring(4).trim().replaceAll(' ', '');
+      if (header == '8117F1') {
+        _targetAddr = '17';
+      } else if (header == '8110F1') {
+        _targetAddr = '01';
+      }
       return (response: 'OK', latencySec: 0.002);
     }
     if (cmd.startsWith('ATSP')) {
       protocol = cmd.substring(4).trim();
       return (response: 'OK', latencySec: 0.002);
     }
+    if (cmd == 'ATIIA17') {
+      _targetAddr = '17';
+      return (response: 'OK', latencySec: 0.002);
+    }
     if (cmd == 'ATIIA01') {
+      _targetAddr = '01';
       if (profile == DemoProfile.kaSigma) {
         return (response: 'OK', latencySec: 0.002);
       }
@@ -345,6 +357,20 @@ class MockEngine {
 
     // VAG KWP2000 (desativado no perfil Ford Ka Sigma HS-CAN)
     if (profile != DemoProfile.kaSigma) {
+      if (_targetAddr == '17') {
+        if (cmdNorm == '1089') return '5089';
+        if (cmdNorm.startsWith('21') && (cmdNorm.length == 4 || cmdNorm.length == 5)) {
+          final g = int.tryParse(cmdNorm.substring(2, 4), radix: 16) ?? 0;
+          if (g == 0x02) {
+            // Bloco 002 do Painel (0x17):
+            // C1 (0x24: 2E 45) -> 118450 km
+            // C2 (0x13: 64 22) -> 34.0 l
+            // C3 (0x40: 00 8E) -> 142 Ω
+            return '6102242E4513642240008E';
+          }
+          return 'NO DATA';
+        }
+      }
       if (cmdNorm == '1089') return '5089';
       if (cmdNorm == '1A9B') {
         final txt = isTurbo

@@ -205,6 +205,7 @@ class ValueCard extends StatelessWidget {
                         ),
                       ),
                       Expanded(
+                        flex: 3,
                         child: Text(
                           title,
                           maxLines: 1,
@@ -229,7 +230,7 @@ class ValueCard extends StatelessWidget {
                       if (note.isNotEmpty) ...[
                         const SizedBox(width: 4),
                         Flexible(
-                          flex: 0,
+                          flex: 2,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                             decoration: BoxDecoration(

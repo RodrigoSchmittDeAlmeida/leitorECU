@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../state/telemetry_controller.dart';
 import '../theme/motorsport_theme.dart';
+import '../widgets/uniform_action_button.dart';
 
 class _MapMetricSpec {
   const _MapMetricSpec({
@@ -63,6 +64,7 @@ class _Map2DScreenState extends State<Map2DScreen> {
     return ListenableBuilder(
       listenable: widget.controller,
       builder: (context, _) {
+        final tokens = MotorsportTheme.tokensOf(context);
         final map2d = widget.controller.map2d;
         final metric = _metrics[_metricIdx];
         final rpmBins = map2d.rpmBins;
@@ -91,9 +93,12 @@ class _Map2DScreenState extends State<Map2DScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: MotorsportColors.surfaceAlt,
-                  border: Border.all(color: MotorsportColors.borderSubtle),
-                  borderRadius: BorderRadius.circular(4),
+                  color: tokens.surfaceAlt,
+                  border: Border.all(
+                    color: tokens.borderSubtle,
+                    width: tokens.cardBorderWidth,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   activeText,
@@ -107,12 +112,12 @@ class _Map2DScreenState extends State<Map2DScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
-                '▲ EIXO VERTICAL: CARGA / MAP (kPa)   │   ► EIXO HORIZONTAL: ROTAÇÃO (RPM)',
-                maxLines: 1,
+              Text(
+                '▲ EIXO VERTICAL: CARGA / MAP (kPa)  │  ► EIXO HORIZONTAL: ROTAÇÃO (RPM)',
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: MotorsportColors.muted,
+                  color: tokens.muted,
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
                 ),
@@ -132,9 +137,12 @@ class _Map2DScreenState extends State<Map2DScreen> {
 
                     return Container(
                       decoration: BoxDecoration(
-                        color: MotorsportColors.plot,
-                        border: Border.all(color: MotorsportColors.borderSubtle),
-                        borderRadius: BorderRadius.circular(4),
+                        color: tokens.plot,
+                        border: Border.all(
+                          color: tokens.borderSubtle,
+                          width: tokens.cardBorderWidth,
+                        ),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
@@ -142,13 +150,14 @@ class _Map2DScreenState extends State<Map2DScreen> {
                           width: totalTableW,
                           child: Column(
                             children: [
-                              _buildHeaderRow(rpmBins, rowHeaderW, colW),
+                              _buildHeaderRow(tokens, rpmBins, rowHeaderW, colW),
                               Expanded(
                                 child: SingleChildScrollView(
                                   child: Column(
                                     children: [
                                       for (var r = 0; r < mapBins.length; r++)
                                         _buildDataRow(
+                                          tokens,
                                           map2d,
                                           r,
                                           mapBins[r],
@@ -184,108 +193,192 @@ class _Map2DScreenState extends State<Map2DScreen> {
     Map2dAggregator map2d,
     _MapMetricSpec metric,
   ) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _LabeledDropdown<int>(
-          label: 'MÉTRICA',
-          value: _metricIdx,
-          items: [
-            for (var i = 0; i < _metrics.length; i++)
-              DropdownMenuItem(
-                value: i,
-                child: Text(_metrics[i].label, style: const TextStyle(fontSize: 12)),
+        Row(
+          children: [
+            Expanded(
+              child: _LabeledDropdown<int>(
+                label: 'MÉTRICA',
+                value: _metricIdx,
+                items: [
+                  for (var i = 0; i < _metrics.length; i++)
+                    DropdownMenuItem(
+                      value: i,
+                      child: Text(
+                        _metrics[i].label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                ],
+                onChanged: (v) {
+                  if (v != null) setState(() => _metricIdx = v);
+                },
               ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _LabeledDropdown<Map2dStat>(
+                label: 'MODO',
+                value: _stat,
+                items: const [
+                  DropdownMenuItem(
+                    value: Map2dStat.mean,
+                    child: Text(
+                      'Média',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: Map2dStat.max,
+                    child: Text(
+                      'Máximo',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: Map2dStat.min,
+                    child: Text(
+                      'Mínimo',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: Map2dStat.count,
+                    child: Text(
+                      'Amostras',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v != null) setState(() => _stat = v);
+                },
+              ),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: _LabeledDropdown<bool>(
+                label: 'ESCALA',
+                value: map2d.isTurboScale,
+                items: const [
+                  DropdownMenuItem(
+                    value: false,
+                    child: Text(
+                      'Aspirado (100 kPa)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: true,
+                    child: Text(
+                      'Turbo (250 kPa)',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+                onChanged: (v) {
+                  if (v != null) {
+                    setState(() => map2d.setScale(v));
+                  }
+                },
+              ),
+            ),
           ],
-          onChanged: (v) {
-            if (v != null) setState(() => _metricIdx = v);
-          },
         ),
-        _LabeledDropdown<Map2dStat>(
-          label: 'MODO',
-          value: _stat,
-          items: const [
-            DropdownMenuItem(value: Map2dStat.mean, child: Text('Média', style: TextStyle(fontSize: 12))),
-            DropdownMenuItem(value: Map2dStat.max, child: Text('Máximo', style: TextStyle(fontSize: 12))),
-            DropdownMenuItem(value: Map2dStat.min, child: Text('Mínimo', style: TextStyle(fontSize: 12))),
-            DropdownMenuItem(value: Map2dStat.count, child: Text('Amostras', style: TextStyle(fontSize: 12))),
+        const SizedBox(height: 8),
+        UniformButtonGrid(
+          columns: 3,
+          spacing: 6,
+          children: [
+            UniformActionButton(
+              label: 'Copiar CSV',
+              icon: Icons.copy,
+              variant: UniformActionVariant.neutral,
+              height: 38,
+              onTap: () async {
+                final csv = map2d.toCsv(metric: metric.key, stat: _stat);
+                await Clipboard.setData(ClipboardData(text: csv));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Matriz 2D copiada em CSV.')),
+                  );
+                }
+              },
+            ),
+            UniformActionButton(
+              label: 'Compartilhar',
+              icon: Icons.share,
+              variant: UniformActionVariant.info,
+              height: 38,
+              onTap: () async {
+                final csv = map2d.toCsv(metric: metric.key, stat: _stat);
+                try {
+                  await SharePlus.instance.share(
+                    ShareParams(
+                      text: csv,
+                      subject: 'Mapa 2D leitorECU (${metric.label})',
+                    ),
+                  );
+                } catch (_) {
+                  await Clipboard.setData(ClipboardData(text: csv));
+                }
+              },
+            ),
+            UniformActionButton(
+              label: 'Limpar',
+              icon: Icons.delete_outline,
+              variant: UniformActionVariant.danger,
+              height: 38,
+              onTap: () {
+                setState(() => map2d.clear());
+              },
+            ),
           ],
-          onChanged: (v) {
-            if (v != null) setState(() => _stat = v);
-          },
-        ),
-        _LabeledDropdown<bool>(
-          label: 'ESCALA',
-          value: map2d.isTurboScale,
-          items: const [
-            DropdownMenuItem(value: false, child: Text('Aspirado (100 kPa)', style: TextStyle(fontSize: 12))),
-            DropdownMenuItem(value: true, child: Text('Turbo (250 kPa)', style: TextStyle(fontSize: 12))),
-          ],
-          onChanged: (v) {
-            if (v != null) {
-              setState(() => map2d.setScale(v));
-            }
-          },
-        ),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final csv = map2d.toCsv(metric: metric.key, stat: _stat);
-            await Clipboard.setData(ClipboardData(text: csv));
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Matriz 2D copiada em CSV.')),
-              );
-            }
-          },
-          icon: const Icon(Icons.copy, size: 16),
-          label: const Text('Copiar CSV'),
-        ),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final csv = map2d.toCsv(metric: metric.key, stat: _stat);
-            try {
-              await SharePlus.instance.share(
-                ShareParams(text: csv, subject: 'Mapa 2D leitorECU (${metric.label})'),
-              );
-            } catch (_) {
-              await Clipboard.setData(ClipboardData(text: csv));
-            }
-          },
-          icon: const Icon(Icons.share, size: 16),
-          label: const Text('Compartilhar'),
-        ),
-        OutlinedButton.icon(
-          onPressed: () {
-            setState(() => map2d.clear());
-          },
-          icon: const Icon(Icons.delete_outline, size: 16),
-          label: const Text('Limpar'),
         ),
       ],
     );
   }
 
-  Widget _buildHeaderRow(List<int> rpmBins, double rowHeaderW, double colW) {
+  Widget _buildHeaderRow(
+    MotorsportVisualTokens tokens,
+    List<int> rpmBins,
+    double rowHeaderW,
+    double colW,
+  ) {
     return Container(
       height: 30,
-      color: MotorsportColors.elevated,
+      color: tokens.elevated,
       child: Row(
         children: [
           Container(
             width: rowHeaderW,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
-                right: BorderSide(color: MotorsportColors.borderSubtle),
-                bottom: BorderSide(color: MotorsportColors.borderSubtle),
+                right: BorderSide(color: tokens.borderSubtle),
+                bottom: BorderSide(color: tokens.borderSubtle),
               ),
             ),
-            child: const Text(
+            child: Text(
               'MAP\\RPM',
               style: TextStyle(
-                color: MotorsportColors.muted,
+                color: tokens.muted,
                 fontSize: 10,
                 fontWeight: FontWeight.w800,
               ),
@@ -295,10 +388,10 @@ class _Map2DScreenState extends State<Map2DScreen> {
             Container(
               width: colW,
               alignment: Alignment.center,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 border: Border(
-                  right: BorderSide(color: MotorsportColors.borderSubtle),
-                  bottom: BorderSide(color: MotorsportColors.borderSubtle),
+                  right: BorderSide(color: tokens.borderSubtle),
+                  bottom: BorderSide(color: tokens.borderSubtle),
                 ),
               ),
               child: Text(
@@ -306,7 +399,7 @@ class _Map2DScreenState extends State<Map2DScreen> {
                 style: MotorsportTheme.tabularStyle(
                   fontSize: 10.5,
                   fontWeight: FontWeight.w700,
-                  color: MotorsportColors.text,
+                  color: tokens.text,
                 ),
               ),
             ),
@@ -316,6 +409,7 @@ class _Map2DScreenState extends State<Map2DScreen> {
   }
 
   Widget _buildDataRow(
+    MotorsportVisualTokens tokens,
     Map2dAggregator map2d,
     int r,
     int mapKpa,
@@ -332,11 +426,11 @@ class _Map2DScreenState extends State<Map2DScreen> {
           Container(
             width: rowHeaderW,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: MotorsportColors.elevated,
+            decoration: BoxDecoration(
+              color: tokens.elevated,
               border: Border(
-                right: BorderSide(color: MotorsportColors.borderSubtle),
-                bottom: BorderSide(color: MotorsportColors.borderSubtle),
+                right: BorderSide(color: tokens.borderSubtle),
+                bottom: BorderSide(color: tokens.borderSubtle),
               ),
             ),
             child: Text(
@@ -344,18 +438,19 @@ class _Map2DScreenState extends State<Map2DScreen> {
               style: MotorsportTheme.tabularStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: MotorsportColors.muted,
+                color: tokens.muted,
               ),
             ),
           ),
           for (var c = 0; c < numCols; c++)
-            _buildCell(map2d, r, c, colW, rowH, metric),
+            _buildCell(tokens, map2d, r, c, colW, rowH, metric),
         ],
       ),
     );
   }
 
   Widget _buildCell(
+    MotorsportVisualTokens tokens,
     Map2dAggregator map2d,
     int r,
     int c,
@@ -366,8 +461,8 @@ class _Map2DScreenState extends State<Map2DScreen> {
     final val = map2d.cellValue(r, c, metric.key, _stat);
     final isActive = map2d.lastActiveCell == (r, c);
 
-    Color bg = const Color(0xFF11151C);
-    Color fg = const Color(0xFF546E7A);
+    Color bg = tokens.plot;
+    Color fg = tokens.stale;
     String txt = '--';
 
     if (val != null) {
@@ -391,10 +486,10 @@ class _Map2DScreenState extends State<Map2DScreen> {
       decoration: BoxDecoration(
         color: isActive && val == null ? const Color(0xFF162638) : bg,
         border: isActive
-            ? Border.all(color: MotorsportColors.info, width: 2)
-            : const Border(
-                right: BorderSide(color: MotorsportColors.borderSubtle),
-                bottom: BorderSide(color: MotorsportColors.borderSubtle),
+            ? Border.all(color: tokens.accent, width: 2)
+            : Border(
+                right: BorderSide(color: tokens.borderSubtle),
+                bottom: BorderSide(color: tokens.borderSubtle),
               ),
       ),
       child: Text(
@@ -526,29 +621,38 @@ class _LabeledDropdown<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.border),
-        borderRadius: BorderRadius.circular(4),
+        color: tokens.surface,
+        border: Border.all(
+          color: tokens.border,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(6),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '$label: ',
-            style: const TextStyle(
-              color: MotorsportColors.muted,
-              fontSize: 10.5,
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: tokens.muted,
+              fontSize: 9.5,
               fontWeight: FontWeight.w800,
+              letterSpacing: 0.4,
             ),
           ),
           DropdownButtonHideUnderline(
             child: DropdownButton<T>(
               value: value,
               isDense: true,
-              dropdownColor: MotorsportColors.elevated,
+              isExpanded: true,
+              dropdownColor: tokens.elevated,
               items: items,
               onChanged: onChanged,
             ),

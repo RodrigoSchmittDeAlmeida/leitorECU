@@ -294,6 +294,89 @@ class VagKwpStrategy(BaseVehicleStrategy):
         self.read_dtcs(elm, worker)
 
     @staticmethod
+    def _parse_cluster_block(resp: Any, group: int, out: Dict[str, float]) -> None:
+        block = vag.extract_block(resp, group)
+        if block is None:
+            return
+        for i in range(0, len(block) - 2, 3):
+            cell_idx = i // 3
+            decoded = vag.decode_cell(block[i], block[i + 1], block[i + 2])
+            if decoded is None:
+                continue
+            val, raw_unit = decoded
+            u = raw_unit.lower().strip()
+            if ("l" in u and "km" not in u and "/" not in u) or (cell_idx == 1 and raw_unit in ("l", "L")):
+                out.setdefault("cluster_fuel_liters", val)
+            elif "ohm" in u or "ω" in u:
+                out.setdefault("cluster_fuel_ohms", val)
+            elif u in ("km", "10*km"):
+                out.setdefault("odometer_km", val)
+            elif u in ("°c", "c") and group == 2 and cell_idx == 3:
+                out.setdefault("ambient_temp", val)
+
+    def read_instrument_cluster(self, elm: Any, worker: Any) -> Dict[str, float]:
+        """Consulta Painel de Instrumentos VAG (0x17) via KWP2000 e restaura 0x01 em finally."""
+        worker.log.emit("Consultando Painel de Instrumentos (0x17) via KWP2000...")
+        worker.status.emit("connecting", "Consultando Painel de Instrumentos (0x17)...")
+        out: Dict[str, float] = {}
+        err_detail: Optional[str] = None
+
+        try:
+            for cmd in ("ATIIA17", "ATSH 81 17 F1", "ATWM 81 17 F1 3E"):
+                elm.command(cmd, 2.0)
+
+            r_sess = elm.command("1089", 6.0)
+            if r_sess.error in ("UNABLE TO CONNECT", "BUS INIT: ERROR"):
+                err_detail = r_sess.error
+            else:
+                r_2102 = elm.command("2102", 2.5)
+                if r_2102.ok and not vag.is_negative(r_2102):
+                    self._parse_cluster_block(r_2102, 2, out)
+                else:
+                    err_detail = r_2102.error or "Resposta negativa em 2102"
+
+                if getattr(worker, "_running", True):
+                    r_2101 = elm.command("2101", 2.5)
+                    if r_2101.ok and not vag.is_negative(r_2101):
+                        self._parse_cluster_block(r_2101, 1, out)
+
+            if out:
+                if "ambient_temp" in out:
+                    worker.channels.emit({"ambient_temp": ("Temp. Externa (Painel)", "°C")})
+                worker._emit(out)
+                parts = []
+                if "cluster_fuel_liters" in out:
+                    parts.append(f"Tanque {out['cluster_fuel_liters']:.1f} L")
+                if "cluster_fuel_ohms" in out:
+                    parts.append(f"Boia {out['cluster_fuel_ohms']:.0f} Ω")
+                if "odometer_km" in out:
+                    parts.append(f"Odômetro {out['odometer_km']:.0f} km")
+                if "ambient_temp" in out:
+                    parts.append(f"Temp. Ext {out['ambient_temp']:.1f} °C")
+                msg = f"Painel (0x17) lido: {' · '.join(parts)}"
+                worker.log.emit(f"✔ {msg}")
+                worker.info.emit(msg)
+            else:
+                reason = err_detail or "NO DATA"
+                msg = (
+                    f"Painel de Instrumentos (0x17) sem resposta ({reason}). "
+                    "O painel pode operar em protocolo KW1281 ou estar inacessível na Linha K."
+                )
+                worker.log.emit(f"⚠️ {msg}")
+                worker.info.emit(msg)
+        finally:
+            for cmd in ("ATIIA01", "ATSH 81 10 F1", "ATWM 81 10 F1 3E"):
+                elm.command(cmd, 2.0)
+            elm.command("1089", 4.0)
+            r_restore = elm.query_pid("2103")
+            if not r_restore.ok or vag.is_negative(r_restore):
+                worker._reinit_bus()
+            else:
+                worker.status.emit("connected", "Conectado — VAG KWP2000 Nativo (Blocos 001..033 Sonda Ativa)")
+
+        return out
+
+    @staticmethod
     def _decode_kwp_nrc(nrc: int) -> str:
         return {
             0x10: "Rejeição geral (0x10)",

@@ -518,3 +518,32 @@ def test_mock_engine_aspirated_mode_rejects_turbo_pids_and_blocks():
     r_t_vin = turbo.respond("0902", kline=0.0)[0]
     assert "WVWZZZAUZHP123456" in bytes.fromhex(r_t_vin[6:]).decode("ascii")
 
+
+def test_configurable_injector_and_thermostat_fan_monitor():
+    """Garante vazão de bico/dead-time configuráveis e monitor de termostática/eletroventilador no PC."""
+    f_std = estimate_fuel_metrics({"rpm": 3000.0, "inj_ms": 4.0, "map": 65.0}, injector_cc_min=275.0, dead_time_ms=0.85)
+    f_big = estimate_fuel_metrics({"rpm": 3000.0, "inj_ms": 4.0, "map": 65.0}, injector_cc_min=440.0, dead_time_ms=0.75)
+    assert f_big["fuel_rate_lph"] > f_std["fuel_rate_lph"]
+
+    eng = MathChannelsEngine(displacement_l=2.0, injector_cc_min=440.0, dead_time_ms=0.75)
+    m = eng.compute(1.0, {"rpm": 3000.0, "inj_ms": 4.0, "map": 65.0, "speed": 80.0})
+    assert "power_hp" in m and "torque_kgfm" in m
+
+    det = DecelDetector()
+    for s in range(0, 372, 4):
+        t = float(s)
+        det.update(t, {"rpm": 2200.0, "speed": 70.0, "ect": 86.0}, {"rpm": t, "speed": t, "ect": t})
+
+    thermo_evs = []
+    for s in range(376, 408, 4):
+        t = float(s)
+        thermo_evs.extend(det.update(t, {"rpm": 2200.0, "speed": 75.0, "ect": 69.0}, {"rpm": t, "speed": t, "ect": t}))
+    assert any("TERMOSTÁTICA POSSIVELMENTE ABERTA" in e.message for e in thermo_evs)
+
+    det.reset()
+    det.update(10.0, {"rpm": 900.0, "ect": 98.0}, {"rpm": 10.0, "ect": 10.0})
+    fan_evs = det.update(45.0, {"rpm": 900.0, "ect": 91.0}, {"rpm": 45.0, "ect": 45.0})
+    assert any("Ciclo do eletroventilador OK" in e.message for e in fan_evs)
+    hot_evs = det.update(60.0, {"rpm": 900.0, "ect": 109.0}, {"rpm": 60.0, "ect": 60.0})
+    assert any("SUPERAQUECIMENTO CRÍTICO" in e.message for e in hot_evs)
+

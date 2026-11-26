@@ -1003,5 +1003,87 @@ void main() {
         await tmpDir.delete(recursive: true);
       }
     });
+
+    test('EnginePreset calibration, Thermostat/Fan detector, LogAnalyzer recalculateDerived & DynoCurve', () async {
+      // 1. EnginePreset persistence & custom fallback
+      final settings = AppSettingsController(secureStorage: SecureKeyStorage());
+      await settings.load();
+      await settings.selectEnginePreset(EnginePreset.fordKa15Sigma);
+      expect(settings.engineDisplacementL, equals(1.5));
+      expect(settings.injectorCcMin, equals(240.0));
+      await settings.setEngineCalibration(injectorCcMin: 310.0);
+      expect(settings.enginePreset, equals(EnginePreset.custom));
+      expect(settings.injectorCcMin, equals(310.0));
+
+      // Configurable injector flow changes fuel_rate_lph proportionally
+      final mDefault = FuelEstimator.estimateFuelMetrics(
+        {'rpm': 3000.0, 'inj_ms': 4.0, 'map': 65.0, 'tps': 30.0},
+        injectorCcMin: 275.0,
+        deadTimeMs: 0.85,
+      );
+      final mBig = FuelEstimator.estimateFuelMetrics(
+        {'rpm': 3000.0, 'inj_ms': 4.0, 'map': 65.0, 'tps': 30.0},
+        injectorCcMin: 440.0,
+        deadTimeMs: 0.75,
+      );
+      expect(mBig['fuel_rate_lph']!, greaterThan(mDefault['fuel_rate_lph']!));
+
+      // 2. DecelDetector Thermostat stuck-open, Fan cycle OK & Overheat
+      final det = DecelDetector();
+      // Accumulate >= 360s running at >= 650 rpm (using <=5s steps so _warmupRunSec advances)
+      for (var s = 0.0; s <= 370.0; s += 4.0) {
+        det.update(
+          s,
+          {'rpm': 2200.0, 'speed': 70.0, 'ect': 86.0},
+          {'rpm': s, 'speed': s, 'ect': s},
+        );
+      }
+      // Now drop ECT < 75C while cruising >= 40 km/h for >= 20s -> Thermostat warning
+      final thermoEvents = <DiagnosticEvent>[];
+      for (var s = 374.0; s <= 402.0; s += 4.0) {
+        thermoEvents.addAll(det.update(
+          s,
+          {'rpm': 2200.0, 'speed': 75.0, 'ect': 69.0},
+          {'rpm': s, 'speed': s, 'ect': s},
+        ));
+      }
+      expect(
+        thermoEvents.any((e) => e.level == 'warn' && e.message.contains('TERMOSTÁTICA POSSIVELMENTE ABERTA')),
+        isTrue,
+      );
+
+      // Fan cycle OK (98C -> 91C) and Overheat (>= 108C)
+      det.reset();
+      det.update(10.0, {'rpm': 900.0, 'ect': 98.0}, {'rpm': 10.0, 'ect': 10.0});
+      final fanEvs = det.update(45.0, {'rpm': 900.0, 'ect': 91.0}, {'rpm': 45.0, 'ect': 45.0});
+      expect(fanEvs.any((e) => e.level == 'info' && e.message.contains('Ciclo do eletroventilador OK')), isTrue);
+
+      final hotEvs = det.update(60.0, {'rpm': 900.0, 'ect': 109.0}, {'rpm': 60.0, 'ect': 60.0});
+      expect(hotEvs.any((e) => e.level == 'alarm' && e.message.contains('SUPERAQUECIMENTO CRÍTICO')), isTrue);
+
+      // 3. LogAnalyzer recalculateDerived + DynoCurve + cooling findings
+      final dsWot = ReplayDataset(
+        availableChannels: const ['rpm', 'map', 'tps', 'iat', 'ect', 'speed', 'inj_ms', 'power_hp', 'torque_kgfm', 'fuel_econ_kml'],
+        times: const [0.0, 2.0, 4.0, 6.0],
+        records: const [
+          {'rpm': 2500.0, 'map': 99.0, 'tps': 85.0, 'iat': 35.0, 'ect': 90.0, 'speed': 60.0, 'inj_ms': 8.0, 'power_hp': 20.0, 'torque_kgfm': 6.0, 'fuel_econ_kml': 99.9},
+          {'rpm': 3500.0, 'map': 99.0, 'tps': 90.0, 'iat': 35.0, 'ect': 98.0, 'speed': 85.0, 'inj_ms': 9.0, 'power_hp': 40.0, 'torque_kgfm': 8.0, 'fuel_econ_kml': 11.5},
+          {'rpm': 5250.0, 'map': 98.0, 'tps': 95.0, 'iat': 35.0, 'ect': 92.0, 'speed': 130.0, 'inj_ms': 10.5, 'power_hp': 60.0, 'torque_kgfm': 8.2, 'fuel_econ_kml': 10.5},
+          {'rpm': 2200.0, 'map': 24.0, 'tps': 0.0, 'iat': 35.0, 'ect': 91.0, 'speed': 80.0, 'inj_ms': 0.0, 'power_hp': 0.0, 'torque_kgfm': 0.0, 'fuel_econ_kml': 99.9},
+        ],
+        events: const [],
+        isTurboDetected: false,
+      );
+      final rep = LogAnalyzer.analyze(dsWot, fileName: 'wot.csv', recalculateDerived: true, displacementL: 1.6);
+      expect(rep.recalculated, isTrue);
+      expect(rep.dynoCurve.length, equals(3));
+      expect(rep.dynoCurve.last.rpmBin, equals(5250));
+      expect(rep.dynoCurve.last.powerHp, greaterThan(90.0));
+      expect(rep.byKey['fuel_econ_kml']!.mean, lessThan(20.0));
+      expect(
+        rep.findings.any((f) => f.category == 'Arrefecimento' && f.title.contains('Ciclo de Eletroventilador')),
+        isTrue,
+      );
+    });
   });
 }

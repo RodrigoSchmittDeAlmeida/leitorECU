@@ -29,6 +29,8 @@ class MathChannelsEngine {
   double displacementL;
   double vehicleMassKg;
   double fuelPriceBrl;
+  double injectorCcMin;
+  double injectorDeadTimeMs;
 
   // Integradores de viagem
   double tripLiters = 0.0;
@@ -46,6 +48,8 @@ class MathChannelsEngine {
     this.displacementL = 1.6,
     this.vehicleMassKg = 1050.0,
     this.fuelPriceBrl = 5.89,
+    this.injectorCcMin = 275.0,
+    this.injectorDeadTimeMs = 0.85,
   });
 
   static double _round1(double v) => (v * 10.0).roundToDouble() / 10.0;
@@ -130,6 +134,8 @@ class MathChannelsEngine {
       final est = FuelEstimator.estimateFuelMetrics(
         latest,
         displacementL: displacementL,
+        injectorCcMin: injectorCcMin,
+        deadTimeMs: injectorDeadTimeMs,
       );
       fuelLph = est['fuel_rate_lph'] ?? 0.0;
       if (!latest.containsKey('fuel_rate_lph') &&

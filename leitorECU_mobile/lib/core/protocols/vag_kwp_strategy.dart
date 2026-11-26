@@ -414,6 +414,129 @@ class VagKwpStrategy extends VehicleStrategy {
     await readDtcs(elm, ctx);
   }
 
+  void _parseClusterBlock(
+    ElmResponse resp,
+    int group,
+    Map<String, double> out,
+  ) {
+    final block = extractVagBlock(resp, group);
+    if (block == null) return;
+    for (var i = 0; i + 2 < block.length; i += 3) {
+      final cellIdx = i ~/ 3;
+      final decoded = decodeVagCell(block[i], block[i + 1], block[i + 2]);
+      if (decoded == null) continue;
+      final val = decoded.$1;
+      final rawUnit = decoded.$2;
+      final u = rawUnit.toLowerCase().trim();
+
+      if ((u.contains('l') && !u.contains('km') && !u.contains('/')) ||
+          (cellIdx == 1 && (rawUnit == 'l' || rawUnit == 'L'))) {
+        out.putIfAbsent('cluster_fuel_liters', () => val);
+      } else if (u.contains('ohm') || u.contains('ω')) {
+        out.putIfAbsent('cluster_fuel_ohms', () => val);
+      } else if (u == 'km' || u == '10*km') {
+        out.putIfAbsent('odometer_km', () => val);
+      } else if ((u == '°c' || u == 'c') && (group == 2 && cellIdx == 3)) {
+        out.putIfAbsent('ambient_temp', () => val);
+      }
+    }
+  }
+
+  @override
+  Future<Map<String, double>> readInstrumentCluster(
+    Elm327Client elm,
+    StrategyContext ctx,
+  ) async {
+    ctx.emitLog('Consultando Painel de Instrumentos (0x17) via KWP2000...');
+    ctx.emitStatus('connecting', 'Consultando Painel de Instrumentos (0x17)...');
+
+    final out = <String, double>{};
+    String? errDetail;
+
+    try {
+      for (final cmd in const [
+        'ATIIA17',
+        'ATSH 81 17 F1',
+        'ATWM 81 17 F1 3E',
+      ]) {
+        await elm.command(cmd, timeout: const Duration(seconds: 2));
+      }
+
+      final rSess = await elm.command('1089', timeout: const Duration(seconds: 6));
+      if (rSess.error == 'UNABLE TO CONNECT' ||
+          rSess.error == 'BUS INIT: ERROR') {
+        errDetail = rSess.error;
+      } else {
+        final r2102 = await elm.command(
+          '2102',
+          timeout: const Duration(milliseconds: 2500),
+        );
+        if (r2102.ok && !isVagNegative(r2102)) {
+          _parseClusterBlock(r2102, 2, out);
+        } else {
+          errDetail = r2102.error ?? 'Resposta negativa em 2102';
+        }
+
+        if (ctx.isRunning) {
+          final r2101 = await elm.command(
+            '2101',
+            timeout: const Duration(milliseconds: 2500),
+          );
+          if (r2101.ok && !isVagNegative(r2101)) {
+            _parseClusterBlock(r2101, 1, out);
+          }
+        }
+      }
+
+      if (out.isNotEmpty) {
+        if (out.containsKey('ambient_temp')) {
+          ctx.emitChannels({'ambient_temp': ('Temp. Externa (Painel)', '°C')});
+        }
+        ctx.emitSample(out);
+        final parts = <String>[
+          if (out.containsKey('cluster_fuel_liters'))
+            'Tanque ${out['cluster_fuel_liters']!.toStringAsFixed(1)} L',
+          if (out.containsKey('cluster_fuel_ohms'))
+            'Boia ${out['cluster_fuel_ohms']!.toStringAsFixed(0)} Ω',
+          if (out.containsKey('odometer_km'))
+            'Odômetro ${out['odometer_km']!.toStringAsFixed(0)} km',
+          if (out.containsKey('ambient_temp'))
+            'Temp. Ext ${out['ambient_temp']!.toStringAsFixed(1)} °C',
+        ];
+        final msg = 'Painel (0x17) lido: ${parts.join(' · ')}';
+        ctx.emitLog('✔ $msg');
+        ctx.emitInfo(msg);
+      } else {
+        final reason = errDetail ?? 'NO DATA';
+        final msg =
+            'Painel de Instrumentos (0x17) sem resposta ($reason). '
+            'O painel pode operar em protocolo KW1281 ou estar inacessível na Linha K.';
+        ctx.emitLog('⚠️ $msg');
+        ctx.emitInfo(msg);
+      }
+    } finally {
+      for (final cmd in const [
+        'ATIIA01',
+        'ATSH 81 10 F1',
+        'ATWM 81 10 F1 3E',
+      ]) {
+        await elm.command(cmd, timeout: const Duration(seconds: 2));
+      }
+      await elm.command('1089', timeout: const Duration(seconds: 4));
+      final rRestore = await elm.queryPid('2103');
+      if (!rRestore.ok || isVagNegative(rRestore)) {
+        await ctx.reinitBus();
+      } else {
+        ctx.emitStatus(
+          'connected',
+          'Conectado — VAG KWP2000 Nativo (Blocos 001..033 Sonda Ativa)',
+        );
+      }
+    }
+
+    return out;
+  }
+
   static String _decodeKwpNrc(int nrc) {
     return switch (nrc) {
       0x10 => 'Rejeição geral (0x10)',

@@ -35,6 +35,7 @@ class MockEngine:
         self.header = "7E0"
         self.protocol = "6"  # ISO 15765-4 (CAN 11/500) por padrão no mock
         self.vag_mode = False
+        self.target_addr = "01"
         self.turbo_mode = turbo_mode or (profile in ("turbo", "turbo_tsi"))
         self.profile = "turbo_tsi" if self.turbo_mode else profile
 
@@ -211,6 +212,7 @@ class MockEngine:
     def _at(self, cmd: str) -> tuple[str, float]:
         if cmd == "ATZ":
             self.protocol_ready = False
+            self.target_addr = "01"
             return "\r\rELM327 v1.5", 0.05
         if cmd == "ATI":
             return "ELM327 v1.5", 0.01
@@ -222,17 +224,42 @@ class MockEngine:
             return "ISO 14230-4 (KWP FAST)", 0.01
         if cmd.startswith("ATSH"):
             self.header = cmd[4:].strip().replace(" ", "")
+            if self.header == "8117F1":
+                self.target_addr = "17"
+            elif self.header == "8110F1":
+                self.target_addr = "01"
             return "OK", 0.01
         if cmd.startswith("ATSP"):
             self.protocol = cmd[4:].strip()
             return "OK", 0.01
+        if cmd == "ATIIA17":
+            self.target_addr = "17"
+            return "OK", 0.01
         if cmd == "ATIIA01":
+            self.target_addr = "01"
             self.vag_mode = True
             return "OK", 0.01
         return "OK", 0.01
 
     def _obd(self, cmd: str) -> str:
         s = self.state()
+
+        # VAG KWP2000 Painel de Instrumentos (0x17)
+        if self.target_addr == "17":
+            if cmd == "1089":
+                return "5089"
+            if cmd.startswith("21") and len(cmd) in (4, 5):
+                try:
+                    g = int(cmd[2:4], 16)
+                except ValueError:
+                    g = 0
+                if g == 0x02:
+                    # Bloco 002 Painel (0x17):
+                    # C1 (0x24: 2E 45) -> 118450 km
+                    # C2 (0x13: 64 22) -> 34.0 l
+                    # C3 (0x40: 00 8E) -> 142 Ω
+                    return "6102242E4513642240008E"
+                return "NO DATA"
 
         # VAG KWP2000
         if cmd == "1089":

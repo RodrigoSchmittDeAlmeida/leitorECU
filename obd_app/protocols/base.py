@@ -53,6 +53,11 @@ class BaseVehicleStrategy(ABC, IVehicleStrategy):
         """Varredura opcional de blocos ou DIDs (default: no-op)."""
         worker.log.emit("Varredura avançada não aplicável a este perfil.")
 
+    def read_instrument_cluster(self, elm: Any, worker: Any) -> Dict[str, float]:
+        """Leitura do Painel de Instrumentos (0x17) quando suportado pelo protocolo."""
+        worker.info.emit("Leitura do painel (0x17) disponível apenas para protocolo VAG KWP2000.")
+        return {}
+
     def get_channels_info(self) -> Dict[str, Tuple[str, str]]:
         """Canais extras conhecidos pelo perfil."""
         return {}

@@ -65,7 +65,10 @@ class _AppShellState extends State<AppShell> {
           pinnedChannelNotifier: _pinnedChannel,
         ),
         Map2DScreen(controller: widget.controller),
-        FunctionsScreen(controller: widget.controller),
+        FunctionsScreen(
+          controller: widget.controller,
+          settings: widget.settings,
+        ),
         LogsScreen(
           controller: widget.controller,
           settings: widget.settings,
@@ -313,41 +316,58 @@ class _TopStatusBar extends StatelessWidget {
                 const Spacer(),
               ],
               const SizedBox(width: 6),
-              SizedBox(
-                height: 32,
-                child: Material(
-                  color: recBg,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: BorderSide(color: recBorder),
-                  ),
-                  child: InkWell(
-                    onTap: controller.toggleRecording,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: isTablet ? 10 : 8),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            controller.isRecording ? Icons.stop : Icons.fiber_manual_record,
-                            size: 13,
-                            color: MotorsportColors.alarm,
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            controller.isRecording
-                                ? 'PARAR · ${controller.recordingRows}'
-                                : 'GRAVAR',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: controller.isRecording
-                                  ? const Color(0xFFFFD6E0)
-                                  : tokens.text,
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: isTablet ? 160 : 104),
+                child: SizedBox(
+                  height: 32,
+                  child: Material(
+                    color: recBg,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: BorderSide(
+                        color: recBorder,
+                        width: tokens.cardBorderWidth,
+                      ),
+                    ),
+                    child: InkWell(
+                      onTap: controller.toggleRecording,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: isTablet ? 10 : 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              controller.isRecording
+                                  ? Icons.stop
+                                  : Icons.fiber_manual_record,
+                              size: 13,
+                              color: MotorsportColors.alarm,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  controller.isRecording
+                                      ? 'PARAR · ${controller.recordingRows}'
+                                      : 'GRAVAR',
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: controller.isRecording
+                                        ? const Color(0xFFFFD6E0)
+                                        : tokens.text,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

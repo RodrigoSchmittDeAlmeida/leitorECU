@@ -78,6 +78,16 @@ class DecelDetector {
   double? _trimDriftStart;
   double _lastTrimDriftAlert = -1e9;
 
+  // Monitor de Termostática & Eletroventilador
+  double? _lastThermalT;
+  double _warmupRunSec = 0.0;
+  double? _lowThermostatStart;
+  double _lastThermostatAlert = -1e9;
+  double _peakEctCycle = 0.0;
+  bool _fanCoolAlerted = false;
+  double _lastFanCycleAlert = -1e9;
+  double _lastOverheatAlert = -1e9;
+
   // Estado do episódio de desaceleração
   double _tStart = 0.0;
   double _rpmPeak = 0.0;
@@ -106,6 +116,14 @@ class DecelDetector {
     _lastKnockAlert = -1e9;
     _trimDriftStart = null;
     _lastTrimDriftAlert = -1e9;
+    _lastThermalT = null;
+    _warmupRunSec = 0.0;
+    _lowThermostatStart = null;
+    _lastThermostatAlert = -1e9;
+    _peakEctCycle = 0.0;
+    _fanCoolAlerted = false;
+    _lastFanCycleAlert = -1e9;
+    _lastOverheatAlert = -1e9;
     resetEpisode();
   }
 
@@ -352,6 +370,78 @@ class DecelDetector {
         }
       } else {
         _trimDriftStart = null;
+      }
+    }
+
+    // 7b. Monitor de Termostática & Eletroventilador
+    if (_lastThermalT != null) {
+      final dt = t - _lastThermalT!;
+      if (dt > 0.0 && dt <= 5.0 && fresh('rpm') && latest['rpm']! >= 650.0) {
+        _warmupRunSec += dt;
+      }
+    }
+    _lastThermalT = t;
+
+    if (fresh('ect') && fresh('rpm') && latest['rpm']! >= 650.0) {
+      final ect = latest['ect']!;
+      final spd = latest['speed'] ?? 0.0;
+      if (_warmupRunSec >= 360.0 && spd >= 40.0 && ect < 75.0) {
+        if (_lowThermostatStart == null) {
+          _lowThermostatStart = t;
+        } else if ((t - _lowThermostatStart! >= 20.0) &&
+            (t - _lastThermostatAlert >= 60.0)) {
+          _lastThermostatAlert = t;
+          ev.add(DiagnosticEvent(
+            t,
+            'warn',
+            'TERMOSTÁTICA POSSIVELMENTE ABERTA: ECT em ${ect.toStringAsFixed(1)} °C em movimento após aquecimento (< 75 °C)',
+          ));
+        }
+      } else {
+        _lowThermostatStart = null;
+      }
+    } else {
+      _lowThermostatStart = null;
+    }
+
+    if (fresh('ect')) {
+      final ect = latest['ect']!;
+      if (ect >= 108.0) {
+        if (t - _lastOverheatAlert >= 10.0) {
+          _lastOverheatAlert = t;
+          ev.add(DiagnosticEvent(
+            t,
+            'alarm',
+            'SUPERAQUECIMENTO CRÍTICO: ECT em ${ect.toStringAsFixed(1)} °C — pare o veículo e verifique o arrefecimento!',
+          ));
+        }
+      } else if (ect >= 103.0) {
+        if (t - _lastOverheatAlert >= 20.0) {
+          _lastOverheatAlert = t;
+          ev.add(DiagnosticEvent(
+            t,
+            'warn',
+            'TEMPERATURA ELEVADA: ECT em ${ect.toStringAsFixed(1)} °C — monitore o eletroventilador',
+          ));
+        }
+      }
+
+      if (ect >= 96.0) {
+        _peakEctCycle = math.max(_peakEctCycle, ect);
+        _fanCoolAlerted = false;
+      }
+      if (_peakEctCycle >= 96.0 &&
+          !_fanCoolAlerted &&
+          ect <= _peakEctCycle - 5.0 &&
+          (t - _lastFanCycleAlert >= 45.0)) {
+        _lastFanCycleAlert = t;
+        ev.add(DiagnosticEvent(
+          t,
+          'info',
+          'Ciclo do eletroventilador OK: ECT resfriou de ${_peakEctCycle.toStringAsFixed(0)} °C para ${ect.toStringAsFixed(0)} °C',
+        ));
+        _fanCoolAlerted = true;
+        _peakEctCycle = ect;
       }
     }
 

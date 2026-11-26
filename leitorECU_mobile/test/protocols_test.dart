@@ -636,5 +636,26 @@ void main() {
       expect(strat.supported, containsAll([0x23, 0x24, 0x70, 0x77]));
       await tTurbo.close();
     });
+
+    test('VagKwpStrategy.readInstrumentCluster switches to 0x17, reads 2102 fuel/odometer and restores 0x01', () async {
+      final t = MockTransport(profile: DemoProfile.golMe75);
+      await t.open();
+      final elm = Elm327Client(t);
+      final strat = VagKwpStrategy();
+      final ctx = _DummyStrategyContext();
+
+      expect(await strat.initialize(elm, ctx), isTrue);
+      final res = await strat.readInstrumentCluster(elm, ctx);
+      expect(res['cluster_fuel_liters'], closeTo(34.0, 0.1));
+      expect(res['cluster_fuel_ohms'], closeTo(142.0, 0.1));
+      expect(res['odometer_km'], closeTo(118450.0, 1.0));
+      expect(ctx.infos.any((m) => m.contains('34.0') || m.contains('34,0') || m.contains('Tanque')), isTrue);
+
+      // Engine bus 0x01 must be restored cleanly after reading 0x17
+      final r2103 = await elm.queryPid('2103');
+      expect(r2103.ok, isTrue);
+      expect(r2103.dataLines().join(), startsWith('6103'));
+      await t.close();
+    });
   });
 }

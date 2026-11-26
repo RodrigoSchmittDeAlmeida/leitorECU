@@ -7,8 +7,14 @@ import 'dart:math' as math;
 /// combinando RPM, MAP, IAT e teor de etanol Flex.
 class FuelEstimator {
   final double displacementL;
+  final double injectorCcMin;
+  final double deadTimeMs;
 
-  const FuelEstimator({this.displacementL = 1.6});
+  const FuelEstimator({
+    this.displacementL = 1.6,
+    this.injectorCcMin = 275.0,
+    this.deadTimeMs = 0.85,
+  });
 
   static double _round1(double v) => (v * 10.0).roundToDouble() / 10.0;
   static double _round2(double v) => (v * 100.0).roundToDouble() / 100.0;
@@ -17,6 +23,8 @@ class FuelEstimator {
   static Map<String, double> estimateFuelMetrics(
     Map<String, double> latest, {
     double displacementL = 1.6,
+    double injectorCcMin = 275.0,
+    double deadTimeMs = 0.85,
   }) {
     final rpm = latest['rpm'] ?? 0.0;
     final mapKpa = latest['map'] ?? 0.0;
@@ -55,8 +63,6 @@ class FuelEstimator {
     // 1. Estimativa via Tempo de Injeção real (mais precisa)
     if (injMs != null && injMs > 0.05) {
       // Bico Flex a ~4.0 bar (ex.: VW EA111 1.6 TotalFlex ~275 cc/min) com dead-time ~0.85 ms
-      const injectorCcMin = 275.0;
-      const deadTimeMs = 0.85;
       final effInjMs = math.max(0.0, injMs - deadTimeMs);
       // 4 cilindros, 2 injeções por volta do virabrequim (ciclo 4 tempos)
       // injectorCcMin / 60.0 converte cc/min para cc/s por bico a 100% duty cycle
@@ -101,7 +107,12 @@ class FuelEstimator {
   }
 
   Map<String, double> estimate(Map<String, double> latest) {
-    return estimateFuelMetrics(latest, displacementL: displacementL);
+    return estimateFuelMetrics(
+      latest,
+      displacementL: displacementL,
+      injectorCcMin: injectorCcMin,
+      deadTimeMs: deadTimeMs,
+    );
   }
 
   ({double fuelRateLph, double fuelEconKml, double volumetricEff})
@@ -123,7 +134,12 @@ class FuelEstimator {
       'tps': tps,
       'inj_ms': ?injMs,
     };
-    final res = estimateFuelMetrics(sample, displacementL: displacementL);
+    final res = estimateFuelMetrics(
+      sample,
+      displacementL: displacementL,
+      injectorCcMin: injectorCcMin,
+      deadTimeMs: deadTimeMs,
+    );
     return (
       fuelRateLph: res['fuel_rate_lph'] ?? 0.0,
       fuelEconKml: res['fuel_econ_kml'] ?? 0.0,

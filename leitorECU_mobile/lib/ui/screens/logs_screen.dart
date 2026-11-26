@@ -5,6 +5,7 @@ import '../../state/telemetry_controller.dart';
 import '../../storage/log_exporters.dart';
 import '../../storage/log_repository.dart';
 import '../theme/motorsport_theme.dart';
+import '../widgets/uniform_action_button.dart';
 import 'log_analysis_screen.dart';
 
 /// Aba Logs: gerenciamento, gravação, importação, Replay, análise IA, compartilhamento CSV e exportação .msl.
@@ -94,32 +95,6 @@ class _LogsScreenState extends State<LogsScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Arquivo CSV vazio ou inválido para Replay.')),
-      );
-    }
-  }
-
-  Future<void> _shareCsv(LogFileEntry entry) async {
-    final ok = await widget.controller.logRepository.shareLogFile(entry.path, asMsl: false);
-    if (!mounted) return;
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('CSV pronto em: ${entry.path}')),
-      );
-    }
-  }
-
-  Future<void> _exportMsl(LogFileEntry entry) async {
-    final ok = await widget.controller.logRepository.shareLogFile(entry.path, asMsl: true);
-    if (!mounted) return;
-    if (!ok) {
-      final msl = await widget.controller.logRepository.exportMslFile(entry.path);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            msl != null ? 'Arquivo .msl gerado em: $msl' : 'Falha ao exportar arquivo .msl',
-          ),
-        ),
       );
     }
   }
@@ -332,68 +307,68 @@ class _LogsScreenState extends State<LogsScreen> {
   }
 
   Widget _buildTopActions(TelemetryController c) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    return UniformButtonGrid(
+      columns: 2,
+      tabletColumns: 4,
       children: [
-        ElevatedButton.icon(
-          onPressed: _toggleRecord,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: c.isRecording ? const Color(0xFF531426) : const Color(0xFF073B29),
-            foregroundColor: c.isRecording ? const Color(0xFFFFD6E0) : const Color(0xFFA9FFD3),
-            side: BorderSide(color: c.isRecording ? MotorsportColors.alarm : MotorsportColors.ok),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          ),
-          icon: Icon(
-            c.isRecording ? Icons.stop : Icons.fiber_manual_record,
-            size: 18,
-            color: MotorsportColors.alarm,
-          ),
-          label: Text(
-            c.isRecording
-                ? '■ Parar Gravação (${c.recordingRows} linhas)'
-                : '● Gravar Novo Log',
-          ),
+        UniformActionButton(
+          label: c.isRecording
+              ? '■ Parar Gravação (${c.recordingRows} linhas)'
+              : '● Gravar Novo Log',
+          icon: c.isRecording ? Icons.stop : Icons.fiber_manual_record,
+          variant: c.isRecording
+              ? UniformActionVariant.danger
+              : UniformActionVariant.primary,
+          active: c.isRecording,
+          customIconColor: MotorsportColors.alarm,
+          onTap: _toggleRecord,
         ),
-        OutlinedButton.icon(
-          onPressed: _importCsv,
-          icon: const Icon(Icons.file_open_outlined, size: 18),
-          label: const Text('Importar CSV'),
+        UniformActionButton(
+          label: 'Importar CSV',
+          icon: Icons.file_open_outlined,
+          variant: UniformActionVariant.neutral,
+          onTap: _importCsv,
         ),
-        OutlinedButton.icon(
-          onPressed: () => _openAnalysis(startInCompareMode: true),
-          icon: const Icon(Icons.compare_arrows, size: 18),
-          label: const Text('Comparar 2 Logs'),
+        UniformActionButton(
+          label: 'Comparar 2 Logs',
+          icon: Icons.compare_arrows,
+          variant: UniformActionVariant.neutral,
+          onTap: () => _openAnalysis(startInCompareMode: true),
         ),
-        OutlinedButton.icon(
-          onPressed: _refreshLogs,
-          icon: const Icon(Icons.refresh, size: 18),
-          label: const Text('Atualizar'),
+        UniformActionButton(
+          label: 'Atualizar',
+          icon: Icons.refresh,
+          variant: UniformActionVariant.neutral,
+          onTap: _refreshLogs,
         ),
       ],
     );
   }
 
   Widget _buildActiveRecordingBanner(TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: MotorsportColors.alarmBg,
         border: Border.all(color: MotorsportColors.alarm),
-        borderRadius: BorderRadius.circular(4),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         children: [
-          const Icon(Icons.fiber_manual_record, color: MotorsportColors.alarm, size: 16),
+          const Icon(
+            Icons.fiber_manual_record,
+            color: MotorsportColors.alarm,
+            size: 16,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               'Gravando em tempo real: ${c.recordingRows} amostras · ${c.recordingPath.split('/').last.split('\\').last}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: MotorsportColors.text,
+              style: TextStyle(
+                color: tokens.text,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -405,28 +380,37 @@ class _LogsScreenState extends State<LogsScreen> {
   }
 
   Widget _buildEmptyState() {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
       alignment: Alignment.center,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(4),
+        color: tokens.surface,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: const Column(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.folder_open, color: MotorsportColors.muted, size: 40),
-          SizedBox(height: 10),
+          Icon(Icons.folder_open, color: tokens.muted, size: 40),
+          const SizedBox(height: 10),
           Text(
             'Nenhum log CSV salvo no dispositivo',
-            style: TextStyle(color: MotorsportColors.text, fontSize: 14, fontWeight: FontWeight.w700),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: tokens.text,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-          SizedBox(height: 6),
+          const SizedBox(height: 6),
           Text(
             'Toque em "● Gravar Novo Log" ou "Importar CSV" para abrir logs do PC e inspecionar em Replay.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: MotorsportColors.muted, fontSize: 12),
+            style: TextStyle(color: tokens.muted, fontSize: 12),
           ),
         ],
       ),
@@ -517,56 +501,36 @@ class _LogsScreenState extends State<LogsScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          Row(
             children: [
-              ElevatedButton.icon(
-                onPressed: () => _openReplay(entry),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0E2530),
-                  foregroundColor: MotorsportColors.info,
-                  side: const BorderSide(color: MotorsportColors.info),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              Expanded(
+                child: UniformActionButton(
+                  label: 'Abrir Replay',
+                  icon: Icons.play_arrow,
+                  variant: UniformActionVariant.info,
+                  height: 38,
+                  onTap: () => _openReplay(entry),
                 ),
-                icon: const Icon(Icons.play_arrow, size: 15),
-                label: const Text('Abrir Replay'),
               ),
-              OutlinedButton.icon(
-                onPressed: () => _openAnalysis(initialLogPath: entry.path),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  side: BorderSide(color: tokens.accent),
-                  foregroundColor: tokens.accent,
+              const SizedBox(width: 6),
+              Expanded(
+                child: UniformActionButton(
+                  label: 'Analisar',
+                  icon: Icons.analytics_outlined,
+                  variant: UniformActionVariant.neutral,
+                  height: 38,
+                  onTap: () => _openAnalysis(initialLogPath: entry.path),
                 ),
-                icon: const Icon(Icons.analytics_outlined, size: 15),
-                label: const Text('Analisar'),
               ),
-              OutlinedButton.icon(
-                onPressed: () => _showExportFormatSheet(entry),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  side: const BorderSide(color: MotorsportColors.info),
-                  foregroundColor: MotorsportColors.info,
+              const SizedBox(width: 6),
+              Expanded(
+                child: UniformActionButton(
+                  label: 'Exportar',
+                  icon: Icons.file_download_outlined,
+                  variant: UniformActionVariant.primary,
+                  height: 38,
+                  onTap: () => _showExportFormatSheet(entry),
                 ),
-                icon: const Icon(Icons.file_download_outlined, size: 15),
-                label: const Text('Exportar (Excel / HTML / PDF)'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _shareCsv(entry),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                ),
-                icon: const Icon(Icons.share, size: 15),
-                label: const Text('Exportar CSV'),
-              ),
-              OutlinedButton.icon(
-                onPressed: () => _exportMsl(entry),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                ),
-                icon: const Icon(Icons.transform, size: 15),
-                label: const Text('Exportar .msl'),
               ),
             ],
           ),

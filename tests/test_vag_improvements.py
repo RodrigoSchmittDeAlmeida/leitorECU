@@ -136,3 +136,30 @@ def test_decode_vag_cell_unification():
     val2, u2 = decode_cell(0x01, 10, 20)
     assert val1 == val2 == 40.0
     assert u1 == u2 == "rpm"
+
+
+def test_vag_read_instrument_cluster_0x17_and_restore_0x01():
+    """Garante leitura do painel 0x17 (tanque em L, boia em Ohms, odômetro) e restauração do barramento 0x01."""
+    from obd_app.elm327 import ELM327
+    from obd_app.protocols.vag import VagKwpStrategy
+    from obd_app.transports import MockTransport
+    from tests.test_strategies import DummyWorker
+
+    t = MockTransport(kline_latency=0.0)
+    t.open()
+    elm = ELM327(t)
+    strat = VagKwpStrategy()
+    w = DummyWorker()
+    w.protocol_mode_changed = w.DummySignal([])
+    try:
+        assert strat.initialize(elm, w) is True
+        res = strat.read_instrument_cluster(elm, w)
+        assert res["cluster_fuel_liters"] == pytest.approx(34.0, abs=0.1)
+        assert res["cluster_fuel_ohms"] == pytest.approx(142.0, abs=0.5)
+        assert res["odometer_km"] == pytest.approx(118450.0, abs=1.0)
+        # Motor 0x01 deve voltar a responder após sair do módulo 0x17
+        r2103 = elm.query_pid("2103")
+        assert r2103.ok
+        assert "".join(r2103.data_lines()).startswith("6103")
+    finally:
+        t.close()

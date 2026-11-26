@@ -45,6 +45,16 @@ abstract class VehicleStrategy {
     ctx.emitLog('Varredura avançada não aplicável a este perfil.');
   }
 
+  Future<Map<String, double>> readInstrumentCluster(
+    Elm327Client elm,
+    StrategyContext ctx,
+  ) async {
+    ctx.emitInfo(
+      'Leitura do painel (0x17) disponível apenas para protocolo VAG KWP2000.',
+    );
+    return const {};
+  }
+
   Map<String, (String, String)> getChannelsInfo() => const {};
 }
 

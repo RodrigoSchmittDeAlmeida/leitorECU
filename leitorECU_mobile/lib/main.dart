@@ -39,13 +39,26 @@ class _LeitorEcuAppState extends State<LeitorEcuApp> {
 
     _ownsSettings = widget.settings == null;
     _settings = widget.settings ?? AppSettingsController();
+    _settings.addListener(_syncEngineCalibrationToController);
+    _syncEngineCalibrationToController();
     if (_ownsSettings) {
       _settings.load();
     }
   }
 
+  void _syncEngineCalibrationToController() {
+    _controller.applyEngineSettings(
+      displacementL: _settings.engineDisplacementL,
+      vehicleMassKg: _settings.vehicleMassKg,
+      injectorCcMin: _settings.injectorCcMin,
+      injectorDeadTimeMs: _settings.injectorDeadTimeMs,
+      fuelPriceBrl: _settings.fuelPriceBrl,
+    );
+  }
+
   @override
   void dispose() {
+    _settings.removeListener(_syncEngineCalibrationToController);
     if (_ownsController) {
       _controller.dispose();
     }

@@ -329,6 +329,13 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
   String? lastInfoMessage;
   String? lastPerfEvent;
 
+  // Painel de Instrumentos VAG (0x17)
+  double? clusterFuelLiters;
+  double? clusterFuelOhms;
+  double? clusterOdometerKm;
+  DateTime? clusterLastReadAt;
+  bool clusterBusy = false;
+
   // Estado de Replay CSV
   bool replayMode = false;
   ReplayDataset? replayDataset;
@@ -572,6 +579,11 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
     detector.reset();
     perfTimer.reset();
     map2d.clear();
+    clusterFuelLiters = null;
+    clusterFuelOhms = null;
+    clusterOdometerKm = null;
+    clusterLastReadAt = null;
+    clusterBusy = false;
 
     connectionState = ConnectionStateKind.connecting;
     statusMessage = 'Iniciando conexão...';
@@ -858,6 +870,30 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
   void requestReadiness() => _enqueueCmd('read_readiness');
   void requestFreezeFrame() => _enqueueCmd('read_freeze_frame');
 
+  void requestReadCluster() {
+    if (!_running || _elm == null || _strategy == null) {
+      emitInfo('Conecte-se à ECU antes de ler o painel de instrumentos (0x17).');
+      emitLog('Leitura do painel (0x17) ignorada: dispositivo desconectado.');
+      return;
+    }
+    _enqueueCmd('read_cluster');
+  }
+
+  void applyEngineSettings({
+    required double displacementL,
+    required double vehicleMassKg,
+    required double injectorCcMin,
+    required double injectorDeadTimeMs,
+    required double fuelPriceBrl,
+  }) {
+    mathEngine.displacementL = displacementL;
+    mathEngine.vehicleMassKg = vehicleMassKg;
+    mathEngine.injectorCcMin = injectorCcMin;
+    mathEngine.injectorDeadTimeMs = injectorDeadTimeMs;
+    mathEngine.fuelPriceBrl = fuelPriceBrl;
+    _safeNotify();
+  }
+
   void _enqueueCmd(String cmd) {
     _cmdQueue.addLast(cmd);
   }
@@ -884,12 +920,43 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
           await _executeReadReadiness(elm);
         case 'read_freeze_frame':
           await _executeReadFreezeFrame(elm);
+        case 'read_cluster':
+          clusterBusy = true;
+          _safeNotify();
+          try {
+            final clusterData = await strategy.readInstrumentCluster(elm, this);
+            if (clusterData.isNotEmpty) {
+              _updateClusterFields(clusterData);
+            }
+          } finally {
+            clusterBusy = false;
+            _safeNotify();
+          }
         case 'force_vag_kwp':
           emitLog('Forçando reconexão ao protocolo VAG KWP2000 Nativo...');
           vehicleProfile = VehicleProfileId.vwGol;
           _strategy = createVehicleStrategy(VehicleProfileId.vwGol);
           await reinitBus();
       }
+    }
+  }
+
+  void _updateClusterFields(Map<String, double> values) {
+    var updated = false;
+    if (values.containsKey('cluster_fuel_liters')) {
+      clusterFuelLiters = values['cluster_fuel_liters'];
+      updated = true;
+    }
+    if (values.containsKey('cluster_fuel_ohms')) {
+      clusterFuelOhms = values['cluster_fuel_ohms'];
+      updated = true;
+    }
+    if (values.containsKey('odometer_km')) {
+      clusterOdometerKm = values['odometer_km'];
+      updated = true;
+    }
+    if (updated) {
+      clusterLastReadAt = DateTime.now();
     }
   }
 
@@ -979,6 +1046,8 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
       final fuel = FuelEstimator.estimateFuelMetrics(
         mergedSnapshot,
         displacementL: mathEngine.displacementL,
+        injectorCcMin: mathEngine.injectorCcMin,
+        deadTimeMs: mathEngine.injectorDeadTimeMs,
       );
       for (final entry in fuel.entries) {
         enriched.putIfAbsent(entry.key, () => entry.value);
@@ -1008,7 +1077,8 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
       }
     } catch (_) {}
 
-    // 4. Atualiza estado vivo, Peak Hold e buffers circulares
+    // 4. Atualiza estado vivo, Painel (0x17), Peak Hold e buffers circulares
+    _updateClusterFields(enriched);
     final updatedKeys = <String>[];
     for (final entry in enriched.entries) {
       final k = entry.key;
@@ -1210,6 +1280,15 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
 
     latest.clear();
     stamps.clear();
+    _populateReplayFromDataset(ds);
+
+    scrubReplay(ds.minTime);
+    statusMessage = 'Modo Replay: $replayFileName (${ds.length} amostras)';
+    _safeNotify();
+    return true;
+  }
+
+  void _populateReplayFromDataset(ReplayDataset ds) {
     peakMin.clear();
     peakMax.clear();
     for (final buf in buffers.values) {
@@ -1269,10 +1348,81 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
     for (final ev in ds.events) {
       events.add(DiagnosticEvent(ev.timeSec, 'info', ev.text));
     }
+  }
 
-    scrubReplay(ds.minTime);
-    statusMessage = 'Modo Replay: $replayFileName (${ds.length} amostras)';
-    _safeNotify();
+  Future<bool> recalculateReplayDerived() async {
+    final ds = replayDataset;
+    if (!replayMode || ds == null || ds.isEmpty) return false;
+
+    final tempMath = MathChannelsEngine(
+      displacementL: mathEngine.displacementL,
+      vehicleMassKg: mathEngine.vehicleMassKg,
+      fuelPriceBrl: mathEngine.fuelPriceBrl,
+      injectorCcMin: mathEngine.injectorCcMin,
+      injectorDeadTimeMs: mathEngine.injectorDeadTimeMs,
+    );
+
+    final newRecords = <Map<String, double>>[];
+    final presentChannels = <String>{};
+    final carried = <String, double>{};
+
+    for (var i = 0; i < ds.records.length; i++) {
+      final t = ds.times[i];
+      final orig = ds.records[i];
+      final newRec = Map<String, double>.from(orig);
+      carried.addAll(orig);
+
+      final fuel = FuelEstimator.estimateFuelMetrics(
+        carried,
+        displacementL: mathEngine.displacementL,
+        injectorCcMin: mathEngine.injectorCcMin,
+        deadTimeMs: mathEngine.injectorDeadTimeMs,
+      );
+      for (final entry in fuel.entries) {
+        if (entry.value.isFinite) {
+          newRec[entry.key] = entry.value;
+          carried[entry.key] = entry.value;
+        }
+      }
+
+      final mathVals = tempMath.compute(
+        t,
+        carried,
+        speedUpdated: orig.containsKey('speed'),
+      );
+      for (final entry in mathVals.entries) {
+        if (entry.value.isFinite) {
+          newRec[entry.key] = entry.value;
+          carried[entry.key] = entry.value;
+        }
+      }
+
+      for (final k in newRec.keys) {
+        if (newRec[k]!.isFinite) {
+          presentChannels.add(k);
+        }
+      }
+      newRecords.add(newRec);
+    }
+
+    final orderedChannels = <String>[
+      for (final k in coreChannels.keys)
+        if (presentChannels.contains(k)) k,
+      for (final k in presentChannels)
+        if (!coreChannels.containsKey(k)) k,
+    ];
+
+    final updatedDs = ReplayDataset(
+      availableChannels: orderedChannels,
+      times: ds.times,
+      records: newRecords,
+      events: ds.events,
+      isTurboDetected: ds.isTurboDetected,
+    );
+    replayDataset = updatedDs;
+
+    _populateReplayFromDataset(updatedDs);
+    seekReplay(replayScrubTime);
     return true;
   }
 
@@ -1283,6 +1433,7 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
   }
 
   void scrubReplay(double t) => _scrubReplayInternal(t, syncClock: true);
+  void seekReplay(double t) => scrubReplay(t);
 
   void _scrubReplayInternal(double t, {required bool syncClock}) {
     final ds = replayDataset;

@@ -12,10 +12,19 @@ from typing import Any, Dict, Optional
 class MathChannelsEngine:
     """Calculador de canais sintéticos derivados da telemetria OBD."""
 
-    def __init__(self, displacement_l: float = 1.6, vehicle_mass_kg: float = 1050.0, fuel_price_brl: float = 5.89):
+    def __init__(
+        self,
+        displacement_l: float = 1.6,
+        vehicle_mass_kg: float = 1050.0,
+        fuel_price_brl: float = 5.89,
+        injector_cc_min: float = 275.0,
+        dead_time_ms: float = 0.85,
+    ):
         self.displacement_l = displacement_l
         self.vehicle_mass_kg = vehicle_mass_kg
         self.fuel_price_brl = fuel_price_brl
+        self.injector_cc_min = injector_cc_min
+        self.dead_time_ms = dead_time_ms
 
         # Integradores de viagem
         self.trip_liters: float = 0.0
@@ -81,7 +90,12 @@ class MathChannelsEngine:
         # Se a ECU não tem PID de consumo (015E), calcula via Speed-Density
         if fuel_lph <= 0.0 and rpm > 600.0 and map_kpa > 20.0:
             from .fuel_estimator import estimate_fuel_metrics
-            est = estimate_fuel_metrics(latest, displacement_l=self.displacement_l)
+            est = estimate_fuel_metrics(
+                latest,
+                displacement_l=self.displacement_l,
+                injector_cc_min=self.injector_cc_min,
+                dead_time_ms=self.dead_time_ms,
+            )
             fuel_lph = est.get("fuel_rate_lph", 0.0)
             if "volumetric_eff" in est:
                 res["volumetric_eff"] = est["volumetric_eff"]

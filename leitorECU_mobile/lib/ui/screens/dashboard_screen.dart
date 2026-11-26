@@ -12,6 +12,7 @@ import '../widgets/card_customization_sheet.dart';
 import '../widgets/channel_detail_chart_sheet.dart';
 import '../widgets/connection_sheet.dart';
 import '../widgets/replay_player_bar.dart';
+import '../widgets/uniform_action_button.dart';
 import '../widgets/value_card.dart';
 
 /// Aba Painel: foco exclusivo nos cards numéricos motorsport e canais extras.
@@ -195,40 +196,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required VoidCallback onTap,
     Color? iconColor,
   }) {
-    return Material(
-      color: bg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: borderColor),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 15, color: iconColor ?? fg),
-              const SizedBox(width: 5),
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: fg,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return UniformActionButton(
+      label: label,
+      icon: icon,
+      height: 38,
+      customBg: bg,
+      customFg: fg,
+      customBorder: borderColor,
+      customIconColor: iconColor,
+      onTap: onTap,
     );
   }
 
@@ -238,46 +214,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final activeKeys = settings?.dashboardCardKeys ?? cardChannelKeys;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: tokens.accent.withValues(alpha: 0.10),
-        border: Border.all(color: tokens.accent.withValues(alpha: 0.5)),
-        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: tokens.accent.withValues(alpha: 0.5),
+          width: tokens.cardBorderWidth,
+        ),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        alignment: WrapAlignment.spaceBetween,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
-            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.edit_note, size: 18, color: tokens.accent),
               const SizedBox(width: 6),
-              Flexible(
+              Expanded(
                 child: Text(
                   'Editando Cards (${activeKeys.length})',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: tokens.text,
-                    fontSize: 12,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
             ],
           ),
-          Wrap(
+          const SizedBox(height: 8),
+          UniformButtonGrid(
+            columns: 2,
+            tabletColumns: 3,
             spacing: 6,
-            runSpacing: 6,
             children: [
-              OutlinedButton.icon(
-                onPressed: () async {
+              UniformActionButton(
+                label: '+ Adicionar Card',
+                icon: Icons.add,
+                variant: UniformActionVariant.info,
+                height: 38,
+                onTap: () async {
                   if (settings == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Personalização disponível no modo completo.')),
+                      const SnackBar(
+                        content: Text('Personalização disponível no modo completo.'),
+                      ),
                     );
                     return;
                   }
@@ -291,40 +274,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     await settings.addCard(chosen);
                   }
                 },
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  side: BorderSide(color: tokens.accent),
-                  foregroundColor: tokens.accent,
-                ),
-                icon: const Icon(Icons.add, size: 15),
-                label: const Text('+ Adicionar Card'),
               ),
-              OutlinedButton.icon(
-                onPressed: settings == null
+              UniformActionButton(
+                label: 'Restaurar Padrão',
+                icon: Icons.restart_alt,
+                variant: UniformActionVariant.neutral,
+                height: 38,
+                onTap: settings == null
                     ? null
                     : () async {
                         await settings.resetDashboardCards();
                         if (!context.mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Cards restaurados para o padrão de fábrica.')),
+                          const SnackBar(
+                            content: Text(
+                              'Cards restaurados para o padrão de fábrica.',
+                            ),
+                          ),
                         );
                       },
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                ),
-                icon: const Icon(Icons.restart_alt, size: 15),
-                label: const Text('Restaurar Padrão'),
               ),
-              ElevatedButton.icon(
-                onPressed: () => setState(() => _editCardsMode = false),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: tokens.accent.withValues(alpha: 0.22),
-                  foregroundColor: tokens.text,
-                  side: BorderSide(color: tokens.accent),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                ),
-                icon: const Icon(Icons.check, size: 15),
-                label: const Text('Concluir'),
+              UniformActionButton(
+                label: 'Concluir',
+                icon: Icons.check,
+                variant: UniformActionVariant.primary,
+                height: 38,
+                onTap: () => setState(() => _editCardsMode = false),
               ),
             ],
           ),
@@ -1279,8 +1254,11 @@ class _ExtraChannelTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: MotorsportColors.plot,
-        border: Border.all(color: tokens.borderSubtle),
+        color: tokens.plot,
+        border: Border.all(
+          color: tokens.borderSubtle,
+          width: tokens.cardBorderWidth,
+        ),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Row(

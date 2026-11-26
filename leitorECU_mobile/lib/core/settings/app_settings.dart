@@ -47,8 +47,68 @@ enum AiProviderKind {
   final String defaultBaseUrl;
 }
 
+/// Presets de calibração de motor/veículo para cálculos derivados.
+enum EnginePreset {
+  gol16Flex(
+    'VW Gol 1.6 EA111 Flex',
+    displacementL: 1.6,
+    massKg: 1050.0,
+    injectorCcMin: 275.0,
+    deadTimeMs: 0.85,
+    fuelPriceBrl: 5.89,
+  ),
+  gol10Flex(
+    'VW Gol 1.0 EA111 Flex',
+    displacementL: 1.0,
+    massKg: 980.0,
+    injectorCcMin: 190.0,
+    deadTimeMs: 0.85,
+    fuelPriceBrl: 5.89,
+  ),
+  fordKa15Sigma(
+    'Ford Ka+ 1.5 Sigma Flex',
+    displacementL: 1.5,
+    massKg: 1048.0,
+    injectorCcMin: 240.0,
+    deadTimeMs: 0.80,
+    fuelPriceBrl: 5.89,
+  ),
+  turbo20Gdi(
+    'Turbo / GDI 2.0',
+    displacementL: 2.0,
+    massKg: 1350.0,
+    injectorCcMin: 440.0,
+    deadTimeMs: 0.75,
+    fuelPriceBrl: 6.29,
+  ),
+  custom(
+    'Personalizado',
+    displacementL: 1.6,
+    massKg: 1050.0,
+    injectorCcMin: 275.0,
+    deadTimeMs: 0.85,
+    fuelPriceBrl: 5.89,
+  );
+
+  const EnginePreset(
+    this.label, {
+    required this.displacementL,
+    required this.massKg,
+    required this.injectorCcMin,
+    required this.deadTimeMs,
+    required this.fuelPriceBrl,
+  });
+
+  final String label;
+  final double displacementL;
+  final double massKg;
+  final double injectorCcMin;
+  final double deadTimeMs;
+  final double fuelPriceBrl;
+}
+
 /// Controlador persistente de preferências de aparência, acessibilidade,
-/// cards do dashboard e configuração de provedor de IA.
+/// cards do dashboard, calibração de motor e configuração de provedor de IA.
 class AppSettingsController extends ChangeNotifier {
   AppSettingsController({SecureKeyStorage? secureStorage})
       : _secureStorage = secureStorage ?? SecureKeyStorage();
@@ -63,6 +123,12 @@ class AppSettingsController extends ChangeNotifier {
   static const String _prefAiProvider = 'app_ai_provider';
   static const String _prefAiModel = 'app_ai_model';
   static const String _prefAiCustomBaseUrl = 'app_ai_custom_base_url';
+  static const String _prefEnginePreset = 'app_engine_preset';
+  static const String _prefEngineDisplacement = 'app_engine_displacement_l';
+  static const String _prefVehicleMass = 'app_vehicle_mass_kg';
+  static const String _prefInjectorCcMin = 'app_injector_cc_min';
+  static const String _prefInjectorDeadTime = 'app_injector_dead_time_ms';
+  static const String _prefFuelPrice = 'app_fuel_price_brl';
   static const String _secureAiApiKey = 'ai_api_key';
 
   final SecureKeyStorage _secureStorage;
@@ -75,6 +141,12 @@ class AppSettingsController extends ChangeNotifier {
   String _aiModel = 'gemini-2.5-flash';
   String _aiCustomBaseUrl = 'https://api.openai.com/v1';
   bool _hasApiKey = false;
+  EnginePreset _enginePreset = EnginePreset.gol16Flex;
+  double _engineDisplacementL = 1.6;
+  double _vehicleMassKg = 1050.0;
+  double _injectorCcMin = 275.0;
+  double _injectorDeadTimeMs = 0.85;
+  double _fuelPriceBrl = 5.89;
 
   double get fontScale => _fontScale;
   bool get highContrast => _highContrast;
@@ -84,6 +156,12 @@ class AppSettingsController extends ChangeNotifier {
   String get aiModel => _aiModel;
   String get aiCustomBaseUrl => _aiCustomBaseUrl;
   bool get hasApiKey => _hasApiKey;
+  EnginePreset get enginePreset => _enginePreset;
+  double get engineDisplacementL => _engineDisplacementL;
+  double get vehicleMassKg => _vehicleMassKg;
+  double get injectorCcMin => _injectorCcMin;
+  double get injectorDeadTimeMs => _injectorDeadTimeMs;
+  double get fuelPriceBrl => _fuelPriceBrl;
 
   Future<void> load() async {
     try {
@@ -125,6 +203,37 @@ class AppSettingsController extends ChangeNotifier {
       _aiCustomBaseUrl = (savedBaseUrl != null && savedBaseUrl.isNotEmpty)
           ? savedBaseUrl
           : 'https://api.openai.com/v1';
+
+      _enginePreset = _enumByName(
+        EnginePreset.values,
+        prefs.getString(_prefEnginePreset),
+        EnginePreset.gol16Flex,
+      );
+
+      final savedDisp = prefs.getDouble(_prefEngineDisplacement);
+      _engineDisplacementL = (savedDisp != null && savedDisp.isFinite && savedDisp > 0.0)
+          ? savedDisp
+          : _enginePreset.displacementL;
+
+      final savedMass = prefs.getDouble(_prefVehicleMass);
+      _vehicleMassKg = (savedMass != null && savedMass.isFinite && savedMass > 0.0)
+          ? savedMass
+          : _enginePreset.massKg;
+
+      final savedInjector = prefs.getDouble(_prefInjectorCcMin);
+      _injectorCcMin = (savedInjector != null && savedInjector.isFinite && savedInjector > 0.0)
+          ? savedInjector
+          : _enginePreset.injectorCcMin;
+
+      final savedDeadTime = prefs.getDouble(_prefInjectorDeadTime);
+      _injectorDeadTimeMs = (savedDeadTime != null && savedDeadTime.isFinite && savedDeadTime >= 0.0)
+          ? savedDeadTime
+          : _enginePreset.deadTimeMs;
+
+      final savedFuelPrice = prefs.getDouble(_prefFuelPrice);
+      _fuelPriceBrl = (savedFuelPrice != null && savedFuelPrice.isFinite && savedFuelPrice >= 0.0)
+          ? savedFuelPrice
+          : _enginePreset.fuelPriceBrl;
     } catch (_) {
       // Fallback seguro caso SharedPreferences não esteja disponível
     }
@@ -280,6 +389,68 @@ class AppSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> selectEnginePreset(EnginePreset preset) async {
+    _enginePreset = preset;
+    if (preset != EnginePreset.custom) {
+      _engineDisplacementL = preset.displacementL;
+      _vehicleMassKg = preset.massKg;
+      _injectorCcMin = preset.injectorCcMin;
+      _injectorDeadTimeMs = preset.deadTimeMs;
+      _fuelPriceBrl = preset.fuelPriceBrl;
+    }
+    notifyListeners();
+    await _persistEngineCalibration();
+  }
+
+  Future<void> setEngineCalibration({
+    double? displacementL,
+    double? vehicleMassKg,
+    double? injectorCcMin,
+    double? injectorDeadTimeMs,
+    double? fuelPriceBrl,
+  }) async {
+    if (displacementL != null && displacementL.isFinite && displacementL > 0.0) {
+      _engineDisplacementL = displacementL;
+    }
+    if (vehicleMassKg != null && vehicleMassKg.isFinite && vehicleMassKg > 0.0) {
+      _vehicleMassKg = vehicleMassKg;
+    }
+    if (injectorCcMin != null && injectorCcMin.isFinite && injectorCcMin > 0.0) {
+      _injectorCcMin = injectorCcMin;
+    }
+    if (injectorDeadTimeMs != null &&
+        injectorDeadTimeMs.isFinite &&
+        injectorDeadTimeMs >= 0.0) {
+      _injectorDeadTimeMs = injectorDeadTimeMs;
+    }
+    if (fuelPriceBrl != null && fuelPriceBrl.isFinite && fuelPriceBrl >= 0.0) {
+      _fuelPriceBrl = fuelPriceBrl;
+    }
+
+    final matchesCurrentPreset = _enginePreset != EnginePreset.custom &&
+        (_engineDisplacementL - _enginePreset.displacementL).abs() < 1e-6 &&
+        (_vehicleMassKg - _enginePreset.massKg).abs() < 1e-6 &&
+        (_injectorCcMin - _enginePreset.injectorCcMin).abs() < 1e-6 &&
+        (_injectorDeadTimeMs - _enginePreset.deadTimeMs).abs() < 1e-6;
+    if (!matchesCurrentPreset) {
+      _enginePreset = EnginePreset.custom;
+    }
+
+    notifyListeners();
+    await _persistEngineCalibration();
+  }
+
+  Future<void> _persistEngineCalibration() {
+    return _savePref((p) async {
+      await p.setString(_prefEnginePreset, _enginePreset.name);
+      await p.setDouble(_prefEngineDisplacement, _engineDisplacementL);
+      await p.setDouble(_prefVehicleMass, _vehicleMassKg);
+      await p.setDouble(_prefInjectorCcMin, _injectorCcMin);
+      await p.setDouble(_prefInjectorDeadTime, _injectorDeadTimeMs);
+      await p.setDouble(_prefFuelPrice, _fuelPriceBrl);
+    });
+  }
+
   Future<void> _persistCards() {
     return _savePref((p) => p.setStringList(_prefDashboardCards, _dashboardCardKeys));
   }
@@ -321,5 +492,6 @@ class AppSettingsController extends ChangeNotifier {
   String toString() =>
       'AppSettingsController(fontScale: $_fontScale, highContrast: $_highContrast, '
       'accent: ${_accentPreset.name}, cards: ${_dashboardCardKeys.length}, '
+      'enginePreset: ${_enginePreset.name}, dispL: $_engineDisplacementL, '
       'aiProvider: ${_aiProvider.name}, aiModel: $_aiModel, hasApiKey: $_hasApiKey)';
 }
