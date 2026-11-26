@@ -5,6 +5,7 @@ descoberta de grupos em background, cache local e DTCs via Serviço 18/14.
 """
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -292,34 +293,149 @@ class VagKwpStrategy(BaseVehicleStrategy):
         elm.command("14FF00", 6.0)
         self.read_dtcs(elm, worker)
 
+    @staticmethod
+    def _decode_kwp_nrc(nrc: int) -> str:
+        return {
+            0x10: "Rejeição geral (0x10)",
+            0x11: "Serviço não suportado (0x11)",
+            0x12: "Subfunção/formato não suportado (0x12)",
+            0x21: "ECU ocupada (0x21)",
+            0x22: "Condições incorretas — motor ligado ou temperatura/tensão fora da janela (0x22)",
+            0x31: "Canal fora de faixa (0x31)",
+            0x33: "Acesso de segurança / Seed-Key Bosch exigido (0x33)",
+            0x35: "Chave de segurança inválida (0x35)",
+            0x78: "Processando (0x78)",
+        }.get(nrc, f"NRC 0x{nrc:02X}")
+
+    @classmethod
+    def _evaluate_kwp_resp(cls, resp: Any, expected_pos_hex: str) -> Tuple[bool, bool, Optional[int], str]:
+        lines = getattr(resp, "lines", None) or []
+        err = getattr(resp, "error", None) or ""
+        all_raw = re.sub(r"\s+", "", f"{''.join(lines)} {err}").upper()
+        has_pending_78 = bool(re.search(r"7F[0-9A-F]{2}78", all_raw))
+        cleaned = re.sub(r"7F[0-9A-F]{2}78", "", all_raw)
+        pos_hex = expected_pos_hex.upper()
+        if pos_hex in cleaned:
+            return True, has_pending_78, None, f"ACEITO ({cleaned})"
+        neg = re.search(r"7F[0-9A-F]{2}([0-9A-F]{2})", cleaned)
+        if neg:
+            nrc = int(neg.group(1), 16)
+            return False, False, nrc, f"REJEITADO: {cls._decode_kwp_nrc(nrc)}"
+        if has_pending_78:
+            return True, True, 0x78, "ACEITO (Processando 0x78 — ECU executando comando)"
+        data_lines = resp.data_lines() if hasattr(resp, "data_lines") else lines
+        raw = re.sub(r"\s+", "", "".join(data_lines)).upper()
+        if not getattr(resp, "ok", False) or not raw:
+            return False, False, None, err or "SEM RESPOSTA"
+        if pos_hex in raw:
+            return True, False, None, f"ACEITO ({raw})"
+        return False, False, None, f"INESPERADO ({raw})"
+
+    def _read_block_now(self, elm: Any, worker: Any, pcode: int) -> Dict[str, float]:
+        pdef = PIDS.get(pcode)
+        if not pdef:
+            return {}
+        r = elm.query_pid(pdef.cmd)
+        if not r.ok or vag.is_negative(r):
+            return {}
+        out: Dict[str, float] = {}
+        data = extract_payload(r, pdef.mode, pdef.pid, pdef.nbytes)
+        if data:
+            try:
+                out.update(pdef.decode(data))
+            except Exception:
+                pass
+        cell_vals = self._decode_cells(r, pdef.pid, worker)
+        if cell_vals:
+            out.update(cell_vals)
+        if out:
+            worker._emit(out)
+        return out
+
     def reset_adaptation(self, elm: Any, worker: Any) -> None:
-        """Procedimento de Reset de Adaptação / Flex (Canal 00 / Basic Settings) na ME7.5.30."""
-        worker.log.emit("Iniciando procedimento de Reset de Adaptação / Flex na Bosch ME7.5.30...")
-        worker.status.emit("connecting", "Enviando comandos de Reset de Adaptação (Canal 00)...")
+        """Reset de Adaptação / Flex KWP2000 VAG (Bosch ME7.5.30) com validação real de NRC."""
+        worker.log.emit("Iniciando Reset de Adaptação / Flex KWP2000 VAG (Bosch ME7.5.30)...")
+        worker.status.emit("connecting", "Executando Reset de Adaptação KWP2000 (Canal 00)...")
 
-        # 1. Limpa códigos de falha e memória volátil de diagnóstico
-        r1 = elm.command("14FF00", 6.0)
-        worker.log.emit(f"> 14FF00 (Clear DTCs / RAM) -> {' '.join(r1.lines) or r1.error or 'OK'}")
+        # 1. Leitura ANTES do reset (Bloco 032 LTFT + Bloco 103 Flex Fixa)
+        before32 = self._read_block_now(elm, worker, 0x2120)
+        before103 = self._read_block_now(elm, worker, 0x2167)
+        ltft_before = before32.get("ltft")
+        flex_before = before103.get("g103_c6")
 
-        # 2. Routine Control Grupo 00 (Ajuste Básico / Reset Canal 00 - restaura defaults de fábrica na EEPROM)
-        r2 = elm.command("31010000", 5.0)
-        worker.log.emit(f"> 31010000 (Routine Reset Canal 00) -> {' '.join(r2.lines) or r2.error or 'OK'}")
+        # 2. Garante sessão diagnóstica estendida VAG KWP2000 (10 89)
+        r_sess = elm.command("1089", 4.0)
+        _, _, _, sess_sum = self._evaluate_kwp_resp(r_sess, "50")
+        worker.log.emit(f"> 1089 (Sessão VAG KWP2000) -> {sess_sum}")
 
-        # 3. Consulta Bloco 032 para atualizar cards e log
-        time.sleep(0.4)
-        r_trim = elm.query_pid("2120")
-        if r_trim.ok and not vag.is_negative(r_trim):
-            data = extract_payload(r_trim, 0x21, 0x20, 6)
-            if data:
-                pdef = PIDS.get(0x2120)
-                if pdef:
-                    try:
-                        vals = pdef.decode(data)
-                        worker._emit(vals)
-                    except Exception:
-                        pass
-        worker.info.emit("Comandos de Reset de Adaptação (Canal 00) enviados à ECU com sucesso!")
-        worker.status.emit("connected", "Conectado — Reset de Adaptação concluído")
+        # 3. Limpa códigos de falha e RAM (14 FF 00) — aguarda se ECU responder 0x78 (ResponsePending)
+        r_clear = elm.command("14FF00", 6.0)
+        _, clear_pending, _, clear_sum = self._evaluate_kwp_resp(r_clear, "54")
+        worker.log.emit(f"> 14FF00 (Limpar DTCs / RAM) -> {clear_sum}")
+        if clear_pending:
+            time.sleep(1.2)
+
+        # 4. VAG KWP2000 Basic Setting Grupo 000 (31 B8 00 — NUNCA enviar 2800!)
+        r_basic = elm.command("31B800", 5.0)
+        basic_ok, basic_pending, basic_nrc, basic_sum = self._evaluate_kwp_resp(r_basic, "71")
+        worker.log.emit(f"> 31B800 (Basic Setting Grupo 000) -> {basic_sum}")
+        if basic_pending:
+            time.sleep(1.0)
+
+        # 5. VAG KWP2000 Adaptation Channel 00 = 0000 (3B 00 00 00 — Factory Reset)
+        r_adapt = elm.command("3B000000", 5.0)
+        adapt_ok, _, adapt_nrc, adapt_sum = self._evaluate_kwp_resp(r_adapt, "7B")
+        worker.log.emit(f"> 3B000000 (Adaptação Canal 00 = 0) -> {adapt_sum}")
+
+        # 6. Releitura DEPOIS do reset para comprovação real
+        time.sleep(0.45)
+        after32 = self._read_block_now(elm, worker, 0x2120)
+        after103 = self._read_block_now(elm, worker, 0x2167)
+        ltft_after = after32.get("ltft")
+        flex_after = after103.get("g103_c6")
+
+        ltft_changed = (
+            ltft_before is not None
+            and ltft_after is not None
+            and abs(ltft_after - ltft_before) > 0.5
+        )
+        flex_changed = (
+            flex_before is not None
+            and flex_after is not None
+            and abs(flex_after - flex_before) > 1.0
+        )
+        kwp_accepted = basic_ok or adapt_ok
+        nrcs = [n for n in (basic_nrc, adapt_nrc) if n is not None]
+
+        if kwp_accepted or ltft_changed or flex_changed:
+            parts = []
+            if ltft_before is not None and ltft_after is not None:
+                parts.append(f"LTFT {ltft_before:.1f}% → {ltft_after:.1f}%")
+            if flex_before is not None and flex_after is not None:
+                parts.append(f"Flex(103.6) {flex_before:.0f}% → {flex_after:.0f}%")
+            detail = f" ({' · '.join(parts)})" if parts else ""
+            worker.info.emit(f"Reset KWP2000 aceito pela ECU!{detail}")
+            worker.status.emit("connected", "Conectado — Reset KWP2000 confirmado")
+        elif 0x33 in nrcs:
+            worker.info.emit(
+                "ECU bloqueou o reset por Segurança (NRC 0x33 — Seed-Key Bosch exigido). "
+                "Para destravar o Flex (103.6), abasteça ≥12 L com chave desligada ou use scanner VAG com login."
+            )
+            worker.status.emit("connected", "Conectado — Reset bloqueado pela ECU (NRC 0x33)")
+        elif 0x22 in nrcs:
+            worker.info.emit(
+                "ECU recusou o reset (NRC 0x22 — Condições incorretas). "
+                "Desligue o motor mantendo apenas a ignição ligada e tente novamente."
+            )
+            worker.status.emit("connected", "Conectado — Reset recusado (NRC 0x22)")
+        else:
+            reason = adapt_sum if not adapt_ok else basic_sum
+            worker.info.emit(
+                f"DTCs limpos, mas a ECU não zerou a EEPROM de LTFT/Flex ({reason}). "
+                "Abasteça ≥12 L com a chave desligada ou use scanner VAG Canal 00/Flex."
+            )
+            worker.status.emit("connected", "Conectado — EEPROM LTFT/Flex mantida pela ECU")
+
         self.read_dtcs(elm, worker)
 
     def scan_all(self, elm: Any, worker: Any) -> None:

@@ -4,10 +4,14 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/models/channel_def.dart';
 import '../../core/protocols/vag_formulas.dart';
+import '../../core/settings/app_settings.dart';
 import '../../state/telemetry_controller.dart';
+import '../../storage/csv_logger.dart';
 import '../theme/motorsport_theme.dart';
+import '../widgets/card_customization_sheet.dart';
 import '../widgets/channel_detail_chart_sheet.dart';
 import '../widgets/connection_sheet.dart';
+import '../widgets/replay_player_bar.dart';
 import '../widgets/value_card.dart';
 
 /// Aba Painel: foco exclusivo nos cards numéricos motorsport e canais extras.
@@ -15,10 +19,12 @@ class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
     super.key,
     required this.controller,
+    this.settings,
     this.onOpenChannelChart,
   });
 
   final TelemetryController controller;
+  final AppSettingsController? settings;
   final ValueChanged<String>? onOpenChannelChart;
 
   @override
@@ -27,8 +33,17 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _showExtraChannels = false;
+  bool _editCardsMode = false;
   String _extraFilter = '';
   final TextEditingController _filterCtrl = TextEditingController();
+
+  String? _stableBadgeText;
+  Color? _stableBadgeColor;
+  String? _stableMessageText;
+  ConnectionStateKind? _lastConnState;
+  String? _lastExplicitInfo;
+  int _lastEventCount = 0;
+  DateTime? _lastStatusUpdateAt;
 
   @override
   void dispose() {
@@ -38,252 +53,568 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final listenables = <Listenable>[
+      widget.controller,
+      if (widget.settings != null) widget.settings!,
+    ];
+
     return ListenableBuilder(
-      listenable: widget.controller,
+      listenable: Listenable.merge(listenables),
       builder: (context, _) {
         final c = widget.controller;
         final isTablet = MediaQuery.sizeOf(context).width >= MotorsportTheme.tabletBreakpoint;
+        final pad = isTablet ? 12.0 : 8.0;
 
-        return SingleChildScrollView(
-          padding: EdgeInsets.all(isTablet ? 12 : 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        return Column(
+          children: [
+            if (c.replayMode)
+              Padding(
+                padding: EdgeInsets.fromLTRB(pad, pad, pad, 0),
+                child: ReplayPlayerBar(
+                  controller: c,
+                  exitLabel: 'Sair do Replay',
+                ),
+              ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(pad),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildActionBar(context, c),
+                    const SizedBox(height: 8),
+                    _buildStatusRibbon(context, c),
+                    if (_editCardsMode) ...[
+                      const SizedBox(height: 8),
+                      _buildEditCardsBanner(context, c),
+                    ],
+                    const SizedBox(height: 10),
+                    _buildCardsGrid(context, c),
+                    const SizedBox(height: 12),
+                    _buildExtraChannelsSection(c),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildActionBar(BuildContext context, TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
+    final connectedOrBusy = c.isConnected || c.connectionState == ConnectionStateKind.connecting;
+
+    final buttons = <Widget>[
+      _buildUniformActionBtn(
+        icon: connectedOrBusy ? Icons.link_off : Icons.power_settings_new,
+        label: connectedOrBusy ? 'Desconectar' : 'Conectar',
+        bg: connectedOrBusy ? const Color(0xFF511D2B) : const Color(0xFF073B29),
+        fg: connectedOrBusy ? const Color(0xFFFFD6E0) : const Color(0xFFA9FFD3),
+        borderColor: connectedOrBusy ? MotorsportColors.alarm : MotorsportColors.ok,
+        onTap: connectedOrBusy ? c.disconnect : () => ConnectionSheet.show(context, c),
+      ),
+      _buildUniformActionBtn(
+        icon: c.isRecording ? Icons.stop_circle : Icons.fiber_manual_record,
+        iconColor: MotorsportColors.alarm,
+        label: c.isRecording ? 'Parar (${c.recordingRows})' : 'Gravar Log',
+        bg: c.isRecording ? const Color(0xFF531426) : tokens.elevated,
+        fg: c.isRecording ? const Color(0xFFFFD6E0) : tokens.text,
+        borderColor: c.isRecording ? MotorsportColors.alarm : tokens.border,
+        onTap: c.toggleRecording,
+      ),
+      _buildUniformActionBtn(
+        icon: Icons.bolt,
+        label: 'Limpar Picos',
+        bg: tokens.elevated,
+        fg: tokens.text,
+        borderColor: tokens.border,
+        onTap: c.clearPeaks,
+      ),
+      _buildUniformActionBtn(
+        icon: c.decelMode ? Icons.check_circle_outline : Icons.speed_outlined,
+        iconColor: c.decelMode ? MotorsportColors.warning : tokens.muted,
+        label: 'Desaceleração',
+        bg: c.decelMode ? const Color(0xFF493512) : tokens.elevated,
+        fg: c.decelMode ? const Color(0xFFFFE2A1) : tokens.text,
+        borderColor: c.decelMode ? MotorsportColors.warning : tokens.border,
+        onTap: () {
+          final v = !c.decelMode;
+          c.decelMode = v;
+          c.emitInfo(
+            v
+                ? 'Modo Prioridade de Desaceleração ATIVADO'
+                : 'Modo Prioridade de Desaceleração desativado',
+          );
+        },
+      ),
+      _buildUniformActionBtn(
+        icon: Icons.tune,
+        iconColor: _showExtraChannels ? tokens.accent : tokens.muted,
+        label: 'Extras (${_extraChannelKeys(c).length})',
+        bg: _showExtraChannels ? tokens.accent.withValues(alpha: 0.16) : tokens.elevated,
+        fg: _showExtraChannels ? tokens.accent : tokens.text,
+        borderColor: _showExtraChannels ? tokens.accent : tokens.border,
+        onTap: () => setState(() => _showExtraChannels = !_showExtraChannels),
+      ),
+      _buildUniformActionBtn(
+        icon: Icons.dashboard_customize_outlined,
+        iconColor: _editCardsMode ? tokens.accent : tokens.muted,
+        label: 'Personalizar',
+        bg: _editCardsMode ? tokens.accent.withValues(alpha: 0.16) : tokens.elevated,
+        fg: _editCardsMode ? tokens.accent : tokens.text,
+        borderColor: _editCardsMode ? tokens.accent : tokens.border,
+        onTap: () => setState(() => _editCardsMode = !_editCardsMode),
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        final cols = w >= 840 ? 6 : (w >= 320 ? 3 : 2);
+        const gap = 6.0;
+        final btnW = (w - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final b in buttons) SizedBox(width: btnW, height: 38, child: b),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildUniformActionBtn({
+    required IconData icon,
+    required String label,
+    required Color bg,
+    required Color fg,
+    required Color borderColor,
+    required VoidCallback onTap,
+    Color? iconColor,
+  }) {
+    return Material(
+      color: bg,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: BorderSide(color: borderColor),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (c.replayMode) ...[
-                _buildReplayBanner(c),
-                const SizedBox(height: 8),
-              ],
-              _buildActionBar(context, c),
-              const SizedBox(height: 8),
-              _buildStatusRibbon(c),
-              const SizedBox(height: 10),
-              _buildCardsGrid(c),
-              const SizedBox(height: 12),
-              _buildExtraChannelsSection(c),
+              Icon(icon, size: 15, color: iconColor ?? fg),
+              const SizedBox(width: 5),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEditCardsBanner(BuildContext context, TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
+    final settings = widget.settings;
+    final activeKeys = settings?.dashboardCardKeys ?? cardChannelKeys;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: tokens.accent.withValues(alpha: 0.10),
+        border: Border.all(color: tokens.accent.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.edit_note, size: 18, color: tokens.accent),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  'Editando Cards (${activeKeys.length})',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: tokens.text,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () async {
+                  if (settings == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Personalização disponível no modo completo.')),
+                    );
+                    return;
+                  }
+                  final chosen = await CardCustomizationSheet.show(
+                    context,
+                    controller: c,
+                    currentCardKeys: activeKeys,
+                    title: 'Adicionar Card ao Painel',
+                  );
+                  if (chosen != null) {
+                    await settings.addCard(chosen);
+                  }
+                },
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  side: BorderSide(color: tokens.accent),
+                  foregroundColor: tokens.accent,
+                ),
+                icon: const Icon(Icons.add, size: 15),
+                label: const Text('+ Adicionar Card'),
+              ),
+              OutlinedButton.icon(
+                onPressed: settings == null
+                    ? null
+                    : () async {
+                        await settings.resetDashboardCards();
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Cards restaurados para o padrão de fábrica.')),
+                        );
+                      },
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+                icon: const Icon(Icons.restart_alt, size: 15),
+                label: const Text('Restaurar Padrão'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () => setState(() => _editCardsMode = false),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: tokens.accent.withValues(alpha: 0.22),
+                  foregroundColor: tokens.text,
+                  side: BorderSide(color: tokens.accent),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                ),
+                icon: const Icon(Icons.check, size: 15),
+                label: const Text('Concluir'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusRibbon(BuildContext context, TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
+    final lastEv = c.events.isNotEmpty ? c.events.last : null;
+    final String rawBadgeText;
+    final Color rawBadgeColor;
+    final String rawMessageText;
+    var isCritical = false;
+
+    if (c.isEcuOff) {
+      rawBadgeText = '● ECU OFF';
+      rawBadgeColor = MotorsportColors.alarm;
+      rawMessageText = c.statusMessage;
+      isCritical = true;
+    } else if (lastEv != null) {
+      rawBadgeText = switch (lastEv.level) {
+        'alarm' => '● ALARME',
+        'warn' => '▲ ATENÇÃO',
+        _ => '● INFO',
+      };
+      rawBadgeColor = switch (lastEv.level) {
+        'alarm' => MotorsportColors.alarm,
+        'warn' => MotorsportColors.warning,
+        _ => tokens.accent,
+      };
+      rawMessageText = lastEv.message;
+      isCritical = lastEv.level == 'alarm';
+    } else if (c.lastInfoMessage != null && c.lastInfoMessage!.isNotEmpty) {
+      rawBadgeText = c.isConnected ? '● ECU' : '● INFO';
+      rawBadgeColor = c.isConnected ? MotorsportColors.ok : tokens.accent;
+      rawMessageText = c.lastInfoMessage!;
+    } else {
+      rawBadgeText = c.isConnected ? '● ECU' : '● INFO';
+      rawBadgeColor = c.isConnected ? MotorsportColors.ok : tokens.accent;
+      rawMessageText = c.ecuMetadata.ecuName.isNotEmpty && c.isConnected
+          ? '${c.ecuMetadata.ecuName} — ${c.statusMessage}'
+          : c.statusMessage;
+    }
+
+    final now = DateTime.now();
+    final connChanged = _lastConnState != c.connectionState;
+    final explicitInfoChanged = _lastExplicitInfo != c.lastInfoMessage;
+    final firstEventArrived = _lastEventCount == 0 && c.events.isNotEmpty;
+    final elapsedOk = _lastStatusUpdateAt == null ||
+        now.difference(_lastStatusUpdateAt!).inMilliseconds >= 4000;
+    if (_stableMessageText == null ||
+        connChanged ||
+        explicitInfoChanged ||
+        firstEventArrived ||
+        isCritical ||
+        elapsedOk) {
+      _stableBadgeText = rawBadgeText;
+      _stableBadgeColor = rawBadgeColor;
+      _stableMessageText = rawMessageText;
+      _lastConnState = c.connectionState;
+      _lastExplicitInfo = c.lastInfoMessage;
+      _lastEventCount = c.events.length;
+      _lastStatusUpdateAt = now;
+    }
+
+    final badgeText = _stableBadgeText ?? rawBadgeText;
+    final badgeColor = _stableBadgeColor ?? rawBadgeColor;
+    final messageText = _stableMessageText ?? rawMessageText;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                badgeText,
+                style: TextStyle(
+                  color: badgeColor,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const Spacer(),
+              if (c.events.isNotEmpty)
+                InkWell(
+                  borderRadius: BorderRadius.circular(6),
+                  onTap: () => _showEventsHistorySheet(context, c),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.history, size: 13, color: tokens.accent),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Histórico (${c.events.length})',
+                          style: TextStyle(
+                            color: tokens.accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 3),
+          Text(
+            messageText,
+            softWrap: true,
+            style: TextStyle(
+              color: tokens.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showEventsHistorySheet(
+    BuildContext context,
+    TelemetryController c,
+  ) {
+    final tokens = MotorsportTheme.tokensOf(context);
+    return showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      clipBehavior: Clip.antiAlias,
+      backgroundColor: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        side: BorderSide(color: tokens.border),
+      ),
+      builder: (ctx) {
+        final reversed = c.events.reversed.toList();
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.8),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                  child: Row(
+                    children: [
+                      Icon(Icons.history, color: tokens.accent, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Histórico de Diagnóstico (${reversed.length})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: tokens.text,
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          c.clearEvents();
+                          Navigator.of(ctx).pop();
+                        },
+                        child: const Text('Limpar'),
+                      ),
+                      IconButton(
+                        tooltip: 'Fechar',
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: Icon(Icons.close, color: tokens.muted),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: tokens.borderSubtle),
+                Flexible(
+                  child: reversed.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'Nenhum evento registrado.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: tokens.muted),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(12),
+                          itemCount: reversed.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (_, i) {
+                            final ev = reversed[i];
+                            final (lvlLabel, lvlColor, lvlBg) = switch (ev.level) {
+                              'alarm' => (
+                                  'ALARME',
+                                  MotorsportColors.alarm,
+                                  MotorsportColors.alarmBg,
+                                ),
+                              'warn' => (
+                                  'ATENÇÃO',
+                                  MotorsportColors.warning,
+                                  MotorsportColors.warnBg,
+                                ),
+                              _ => (
+                                  'INFO',
+                                  tokens.accent,
+                                  tokens.surfaceAlt,
+                                ),
+                            };
+                            return Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: lvlBg,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: lvlColor.withValues(alpha: 0.45)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: lvlColor.withValues(alpha: 0.16),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          lvlLabel,
+                                          style: TextStyle(
+                                            color: lvlColor,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        't = ${ev.timeSec.toStringAsFixed(1)}s',
+                                        style: MotorsportTheme.tabularStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: tokens.muted,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    ev.message,
+                                    softWrap: true,
+                                    style: TextStyle(
+                                      color: tokens.text,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildReplayBanner(TelemetryController c) {
-    final ds = c.replayDataset;
-    final minT = ds?.minTime ?? 0.0;
-    final maxT = ds != null && ds.maxTime > minT ? ds.maxTime : minT + 1.0;
-    final val = c.replayScrubTime.clamp(minT, maxT);
+  Widget _buildCardsGrid(BuildContext context, TelemetryController c) {
+    final activeKeys = widget.settings?.dashboardCardKeys ?? cardChannelKeys;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0E2530),
-        border: Border.all(color: MotorsportColors.info),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.replay, color: MotorsportColors.info, size: 18),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  'MODO REPLAY: ${c.replayFileName ?? "CSV"}  ·  t = ${val.toStringAsFixed(2)}s / ${maxT.toStringAsFixed(1)}s',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: MotorsportTheme.tabularStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: MotorsportColors.info,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: c.exitReplayMode,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: MotorsportColors.alarm,
-                  side: const BorderSide(color: MotorsportColors.alarm),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                ),
-                icon: const Icon(Icons.close, size: 15),
-                label: const Text('Sair do Replay'),
-              ),
-            ],
-          ),
-          Slider(
-            value: val,
-            min: minT,
-            max: maxT,
-            activeColor: MotorsportColors.info,
-            inactiveColor: MotorsportColors.border,
-            onChanged: c.scrubReplay,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionBar(BuildContext context, TelemetryController c) {
-    final connectedOrBusy = c.isConnected || c.connectionState == ConnectionStateKind.connecting;
-
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        ElevatedButton.icon(
-          onPressed: connectedOrBusy
-              ? c.disconnect
-              : () => ConnectionSheet.show(context, c),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: connectedOrBusy
-                ? const Color(0xFF511D2B)
-                : const Color(0xFF073B29),
-            foregroundColor: connectedOrBusy
-                ? const Color(0xFFFFD6E0)
-                : const Color(0xFFA9FFD3),
-            side: BorderSide(
-              color: connectedOrBusy ? MotorsportColors.alarm : MotorsportColors.ok,
-            ),
-          ),
-          icon: Icon(
-            connectedOrBusy ? Icons.link_off : Icons.power_settings_new,
-            size: 16,
-          ),
-          label: Text(connectedOrBusy ? 'Desconectar' : 'Conectar'),
-        ),
-        ElevatedButton.icon(
-          onPressed: c.toggleRecording,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: c.isRecording
-                ? const Color(0xFF531426)
-                : MotorsportColors.elevated,
-            foregroundColor: c.isRecording
-                ? const Color(0xFFFFD6E0)
-                : MotorsportColors.text,
-            side: BorderSide(
-              color: c.isRecording ? MotorsportColors.alarm : MotorsportColors.border,
-            ),
-          ),
-          icon: Icon(
-            c.isRecording ? Icons.stop_circle : Icons.fiber_manual_record,
-            size: 16,
-            color: c.isRecording ? MotorsportColors.alarm : MotorsportColors.alarm,
-          ),
-          label: Text(
-            c.isRecording ? 'Parar (${c.recordingRows})' : '● Gravar Log',
-          ),
-        ),
-        OutlinedButton.icon(
-          onPressed: c.clearPeaks,
-          icon: const Icon(Icons.bolt, size: 16),
-          label: const Text('Limpar Picos'),
-        ),
-        FilterChip(
-          selected: c.decelMode,
-          label: const Text('Desaceleração'),
-          labelStyle: TextStyle(
-            fontSize: 11.5,
-            fontWeight: FontWeight.w700,
-            color: c.decelMode ? const Color(0xFFFFE2A1) : MotorsportColors.text,
-          ),
-          selectedColor: const Color(0xFF493512),
-          checkmarkColor: MotorsportColors.warning,
-          side: BorderSide(
-            color: c.decelMode ? MotorsportColors.warning : MotorsportColors.border,
-          ),
-          onSelected: (v) {
-            c.decelMode = v;
-            c.emitInfo(
-              v
-                  ? 'Modo Prioridade de Desaceleração ATIVADO'
-                  : 'Modo Prioridade de Desaceleração desativado',
-            );
-          },
-        ),
-        FilterChip(
-          selected: _showExtraChannels,
-          label: Text('Canais Extras (${_extraChannelKeys(c).length})'),
-          labelStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-          selectedColor: MotorsportColors.info.withValues(alpha: 0.18),
-          checkmarkColor: MotorsportColors.info,
-          side: BorderSide(
-            color: _showExtraChannels ? MotorsportColors.info : MotorsportColors.border,
-          ),
-          onSelected: (v) => setState(() => _showExtraChannels = v),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatusRibbon(TelemetryController c) {
-    final lastEv = c.events.isNotEmpty ? c.events.last : null;
-    final String badgeText;
-    final Color badgeColor;
-    final String messageText;
-
-    if (c.isEcuOff) {
-      badgeText = '● ECU OFF';
-      badgeColor = MotorsportColors.alarm;
-      messageText = c.statusMessage;
-    } else if (lastEv != null) {
-      badgeText = switch (lastEv.level) {
-        'alarm' => '● ALARME',
-        'warn' => '▲ ATENÇÃO',
-        _ => '● INFO',
-      };
-      badgeColor = switch (lastEv.level) {
-        'alarm' => MotorsportColors.alarm,
-        'warn' => MotorsportColors.warning,
-        _ => MotorsportColors.info,
-      };
-      messageText = lastEv.message;
-    } else {
-      badgeText = c.isConnected ? '● ECU' : '● INFO';
-      badgeColor = c.isConnected ? MotorsportColors.ok : MotorsportColors.info;
-      messageText = c.ecuMetadata.ecuName.isNotEmpty && c.isConnected
-          ? '${c.ecuMetadata.ecuName} — ${c.statusMessage}'
-          : c.statusMessage;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: MotorsportColors.surfaceAlt,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Row(
-        children: [
-          Text(
-            badgeText,
-            style: TextStyle(
-              color: badgeColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              messageText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: MotorsportColors.muted,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCardsGrid(TelemetryController c) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final w = constraints.maxWidth;
@@ -301,14 +632,57 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final cardWidth = (w - spacing * (cols - 1)) / cols;
         final compact = cols >= 5 || w < 440;
 
+        final settings = widget.settings;
         return Wrap(
           spacing: spacing,
           runSpacing: spacing,
           children: [
-            for (final key in cardChannelKeys)
+            for (var i = 0; i < activeKeys.length; i++)
               SizedBox(
                 width: cardWidth,
-                child: _buildAdaptedCard(c, key, compact: compact),
+                child: DragTarget<int>(
+                  onWillAcceptWithDetails: (details) =>
+                      settings != null && details.data != i,
+                  onAcceptWithDetails: (details) {
+                    settings?.moveCard(details.data, i);
+                  },
+                  builder: (context, candidateData, _) {
+                    final card = _buildAdaptedCard(
+                      context,
+                      c,
+                      activeKeys[i],
+                      index: i,
+                      totalCount: activeKeys.length,
+                      activeKeys: activeKeys,
+                      compact: compact,
+                    );
+                    final highlighted = candidateData.isNotEmpty
+                        ? DecoratedBox(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: MotorsportTheme.tokensOf(context).accent,
+                                width: 2,
+                              ),
+                            ),
+                            child: card,
+                          )
+                        : card;
+                    if (settings == null) return highlighted;
+                    return LongPressDraggable<int>(
+                      data: i,
+                      feedback: Material(
+                        color: Colors.transparent,
+                        child: Opacity(
+                          opacity: 0.85,
+                          child: SizedBox(width: cardWidth, child: card),
+                        ),
+                      ),
+                      childWhenDragging: Opacity(opacity: 0.35, child: card),
+                      child: highlighted,
+                    );
+                  },
+                ),
               ),
           ],
         );
@@ -316,9 +690,55 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
+  int _smartDecimalsFor(String key, String unit) {
+    if (unit == 'rpm' ||
+        unit == '°C' ||
+        unit == 'kPa' ||
+        unit == 'km/h' ||
+        unit == 'un' ||
+        unit == 'bit' ||
+        unit == 'id' ||
+        unit == 'cod') {
+      return 0;
+    }
+    if (unit == 'λ') return 3;
+    if (unit == 'bar' || unit == 'ms' || unit == 'G') return 2;
+    if (unit == 'V') {
+      if (key.contains('lambda')) return 3;
+      if (key.contains('knock') || key == 'ecu_volt' || key == 'obd_pin16_v') return 2;
+      return 1;
+    }
+    if (unit == '%' ||
+        unit == '°' ||
+        unit == '°KW' ||
+        unit == 'L/h' ||
+        unit == 'l/h' ||
+        unit == 'km/l' ||
+        unit == 'cv' ||
+        unit == 'kgfm' ||
+        unit == 'psi') {
+      return 1;
+    }
+    return key.startsWith('g') ? 2 : 1;
+  }
+
+  bool _smartSignedFor(String key) {
+    return key.contains('stft') ||
+        key.contains('ltft') ||
+        key.contains('trim') ||
+        key == 'lambda_error_pct' ||
+        key == 'boost_bar' ||
+        key == 'boost_psi' ||
+        key == 'accel_g';
+  }
+
   Widget _buildAdaptedCard(
+    BuildContext context,
     TelemetryController c,
     String key, {
+    required int index,
+    required int totalCount,
+    required List<String> activeKeys,
     required bool compact,
   }) {
     final latest = c.latest;
@@ -329,12 +749,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
         latest.containsKey('fuel_rail_bar') ||
         latest.containsKey('turbo_inlet_kpa');
 
-    final def = coreChannels[key]!;
+    final def = coreChannels[key];
+    final desc = describeChannel(key, c.knownChannels);
     String activeKey = key;
-    String title = def.label;
-    String unit = def.unit;
-    int decimals = def.decimals;
-    bool signed = def.signed;
+    String title = def?.label ?? _channelLabelForExtra(c, key);
+    String unit = def?.unit ?? desc.unit;
+    int decimals = def?.decimals ?? _smartDecimalsFor(key, unit);
+    bool signed = def?.signed ?? _smartSignedFor(key);
 
     // 1. Adaptação LTFT Lenta vs Correção Sonda (nunca duplicar Correção Sonda == STFT)
     if (key == 'lambda_trim' && latest.containsKey('ltft_idle')) {
@@ -419,6 +840,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       hasTurboData: hasTurboData,
     );
 
+    final settings = widget.settings;
+
     return ValueCard(
       channelKey: activeKey,
       title: title,
@@ -429,6 +852,56 @@ class _DashboardScreenState extends State<DashboardScreen> {
       minFormatted: minFormatted,
       maxFormatted: maxFormatted,
       compact: compact,
+      editMode: _editCardsMode,
+      onMovePrev: (_editCardsMode && index > 0 && settings != null)
+          ? () => settings.moveCard(index, index - 1)
+          : null,
+      onMoveNext: (_editCardsMode && index < totalCount - 1 && settings != null)
+          ? () => settings.moveCard(index, index + 1)
+          : null,
+      onChangeParameter: _editCardsMode
+          ? () async {
+              if (settings == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Personalização indisponível neste modo.')),
+                );
+                return;
+              }
+              final chosen = await CardCustomizationSheet.show(
+                context,
+                controller: c,
+                currentCardKeys: activeKeys,
+                title: 'Trocar Card "$title"',
+              );
+              if (chosen != null) {
+                await settings.replaceCard(index, chosen);
+              }
+            }
+          : null,
+      onRemove: _editCardsMode
+          ? () async {
+              if (settings == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Personalização indisponível neste modo.')),
+                );
+                return;
+              }
+              final removed = await settings.removeCardAt(index);
+              if (removed != null && context.mounted) {
+                final messenger = ScaffoldMessenger.of(context);
+                messenger.hideCurrentSnackBar();
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Card "$title" removido.'),
+                    action: SnackBarAction(
+                      label: 'Desfazer',
+                      onPressed: () => settings.insertCardAt(index, removed),
+                    ),
+                  ),
+                );
+              }
+            }
+          : null,
       onTap: () => ChannelDetailChartSheet.show(
         context,
         controller: c,
@@ -436,6 +909,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         onPinToCharts: widget.onOpenChannelChart == null
             ? null
             : () => widget.onOpenChannelChart!(activeKey),
+        onRemoveFromDashboard: settings == null
+            ? null
+            : () async {
+                final removed = await settings.removeCardAt(index);
+                if (removed != null && context.mounted) {
+                  final messenger = ScaffoldMessenger.of(context);
+                  messenger.hideCurrentSnackBar();
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Card "$title" removido.'),
+                      action: SnackBarAction(
+                        label: 'Desfazer',
+                        onPressed: () => settings.insertCardAt(index, removed),
+                      ),
+                    ),
+                  );
+                }
+              },
       ),
     );
   }
@@ -454,13 +945,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (!c.replayMode) {
       final maxAge = activeKey == 'battery'
           ? 40.0
-          : (const {'ect', 'ltft', 'ltft_idle', 'speed', 'iat'}.contains(activeKey)
+          : (const {'ect', 'cht_temp', 'ltft', 'ltft_idle', 'speed', 'iat'}.contains(activeKey)
               ? 12.0
               : 3.5);
       final stamp = c.stamps[activeKey];
       if (stamp == null || (c.currentTimeSec - stamp) > maxAge) {
         final paused = c.decelMode &&
-            const {'ect', 'ltft', 'stft', 'load', 'speed', 'iat', 'battery'}.contains(activeKey);
+            const {'ect', 'cht_temp', 'ltft', 'stft', 'load', 'speed', 'iat', 'battery'}
+                .contains(activeKey);
         return (CardAlertState.stale, paused ? 'pausado' : '');
       }
     }
@@ -476,7 +968,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
           (value > 105.0 ? (value - (c.latest['baro'] ?? 101.325)) / 100.0 : null);
       if (bVal != null) {
         if (bVal > 1.40) return (CardAlertState.alarm, 'OVERBOOST');
-        if (bVal > 0.05) return (CardAlertState.normal, 'BOOST ${bVal >= 0 ? "+" : ""}${bVal.toStringAsFixed(2)}b');
+        if (bVal > 0.05) {
+          return (
+            CardAlertState.normal,
+            'BOOST ${bVal >= 0 ? "+" : ""}${bVal.toStringAsFixed(2)}b',
+          );
+        }
         return (CardAlertState.normal, 'VAC ${bVal.toStringAsFixed(2)}b');
       }
     }
@@ -491,16 +988,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (value.abs() > 10.0) {
         return (CardAlertState.warn, value < 0 ? 'corrigindo -' : 'corrigindo +');
       }
-    } else if (activeKey == 'ect') {
+    } else if (activeKey == 'ect' || activeKey == 'cht_temp') {
       if (value >= 108.0) return (CardAlertState.alarm, 'SUPERAQUEC.');
       if (value < 70.0) return (CardAlertState.warn, 'frio');
-    } else if (activeKey == 'battery') {
-      if (value < 12.0 || value > 15.0) {
-        return (CardAlertState.alarm, value < 12.0 ? 'baixa' : 'alta');
+    } else if (activeKey == 'battery' || activeKey == 'ecu_volt' || activeKey == 'obd_pin16_v') {
+      if (value < 11.6 || value > 15.0) {
+        return (CardAlertState.alarm, value < 11.6 ? 'baixa' : 'alta');
       }
-      if (value < 13.0) return (CardAlertState.warn, 'sem carga?');
-    } else if (activeKey == 'advance' && value < -5.0) {
-      return (CardAlertState.warn, 'retardado');
+      final rpm = c.latest['rpm'] ?? 0.0;
+      if (rpm >= 500.0) {
+        if (value < 12.0) return (CardAlertState.alarm, 'baixa');
+        if (value < 13.0) return (CardAlertState.warn, 'sem carga?');
+      } else {
+        if (value < 12.1) return (CardAlertState.warn, 'fraca');
+        return (CardAlertState.normal, 'repouso');
+      }
+    } else if (activeKey == 'advance') {
+      if (value < -8.0) return (CardAlertState.alarm, 'RETARDO ATDC');
+      if (value < -5.0) return (CardAlertState.warn, 'retardado');
     } else if (activeKey == 'lambda_v') {
       return _lambda1State(c);
     } else if (activeKey == 'lambda2_v') {
@@ -508,6 +1013,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     return (CardAlertState.normal, '');
+  }
+
+  List<double> _valuesInWindow(SeriesBuffer buf, double tFrom, double tTo) {
+    final slice = buf.window(tFrom);
+    final out = <double>[];
+    for (var i = 0; i < slice.times.length; i++) {
+      if (slice.times[i] <= tTo) {
+        out.add(slice.values[i]);
+      } else {
+        break;
+      }
+    }
+    return out;
   }
 
   (CardAlertState, String) _lambda1State(TelemetryController c) {
@@ -535,12 +1053,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final buf = c.buffers['lambda_v'];
     if (buf == null) return (CardAlertState.normal, '');
-    final win = buf.window(c.currentTimeSec - 4.0);
-    if (win.values.length < 4) return (CardAlertState.normal, '');
-    final minV = win.values.reduce(math.min);
-    final maxV = win.values.reduce(math.max);
+    final refT = c.replayMode ? c.replayScrubTime : c.currentTimeSec;
+    final vals = _valuesInWindow(buf, refT - 4.0, refT);
+    if (vals.length < 4) return (CardAlertState.normal, '');
+    final minV = vals.reduce(math.min);
+    final maxV = vals.reduce(math.max);
     if ((maxV - minV) < 0.06) {
-      final mean = win.values.reduce((a, b) => a + b) / win.values.length;
+      final mean = vals.reduce((a, b) => a + b) / vals.length;
       final suffix = mean > 0.6 ? 'RICA' : (mean < 0.3 ? 'POBRE' : '');
       return (CardAlertState.alarm, 'TRAVADA $suffix'.trim());
     }
@@ -557,16 +1076,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (ect != null && ect < 65.0) {
       return (CardAlertState.normal, 'aquecendo');
     }
-    final win2 = buf2.window(c.currentTimeSec - 6.0);
-    if (win2.values.length < 4) return (CardAlertState.normal, '');
-    final ptp2 = win2.values.reduce(math.max) - win2.values.reduce(math.min);
-    final m2 = win2.values.reduce((a, b) => a + b) / win2.values.length;
+    final refT = c.replayMode ? c.replayScrubTime : c.currentTimeSec;
+    final vals2 = _valuesInWindow(buf2, refT - 6.0, refT);
+    if (vals2.length < 4) return (CardAlertState.normal, '');
+    final ptp2 = vals2.reduce(math.max) - vals2.reduce(math.min);
+    final m2 = vals2.reduce((a, b) => a + b) / vals2.length;
 
     final buf1 = c.buffers['lambda_v'];
     if (buf1 != null) {
-      final win1 = buf1.window(c.currentTimeSec - 6.0);
-      if (win1.values.length >= 4) {
-        final ptp1 = win1.values.reduce(math.max) - win1.values.reduce(math.min);
+      final vals1 = _valuesInWindow(buf1, refT - 6.0, refT);
+      if (vals1.length >= 4) {
+        final ptp1 = vals1.reduce(math.max) - vals1.reduce(math.min);
         if (ptp1 > 0.35 && ptp2 > 0.30) {
           return (CardAlertState.alarm, 'CATALISADOR?');
         }
@@ -577,7 +1097,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   List<String> _extraChannelKeys(TelemetryController c) {
-    final cardSet = cardChannelKeys.toSet();
+    final cardSet = (widget.settings?.dashboardCardKeys ?? cardChannelKeys).toSet();
     final keys = <String>{
       ...c.latest.keys.where((k) => !cardSet.contains(k)),
       ...c.knownChannels.keys.where((k) => !cardSet.contains(k)),
@@ -609,6 +1129,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildExtraChannelsSection(TelemetryController c) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final allExtras = _extraChannelKeys(c);
     final q = _extraFilter.trim().toLowerCase();
     final filtered = q.isEmpty
@@ -618,28 +1139,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
             return k.toLowerCase().contains(q) || lbl.contains(q);
           }).toList();
 
-    return Container(
-      decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(4),
+    return Material(
+      color: tokens.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(color: tokens.borderSubtle, width: tokens.cardBorderWidth),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           InkWell(
+            borderRadius: BorderRadius.circular(6),
             onTap: () => setState(() => _showExtraChannels = !_showExtraChannels),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
-                  const Icon(Icons.tune, color: MotorsportColors.info, size: 17),
+                  Icon(Icons.tune, color: tokens.accent, size: 17),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Canais Extras, Analítica & Blocos VAG (${allExtras.length})',
-                      style: const TextStyle(
-                        color: MotorsportColors.text,
+                      style: TextStyle(
+                        color: tokens.text,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -647,14 +1169,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   Icon(
                     _showExtraChannels ? Icons.expand_less : Icons.expand_more,
-                    color: MotorsportColors.muted,
+                    color: tokens.muted,
                   ),
                 ],
               ),
             ),
           ),
           if (_showExtraChannels) ...[
-            const Divider(height: 1),
+            Divider(height: 1, color: tokens.borderSubtle),
             Padding(
               padding: const EdgeInsets.all(10),
               child: Column(
@@ -679,18 +1201,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 8),
                   if (filtered.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
                         'Nenhum canal extra descoberto ainda.',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: MotorsportColors.muted, fontSize: 12),
+                        style: TextStyle(color: tokens.muted, fontSize: 12),
                       ),
                     )
                   else
                     LayoutBuilder(
                       builder: (context, constraints) {
-                        final cols = constraints.maxWidth >= 700 ? 3 : (constraints.maxWidth >= 460 ? 2 : 1);
+                        final cols = constraints.maxWidth >= 700
+                            ? 3
+                            : (constraints.maxWidth >= 460 ? 2 : 1);
                         const gap = 6.0;
                         final itemW = (constraints.maxWidth - gap * (cols - 1)) / cols;
                         return Wrap(
@@ -701,7 +1225,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               SizedBox(
                                 width: itemW,
                                 child: InkWell(
-                                  borderRadius: BorderRadius.circular(3),
+                                  borderRadius: BorderRadius.circular(4),
                                   onTap: () => ChannelDetailChartSheet.show(
                                     context,
                                     controller: c,
@@ -709,14 +1233,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     onPinToCharts:
                                         widget.onOpenChannelChart == null
                                             ? null
-                                            : () =>
-                                                widget.onOpenChannelChart!(k),
+                                            : () => widget.onOpenChannelChart!(k),
                                   ),
                                   child: _ExtraChannelTile(
                                     channelKey: k,
                                     label: _channelLabelForExtra(c, k),
-                                    unit: describeChannel(k, c.knownChannels)
-                                        .unit,
+                                    unit: describeChannel(k, c.knownChannels).unit,
                                     value: c.latest[k],
                                   ),
                                 ),
@@ -750,6 +1272,7 @@ class _ExtraChannelTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final color = MotorsportColors.colorForChannel(channelKey);
     final valStr = value == null ? '--' : value!.toStringAsFixed(2);
 
@@ -757,8 +1280,8 @@ class _ExtraChannelTile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: MotorsportColors.plot,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: tokens.borderSubtle),
+        borderRadius: BorderRadius.circular(4),
       ),
       child: Row(
         children: [
@@ -770,8 +1293,8 @@ class _ExtraChannelTile extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: MotorsportColors.text,
+                  style: TextStyle(
+                    color: tokens.text,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),
@@ -780,8 +1303,8 @@ class _ExtraChannelTile extends StatelessWidget {
                   channelKey,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: MotorsportColors.stale,
+                  style: TextStyle(
+                    color: tokens.stale,
                     fontSize: 9.5,
                   ),
                 ),
@@ -794,7 +1317,7 @@ class _ExtraChannelTile extends StatelessWidget {
             style: MotorsportTheme.tabularStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w800,
-              color: value == null ? MotorsportColors.stale : color,
+              color: value == null ? tokens.stale : color,
             ),
           ),
         ],

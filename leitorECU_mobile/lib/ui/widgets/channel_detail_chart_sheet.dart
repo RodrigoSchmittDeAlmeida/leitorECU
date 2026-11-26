@@ -23,17 +23,20 @@ class ChannelDetailChartSheet extends StatefulWidget {
     required this.controller,
     required this.channelKey,
     this.onPinToCharts,
+    this.onRemoveFromDashboard,
   });
 
   final TelemetryController controller;
   final String channelKey;
   final VoidCallback? onPinToCharts;
+  final VoidCallback? onRemoveFromDashboard;
 
   static Future<void> show(
     BuildContext context, {
     required TelemetryController controller,
     required String channelKey,
     VoidCallback? onPinToCharts,
+    VoidCallback? onRemoveFromDashboard,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -43,6 +46,7 @@ class ChannelDetailChartSheet extends StatefulWidget {
         controller: controller,
         channelKey: channelKey,
         onPinToCharts: onPinToCharts,
+        onRemoveFromDashboard: onRemoveFromDashboard,
       ),
     );
   }
@@ -439,6 +443,22 @@ class _ChannelDetailChartSheetState extends State<ChannelDetailChartSheet> {
             ),
           ),
         ),
+        if (widget.onRemoveFromDashboard != null) ...[
+          const SizedBox(width: 4),
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              widget.onRemoveFromDashboard!();
+            },
+            icon: const Icon(
+              Icons.delete_outline,
+              size: 20,
+              color: MotorsportColors.alarm,
+            ),
+            tooltip: 'Remover card da tela inicial',
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
         const SizedBox(width: 4),
         IconButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -645,6 +665,7 @@ class _ChannelDetailChartSheetState extends State<ChannelDetailChartSheet> {
           _RefLine(15.0, '+15%', MotorsportColors.warning),
         ];
       case 'ect':
+      case 'cht_temp':
       case 'cht_c':
         return [
           _RefLine(80.0, '80°C', MotorsportColors.ok),
@@ -693,7 +714,7 @@ class _ChannelDetailChartSheetState extends State<ChannelDetailChartSheet> {
         'rpm' => (0.0, 6500.0),
         'lambda_v' || 'lambda2_v' => (0.0, 1.0),
         'stft' || 'ltft' || 'lambda_trim' => (-25.0, 25.0),
-        'ect' || 'cht_c' || 'iat' => (20.0, 115.0),
+        'ect' || 'cht_temp' || 'cht_c' || 'iat' => (20.0, 115.0),
         'battery' => (10.0, 15.5),
         'tps' || 'load' => (0.0, 100.0),
         _ => (0.0, 100.0),
@@ -722,6 +743,7 @@ class _ChannelDetailChartSheetState extends State<ChannelDetailChartSheet> {
       case 'rpm':
       case 'ect':
       case 'iat':
+      case 'cht_temp':
       case 'cht_c':
       case 'ambient':
       case 'oil_temp':

@@ -190,7 +190,10 @@ class MathChannelsEngine {
     }
 
     // 2. Desvio da Mistura Lambda Error (%)
-    if (lambdaV != null && lambdaV > 0.02) {
+    final lambdaEq = latest['lambda_eq'];
+    if (lambdaEq != null && lambdaEq > 0.1) {
+      res['lambda_error_pct'] = _round1((lambdaEq - 1.0) * 100.0);
+    } else if (lambdaV != null && lambdaV > 0.02) {
       final lambdaEst = 1.0 - (lambdaV - 0.45) * 0.35;
       res['lambda_error_pct'] = _round1((lambdaEst - 1.0) * 100.0);
     }

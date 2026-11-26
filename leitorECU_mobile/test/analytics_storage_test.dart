@@ -5,10 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:leitorecu_mobile/analytics/detector.dart';
 import 'package:leitorecu_mobile/analytics/dtc_parser.dart';
 import 'package:leitorecu_mobile/analytics/fuel_estimator.dart';
+import 'package:leitorecu_mobile/analytics/log_analyzer.dart';
 import 'package:leitorecu_mobile/analytics/math_channels.dart';
 import 'package:leitorecu_mobile/analytics/performance_timer.dart';
 import 'package:leitorecu_mobile/analytics/readiness_parser.dart';
+import 'package:leitorecu_mobile/core/ai/llm_diagnostic_service.dart';
+import 'package:leitorecu_mobile/core/models/channel_def.dart';
 import 'package:leitorecu_mobile/core/models/vehicle_profile.dart';
+import 'package:leitorecu_mobile/core/platform/secure_storage.dart';
+import 'package:leitorecu_mobile/core/settings/app_settings.dart';
 import 'package:leitorecu_mobile/state/telemetry_controller.dart';
 import 'package:leitorecu_mobile/storage/csv_logger.dart';
 import 'package:leitorecu_mobile/storage/csv_replay_parser.dart';
@@ -720,6 +725,244 @@ void main() {
         );
         expect(mslPath, isNotNull);
         expect(await File(mslPath!).readAsString(), contains('Time\t'));
+      } finally {
+        await tmpDir.delete(recursive: true);
+      }
+    });
+  });
+
+  group('LogAnalyzer, Comparison, LLM Service, AppSettings & Replay Playback', () {
+    test('LogAnalyzer computes exact Mean, Median, Mode, StdDev, Percentiles & DiagnosticFindings', () {
+      // RPM: [1000, 1000, 1000, 2000, 3000, 4000, 5000] -> mean=2428.57, median=2000, mode=1000
+      final ds = ReplayDataset(
+        availableChannels: const ['rpm', 'speed', 'ect', 'ltft', 'stft', 'lambda_v', 'battery', 'advance', 'cht_temp'],
+        times: const [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 210.0],
+        records: const [
+          {'rpm': 1000.0, 'speed': 0.0, 'ect': 65.0, 'ltft': -19.0, 'stft': -4.0, 'lambda_v': 0.12, 'battery': 14.1, 'advance': 12.0, 'cht_temp': 70.0},
+          {'rpm': 1000.0, 'speed': 0.0, 'ect': 66.0, 'ltft': -19.0, 'stft': -3.0, 'lambda_v': 0.14, 'battery': 14.1, 'advance': 14.0, 'cht_temp': 71.0},
+          {'rpm': 1000.0, 'speed': 0.0, 'ect': 67.0, 'ltft': -19.0, 'stft': -5.0, 'lambda_v': 0.13, 'battery': 14.0, 'advance': 15.0, 'cht_temp': 72.0},
+          {'rpm': 2000.0, 'speed': 40.0, 'ect': 68.0, 'ltft': -19.0, 'stft': -2.0, 'lambda_v': 0.15, 'battery': 14.2, 'advance': 20.0, 'cht_temp': 73.0},
+          {'rpm': 3000.0, 'speed': 60.0, 'ect': 70.0, 'ltft': -19.0, 'stft': -3.0, 'lambda_v': 0.16, 'battery': 14.2, 'advance': -10.0, 'cht_temp': 74.0},
+          {'rpm': 4000.0, 'speed': 80.0, 'ect': 71.0, 'ltft': -19.0, 'stft': -2.0, 'lambda_v': 0.15, 'battery': 11.8, 'advance': 26.0, 'cht_temp': 75.0},
+          {'rpm': 5000.0, 'speed': 100.0, 'ect': 72.0, 'ltft': -19.0, 'stft': -1.0, 'lambda_v': 0.14, 'battery': 14.1, 'advance': 28.0, 'cht_temp': 76.0},
+        ],
+        events: const [ReplayEvent(timeSec: 4.0, text: 'Retardo ATDC')],
+        isTurboDetected: false,
+      );
+
+      final report = LogAnalyzer.analyze(ds, fileName: 'corrida_a.csv');
+      expect(report.sampleCount, equals(7));
+      expect(report.standbyGapCount, equals(1)); // 5.0 -> 210.0 (> 5.0s)
+
+      final rpmStat = report.byKey['rpm']!;
+      expect(rpmStat.mean, closeTo(17000.0 / 7.0, 0.2));
+      expect(rpmStat.median, closeTo(2000.0, 0.01));
+      expect(rpmStat.mode, closeTo(1000.0, 50.0));
+      expect(rpmStat.min, equals(1000.0));
+      expect(rpmStat.max, equals(5000.0));
+      expect(rpmStat.p5, greaterThanOrEqualTo(1000.0));
+      expect(rpmStat.p95, lessThanOrEqualTo(5000.0));
+      expect(rpmStat.stdDev, greaterThan(1000.0));
+
+      // Distância deve ignorar a lacuna de 205s de standby (entre 5s e 210s)
+      expect(report.distanceKm, lessThan(0.15));
+
+      // Findings determinísticos: LTFT severo, ECT abaixo de 75°C após >180s, ATDC, bateria baixa, standby
+      expect(report.findings.any((f) => f.category == 'Mistura' && f.severity == 'alarm'), isTrue);
+      expect(report.findings.any((f) => f.category == 'Arrefecimento' && f.severity == 'warn'), isTrue);
+      expect(report.findings.any((f) => f.category == 'Ignição' && f.severity == 'alarm'), isTrue);
+      expect(report.findings.any((f) => f.category == 'Elétrica' && f.severity == 'alarm'), isTrue);
+      expect(report.findings.any((f) => f.category == 'Sessão'), isTrue);
+
+      // Comparação A vs B
+      final dsB = ReplayDataset(
+        availableChannels: const ['rpm', 'ect', 'ltft'],
+        times: const [0.0, 1.0, 2.0],
+        records: const [
+          {'rpm': 1500.0, 'ect': 88.0, 'ltft': -2.0},
+          {'rpm': 2000.0, 'ect': 90.0, 'ltft': -1.0},
+          {'rpm': 2500.0, 'ect': 91.0, 'ltft': 0.0},
+        ],
+        events: const [],
+        isTurboDetected: false,
+      );
+      final reportB = LogAnalyzer.analyze(dsB, fileName: 'corrida_b.csv');
+      final cmp = LogAnalyzer.compare(report, reportB);
+      expect(cmp.onlyInA, contains('speed'));
+      final ectDelta = cmp.deltas.firstWhere((d) => d.key == 'ect');
+      expect(ectDelta.deltaMean, greaterThan(18.0));
+      expect(ectDelta.isSignificant, isTrue);
+      expect(cmp.summaryHighlights, isNotEmpty);
+    });
+
+    test('LlmDiagnosticService handles Gemini, OpenAI, HTTPS security and key sanitization', () async {
+      final ds = ReplayDataset(
+        availableChannels: const ['rpm', 'ect', 'ltft'],
+        times: const [0.0, 1.0],
+        records: const [
+          {'rpm': 900.0, 'ect': 88.0, 'ltft': -3.0},
+          {'rpm': 2500.0, 'ect': 90.0, 'ltft': -2.5},
+        ],
+        events: const [],
+        isTurboDetected: false,
+      );
+      final report = LogAnalyzer.analyze(ds, fileName: 'amostra.csv');
+
+      Uri? capturedUri;
+      Map<String, String>? capturedHeaders;
+      final geminiSvc = LlmDiagnosticService(
+        transport: ({required uri, required headers, required body, required timeout}) async {
+          capturedUri = uri;
+          capturedHeaders = headers;
+          return LlmHttpResponse(
+            200,
+            jsonEncode({
+              'candidates': [
+                {
+                  'content': {
+                    'parts': [
+                      {'text': '## Diagnóstico Geral\nMotor operando em faixa saudável.'}
+                    ]
+                  }
+                }
+              ]
+            }),
+          );
+        },
+      );
+
+      const secret = 'AIzaSyTestSecretKey12345';
+      final res = await geminiSvc.analyzeSingleLog(
+        report: report,
+        provider: AiProviderKind.gemini,
+        model: 'gemini-2.5-flash',
+        apiKey: secret,
+      );
+      expect(res.analysisMarkdown, contains('Diagnóstico Geral'));
+      expect(capturedUri.toString(), contains('generativelanguage.googleapis.com'));
+      expect(capturedUri.toString().contains(secret), isFalse); // chave nunca na URL
+      expect(capturedHeaders?['x-goog-api-key'], equals(secret));
+
+      // Rejeita custom endpoint HTTP inseguro (não-localhost)
+      await expectLater(
+        () => geminiSvc.analyzeSingleLog(
+          report: report,
+          provider: AiProviderKind.customOpenAi,
+          model: 'gpt-4o-mini',
+          apiKey: secret,
+          customBaseUrl: 'http://example.com/v1',
+        ),
+        throwsA(isA<LlmDiagnosticException>()),
+      );
+
+      // Erro HTTP 401 sanitiza a API key
+      final errSvc = LlmDiagnosticService(
+        transport: ({required uri, required headers, required body, required timeout}) async {
+          return LlmHttpResponse(401, 'Unauthorized key $secret');
+        },
+      );
+      try {
+        await errSvc.analyzeSingleLog(
+          report: report,
+          provider: AiProviderKind.openai,
+          model: 'gpt-4o-mini',
+          apiKey: secret,
+        );
+        fail('Expected LlmDiagnosticException');
+      } on LlmDiagnosticException catch (e) {
+        expect(e.userMessage.contains(secret), isFalse);
+        expect(e.userMessage, contains('401'));
+      }
+    });
+
+    test('AppSettingsController & SecureKeyStorage persist preferences, cards & API keys safely', () async {
+      final storage = SecureKeyStorage();
+      final settings = AppSettingsController(secureStorage: storage);
+      await settings.load();
+
+      expect(settings.dashboardCardKeys.length, equals(cardChannelKeys.length));
+      await settings.setFontScale(1.5); // clamped to 1.35
+      expect(settings.fontScale, equals(1.35));
+      await settings.setHighContrast(true);
+      await settings.setAccentPreset(AccentPreset.emerald);
+      expect(settings.highContrast, isTrue);
+
+      await settings.replaceCard(0, 'oil_temp');
+      expect(settings.dashboardCardKeys.first, equals('oil_temp'));
+      await settings.moveCard(0, 2);
+      expect(settings.dashboardCardKeys[2], equals('oil_temp'));
+      final removed = await settings.removeCardAt(2);
+      expect(removed, equals('oil_temp'));
+      await settings.insertCardAt(2, removed!);
+      expect(settings.dashboardCardKeys[2], equals('oil_temp'));
+      await settings.resetDashboardCards();
+      expect(settings.dashboardCardKeys.first, equals(cardChannelKeys.first));
+
+      final savedOk = await settings.saveApiKey('sk-test-secret-999');
+      expect(savedOk, isTrue);
+      expect(settings.hasApiKey, isTrue);
+      expect(settings.toString().contains('sk-test-secret-999'), isFalse);
+      expect(await settings.readApiKey(), equals('sk-test-secret-999'));
+      await settings.clearApiKey();
+      expect(settings.hasApiKey, isFalse);
+      expect(await settings.readApiKey(), isNull);
+    });
+
+    test('MathChannelsEngine wideband lambda_error_pct, cht_temp & TelemetryController Replay Playback + carry-forward', () async {
+      expect(describeChannel('cht_temp').label, equals('Temp. Cabeçote (CHT)'));
+
+      final mathEngine = MathChannelsEngine();
+      final outWb = mathEngine.compute(0.0, {
+        'rpm': 3000.0,
+        'map': 120.0,
+        'lambda_eq': 0.85,
+        'lambda_v': 0.2,
+      });
+      expect(outWb['lambda_error_pct'], closeTo(-15.0, 0.2));
+
+      final tmpDir = await Directory.systemTemp.createTemp('leitorecu_replay_play_');
+      try {
+        final csvFile = File('${tmpDir.path}${Platform.pathSeparator}esparso.csv');
+        await csvFile.writeAsString(
+          'timestamp_ms;tempo_s;atualizado;rpm;map;ect;speed;battery;evento\n'
+          '1000;0,0;rpm;900;35;85;0;14,1;\n'
+          '2000;1,0;speed;;;86;45;;Acelerando\n'
+          '3000;2,0;rpm;3100;72;;80;14,2;\n',
+        );
+
+        final ctrl = TelemetryController(
+          logRepository: LogRepository(directoryOverride: tmpDir),
+        );
+        final ok = await ctrl.loadReplayFromPath(csvFile.path);
+        expect(ok, isTrue);
+        expect(ctrl.replayTotalSamples, equals(3));
+
+        // Carry-forward: linha t=1.0s só atualizou ect e speed, mas rpm e map continuam preenchidos!
+        ctrl.scrubReplay(1.0);
+        expect(ctrl.replayCurrentIndex, equals(1));
+        expect(ctrl.replayValues['speed'], equals(45.0));
+        expect(ctrl.replayValues['rpm'], equals(900.0));
+        expect(ctrl.replayValues['map'], equals(35.0));
+        expect(ctrl.replayActiveEventText, contains('Acelerando'));
+
+        ctrl.stepReplaySamples(1);
+        expect(ctrl.replayCurrentIndex, equals(2));
+        expect(ctrl.replayValues['rpm'], equals(3100.0));
+
+        ctrl.stepReplaySeconds(-1.0);
+        expect(ctrl.replayScrubTime, closeTo(1.0, 0.1));
+
+        ctrl.setReplaySpeed(2.0);
+        expect(ctrl.replaySpeed, equals(2.0));
+        ctrl.toggleReplayPlay();
+        expect(ctrl.replayPlaying, isTrue);
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        ctrl.pauseReplay();
+        expect(ctrl.replayPlaying, isFalse);
+
+        ctrl.exitReplayMode();
+        expect(ctrl.replayMode, isFalse);
+        ctrl.dispose();
       } finally {
         await tmpDir.delete(recursive: true);
       }

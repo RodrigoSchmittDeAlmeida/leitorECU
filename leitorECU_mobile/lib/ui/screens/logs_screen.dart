@@ -1,19 +1,23 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/settings/app_settings.dart';
 import '../../state/telemetry_controller.dart';
 import '../../storage/log_exporters.dart';
 import '../../storage/log_repository.dart';
 import '../theme/motorsport_theme.dart';
+import 'log_analysis_screen.dart';
 
-/// Aba Logs: gerenciamento, gravação, importação, Replay, compartilhamento CSV e exportação .msl.
+/// Aba Logs: gerenciamento, gravação, importação, Replay, análise IA, compartilhamento CSV e exportação .msl.
 class LogsScreen extends StatefulWidget {
   const LogsScreen({
     super.key,
     required this.controller,
+    this.settings,
     this.onReplayLoaded,
   });
 
   final TelemetryController controller;
+  final AppSettingsController? settings;
   final VoidCallback? onReplayLoaded;
 
   @override
@@ -145,25 +149,29 @@ class _LogsScreenState extends State<LogsScreen> {
   }
 
   Future<void> _showExportFormatSheet(LogFileEntry entry) async {
+    final tokens = MotorsportTheme.tokensOf(context);
     final chosen = await showModalBottomSheet<LogExportFormat>(
       context: context,
-      backgroundColor: MotorsportColors.surface,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: tokens.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) => SafeArea(
+        top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              Text(
                 'Exportar Log em Outro Formato',
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
-                  color: MotorsportColors.text,
+                  color: tokens.text,
                 ),
               ),
               const SizedBox(height: 4),
@@ -171,9 +179,9 @@ class _LogsScreenState extends State<LogsScreen> {
                 entry.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11.5,
-                  color: MotorsportColors.muted,
+                  color: tokens.muted,
                 ),
               ),
               const SizedBox(height: 10),
@@ -190,21 +198,21 @@ class _LogsScreenState extends State<LogsScreen> {
                         ),
                         leading: Icon(
                           _iconForFormat(fmt),
-                          color: MotorsportColors.info,
+                          color: tokens.accent,
                         ),
                         title: Text(
                           fmt.label,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: MotorsportColors.text,
+                            color: tokens.text,
                           ),
                         ),
                         subtitle: Text(
                           fmt.subtitle,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 11,
-                            color: MotorsportColors.muted,
+                            color: tokens.muted,
                           ),
                         ),
                         onTap: () => Navigator.of(ctx).pop(fmt),
@@ -220,6 +228,22 @@ class _LogsScreenState extends State<LogsScreen> {
     if (chosen != null && mounted) {
       await _exportWithFormat(entry, chosen);
     }
+  }
+
+  void _openAnalysis({
+    String? initialLogPath,
+    bool startInCompareMode = false,
+  }) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LogAnalysisScreen(
+          controller: widget.controller,
+          settings: widget.settings ?? AppSettingsController(),
+          initialLogPath: initialLogPath,
+          startInCompareMode: startInCompareMode,
+        ),
+      ),
+    );
   }
 
   IconData _iconForFormat(LogExportFormat fmt) => switch (fmt) {
@@ -324,7 +348,7 @@ class _LogsScreenState extends State<LogsScreen> {
           icon: Icon(
             c.isRecording ? Icons.stop : Icons.fiber_manual_record,
             size: 18,
-            color: c.isRecording ? MotorsportColors.alarm : MotorsportColors.alarm,
+            color: MotorsportColors.alarm,
           ),
           label: Text(
             c.isRecording
@@ -336,6 +360,11 @@ class _LogsScreenState extends State<LogsScreen> {
           onPressed: _importCsv,
           icon: const Icon(Icons.file_open_outlined, size: 18),
           label: const Text('Importar CSV'),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => _openAnalysis(startInCompareMode: true),
+          icon: const Icon(Icons.compare_arrows, size: 18),
+          label: const Text('Comparar 2 Logs'),
         ),
         OutlinedButton.icon(
           onPressed: _refreshLogs,
@@ -436,6 +465,7 @@ class _LogsScreenState extends State<LogsScreen> {
   }
 
   Widget _buildLogCard(LogFileEntry entry) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final durStr = entry.durationSec != null
         ? '${entry.durationSec!.toStringAsFixed(1)}s'
         : '--';
@@ -443,9 +473,9 @@ class _LogsScreenState extends State<LogsScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: MotorsportColors.surface,
-        border: Border.all(color: MotorsportColors.borderSubtle),
-        borderRadius: BorderRadius.circular(4),
+        color: tokens.surface,
+        border: Border.all(color: tokens.borderSubtle, width: tokens.cardBorderWidth),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -453,15 +483,15 @@ class _LogsScreenState extends State<LogsScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.description_outlined, color: MotorsportColors.info, size: 18),
+              Icon(Icons.description_outlined, color: tokens.accent, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   entry.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: MotorsportColors.text,
+                  style: TextStyle(
+                    color: tokens.text,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
@@ -483,7 +513,7 @@ class _LogsScreenState extends State<LogsScreen> {
             style: MotorsportTheme.tabularStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: MotorsportColors.muted,
+              color: tokens.muted,
             ),
           ),
           const SizedBox(height: 8),
@@ -501,6 +531,16 @@ class _LogsScreenState extends State<LogsScreen> {
                 ),
                 icon: const Icon(Icons.play_arrow, size: 15),
                 label: const Text('Abrir Replay'),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _openAnalysis(initialLogPath: entry.path),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  side: BorderSide(color: tokens.accent),
+                  foregroundColor: tokens.accent,
+                ),
+                icon: const Icon(Icons.analytics_outlined, size: 15),
+                label: const Text('Analisar'),
               ),
               OutlinedButton.icon(
                 onPressed: () => _showExportFormatSheet(entry),

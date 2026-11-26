@@ -2,26 +2,52 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:leitorecu_mobile/analytics/detector.dart';
+import 'package:leitorecu_mobile/core/ai/llm_diagnostic_service.dart';
+import 'package:leitorecu_mobile/core/platform/secure_storage.dart';
+import 'package:leitorecu_mobile/core/settings/app_settings.dart';
 import 'package:leitorecu_mobile/main.dart';
 import 'package:leitorecu_mobile/state/telemetry_controller.dart';
 import 'package:leitorecu_mobile/storage/log_repository.dart';
+import 'package:leitorecu_mobile/ui/screens/log_analysis_screen.dart';
 import 'package:leitorecu_mobile/ui/widgets/channel_detail_chart_sheet.dart';
 import 'package:leitorecu_mobile/ui/widgets/dual_axis_chart.dart';
+import 'package:leitorecu_mobile/ui/widgets/replay_player_bar.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  Future<void> pumpUntilFound(
+    WidgetTester tester,
+    Finder finder, {
+    int maxTries = 25,
+  }) async {
+    for (var i = 0; i < maxTries; i++) {
+      if (finder.evaluate().isNotEmpty) return;
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump(const Duration(milliseconds: 80));
+    }
+  }
+
   Future<void> pumpViewport(
     WidgetTester tester,
     Size size,
-    TelemetryController controller,
-  ) async {
+    TelemetryController controller, {
+    AppSettingsController? settings,
+  }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
-    await tester.pumpWidget(LeitorEcuApp(controller: controller));
+    await tester.pumpWidget(LeitorEcuApp(controller: controller, settings: settings));
     await tester.pump(const Duration(milliseconds: 100));
   }
 
@@ -203,6 +229,7 @@ void main() {
       expect(logs, isNotEmpty);
       await tester.tap(find.text('Logs').last);
       await tester.pump(const Duration(milliseconds: 200));
+      await pumpUntilFound(tester, find.text('Abrir Replay'));
       expect(find.text('Abrir Replay'), findsAtLeastNWidgets(1));
       expect(find.text('Exportar CSV'), findsAtLeastNWidgets(1));
       expect(find.text('Exportar .msl'), findsAtLeastNWidgets(1));
@@ -355,6 +382,233 @@ void main() {
     expect(find.text('Relatório Web (.html)'), findsOneWidget);
     expect(find.text('Relatório PDF (.pdf)'), findsOneWidget);
     expect(find.text('JSON (.json)'), findsOneWidget);
+    expect(errors, isEmpty);
+  });
+
+  testWidgets('UX/UI Nielsen Heuristics: Clickable Offline pill, SafeArea ConnectionSheet, Expandable Info Card & Card Customization', (tester) async {
+    final errors = <FlutterErrorDetails>[];
+    final prevOnError = FlutterError.onError;
+    FlutterError.onError = (d) {
+      errors.add(d);
+      prevOnError?.call(d);
+    };
+    addTearDown(() => FlutterError.onError = prevOnError);
+
+    final tempDir = Directory.systemTemp.createTempSync('leitorecu_ux_nielsen_');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+
+    final controller = TelemetryController(
+      logRepository: LogRepository(directoryOverride: tempDir),
+    );
+    final settings = AppSettingsController(secureStorage: SecureKeyStorage());
+    await settings.setFontScale(1.3);
+    await settings.setHighContrast(true);
+    addTearDown(controller.dispose);
+
+    // Compact Phone 360x780 + simulated Android 48dp bottom nav bar + 1.3x font scale + High Contrast
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.padding = const FakeViewPadding(bottom: 48.0, top: 24.0);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 48.0, top: 24.0);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPadding();
+      tester.view.resetViewPadding();
+    });
+
+    await tester.pumpWidget(LeitorEcuApp(controller: controller, settings: settings));
+    await tester.pump(const Duration(milliseconds: 120));
+
+    // 1. Tapping top-bar OFFLINE button opens ConnectionSheet & Conectar stays above 48dp bottom inset
+    await tester.tap(find.text('● OFFLINE'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Conexão ELM327 & Veículo'), findsOneWidget);
+    final connectRect = tester.getRect(find.text('Conectar à ECU'));
+    expect(connectRect.bottom, lessThanOrEqualTo(780.0 - 48.0));
+    await tester.tap(find.text('Cancelar'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    // 2. Long Info Card wraps cleanly and expands without pushing page horizontally
+    controller.emitSample({'rpm': 2200.0, 'ect': 88.0, 'battery': 14.1});
+    controller.events.add(
+      const DiagnosticEvent(
+        1.0,
+        'info',
+        'Mensagem diagnóstica extensa com detalhes completos de pressão, avanço, sonda lambda e estado da malha fechada para validar quebra de linha sem corte horizontal',
+      ),
+    );
+    controller.emitInfo('Mensagem diagnóstica extensa com detalhes completos de pressão, avanço, sonda lambda');
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.textContaining('Mensagem diagnóstica extensa'), findsOneWidget);
+    expect(find.textContaining('Histórico ('), findsOneWidget);
+
+    // 3. Card Customization: Personalizar -> Remove + Undo, Replace & Restore Default
+    await tester.ensureVisible(find.text('Personalizar'));
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.tap(find.text('Personalizar'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Restaurar Padrão'), findsOneWidget);
+
+    // Remove first card and undo via SnackBar
+    await tester.ensureVisible(find.byIcon(Icons.delete_outline).first);
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.tap(find.byIcon(Icons.delete_outline).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(settings.dashboardCardKeys.first, isNot(equals('rpm')));
+    expect(find.text('Desfazer'), findsOneWidget);
+    await tester.tap(find.text('Desfazer'));
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(settings.dashboardCardKeys.first, equals('rpm'));
+
+    // Replace first card using CardCustomizationSheet (filter via search field)
+    await tester.ensureVisible(find.byIcon(Icons.swap_horiz).first);
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.tap(find.byIcon(Icons.swap_horiz).first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.enterText(find.byType(TextField).last, 'trip_avg_kml');
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.tap(find.text('Consumo Médio Viagem').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(settings.dashboardCardKeys.first, equals('trip_avg_kml'));
+
+    await tester.ensureVisible(find.text('Restaurar Padrão'));
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.tap(find.text('Restaurar Padrão'));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(settings.dashboardCardKeys.first, equals('rpm'));
+    expect(errors, isEmpty);
+  });
+
+  testWidgets('SettingsScreen, Fixed ReplayPlayerBar & LogAnalysisScreen (Stats + Compare + LLM)', (tester) async {
+    final errors = <FlutterErrorDetails>[];
+    final prevOnError = FlutterError.onError;
+    FlutterError.onError = (d) {
+      errors.add(d);
+      prevOnError?.call(d);
+    };
+    addTearDown(() => FlutterError.onError = prevOnError);
+
+    final tempDir = Directory.systemTemp.createTempSync('leitorecu_analysis_ui_');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+
+    File('${tempDir.path}${Platform.pathSeparator}ida.csv').writeAsStringSync(
+      'timestamp_ms;tempo_s;atualizado;rpm;map;ect;speed;battery;ltft\n'
+      '1000;0,0;rpm;900;35;82;0;14,0;-15,0\n'
+      '2000;1,0;speed;2500;65;86;55;14,1;-14,0\n'
+      '3000;2,0;rpm;3200;72;88;80;14,1;-13,5\n',
+    );
+    File('${tempDir.path}${Platform.pathSeparator}volta.csv').writeAsStringSync(
+      'timestamp_ms;tempo_s;atualizado;rpm;map;ect;speed;battery;ltft\n'
+      '1000;0,0;rpm;950;34;89;0;14,1;-3,0\n'
+      '2000;1,0;speed;2100;52;90;50;14,2;-2,5\n',
+    );
+
+    final controller = TelemetryController(
+      logRepository: LogRepository(directoryOverride: tempDir),
+    );
+    final settings = AppSettingsController(secureStorage: SecureKeyStorage());
+    addTearDown(controller.dispose);
+
+    await pumpViewport(tester, const Size(412, 915), controller, settings: settings);
+
+    // 1. Open SettingsScreen from TopBar icon & save API key
+    await tester.tap(find.byTooltip('Configurações'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('Configurações'), findsAtLeastNWidgets(1));
+    await tester.dragUntilVisible(
+      find.widgetWithText(TextField, 'Chave de API'),
+      find.byType(ListView),
+      const Offset(0, -250),
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.tap(find.widgetWithText(TextField, 'Chave de API'));
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Chave de API'),
+      'sk-ui-test-key-777',
+    );
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.dragUntilVisible(
+      find.text('Salvar Chave'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.tap(find.text('Salvar Chave'));
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(settings.hasApiKey, isTrue);
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    // 2. Fixed ReplayPlayerBar in Dashboard & Charts
+    await tester.runAsync(() => controller.loadReplayFromPath('${tempDir.path}${Platform.pathSeparator}ida.csv'));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(find.byType(ReplayPlayerBar), findsOneWidget);
+    expect(find.text('Reproduzir'), findsOneWidget);
+    await tester.tap(find.text('Próx.'));
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(controller.replayCurrentIndex, equals(1));
+    await tester.tap(find.text('Sair do Replay'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(controller.replayMode, isFalse);
+
+    // 3. LogAnalysisScreen with Mean/Median/Mode, Compare 2 Logs & Mock LLM Card
+    final mockLlm = LlmDiagnosticService(
+      transport: ({required uri, required headers, required body, required timeout}) async {
+        return const LlmHttpResponse(
+          200,
+          '{"candidates":[{"content":{"parts":[{"text":"Parecer IA: LTFT negativo em ida.csv (-14%)."}]}}]}',
+        );
+      },
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LogAnalysisScreen(
+          controller: controller,
+          settings: settings,
+          initialLogPath: '${tempDir.path}${Platform.pathSeparator}ida.csv',
+          llmService: mockLlm,
+        ),
+      ),
+    );
+    await pumpUntilFound(tester, find.text('Analisar com IA'));
+
+    expect(find.text('Análise de Logs'), findsOneWidget);
+
+    // Execute LLM Analysis Card
+    await tester.ensureVisible(find.text('Analisar com IA'));
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.tap(find.text('Analisar com IA'));
+    await pumpUntilFound(tester, find.textContaining('Parecer IA: LTFT negativo'));
+    expect(find.textContaining('Parecer IA: LTFT negativo'), findsOneWidget);
+
+    // Verify Mean / Median / Mode cards below
+    await tester.ensureVisible(find.text('Mediana').first);
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(find.textContaining('Média'), findsAtLeastNWidgets(1));
+    expect(find.textContaining('Mediana'), findsAtLeastNWidgets(1));
+    expect(find.textContaining('Moda'), findsAtLeastNWidgets(1));
+
+    // Switch back up to Compare 2 Logs
+    await tester.scrollUntilVisible(
+      find.text('Comparar 2 Logs'),
+      -300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pump(const Duration(milliseconds: 150));
+    await tester.tap(find.text('Comparar 2 Logs'));
+    await tester.pump(const Duration(milliseconds: 100));
+    await pumpUntilFound(tester, find.text('Comparar com IA'), maxTries: 40);
+    expect(find.text('Comparar com IA'), findsOneWidget);
     expect(errors, isEmpty);
   });
 }

@@ -6,6 +6,7 @@ import '../../core/models/channel_def.dart';
 import '../../state/telemetry_controller.dart';
 import '../theme/motorsport_theme.dart';
 import '../widgets/dual_axis_chart.dart';
+import '../widgets/replay_player_bar.dart';
 
 /// Aba Gráficos: osciloscópio separado com 3 gráficos Dual-Axis, auto-escala turbo e Crosshair em Replay.
 class ChartsScreen extends StatefulWidget {
@@ -111,8 +112,16 @@ class _ChartsScreenState extends State<ChartsScreen> {
 
         return Column(
           children: [
-            _buildToolbar(c, replay),
-            if (replay) _buildReplayScrubBar(c, xMin, xMax),
+            _buildToolbar(context, c, replay),
+            if (replay)
+              Padding(
+                padding: EdgeInsets.fromLTRB(isTablet ? 12 : 8, 6, isTablet ? 12 : 8, 0),
+                child: ReplayPlayerBar(
+                  controller: c,
+                  compact: true,
+                  exitLabel: 'Sair Replay',
+                ),
+              ),
             Expanded(
               child: ListView(
                 padding: EdgeInsets.all(isTablet ? 12 : 8),
@@ -177,12 +186,14 @@ class _ChartsScreenState extends State<ChartsScreen> {
     );
   }
 
-  Widget _buildToolbar(TelemetryController c, bool replay) {
+  Widget _buildToolbar(BuildContext context, TelemetryController c, bool replay) {
+    final tokens = MotorsportTheme.tokensOf(context);
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: const BoxDecoration(
-        color: MotorsportColors.surfaceAlt,
-        border: Border(bottom: BorderSide(color: MotorsportColors.borderSubtle)),
+      decoration: BoxDecoration(
+        color: tokens.surfaceAlt,
+        border: Border(bottom: BorderSide(color: tokens.borderSubtle)),
       ),
       child: Wrap(
         spacing: 8,
@@ -201,10 +212,10 @@ class _ChartsScreenState extends State<ChartsScreen> {
                     });
                   },
             style: ElevatedButton.styleFrom(
-              backgroundColor: _frozen ? const Color(0xFF493512) : MotorsportColors.elevated,
-              foregroundColor: _frozen ? const Color(0xFFFFE2A1) : MotorsportColors.text,
+              backgroundColor: _frozen ? const Color(0xFF493512) : tokens.elevated,
+              foregroundColor: _frozen ? const Color(0xFFFFE2A1) : tokens.text,
               side: BorderSide(
-                color: _frozen ? MotorsportColors.warning : MotorsportColors.border,
+                color: _frozen ? MotorsportColors.warning : tokens.border,
               ),
             ),
             icon: Icon(_frozen ? Icons.play_arrow : Icons.pause, size: 16),
@@ -226,44 +237,11 @@ class _ChartsScreenState extends State<ChartsScreen> {
             replay
                 ? 'Arraste nos gráficos para mover o Crosshair sincronizado'
                 : 'Janela ao vivo: ${c.plotWindowSec}s · 3 eixos duplos',
-            style: const TextStyle(
-              color: MotorsportColors.muted,
+            style: TextStyle(
+              color: tokens.muted,
               fontSize: 11.5,
               fontWeight: FontWeight.w600,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReplayScrubBar(TelemetryController c, double xMin, double xMax) {
-    final val = c.replayScrubTime.clamp(xMin, xMax);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      color: const Color(0xFF0E2530),
-      child: Row(
-        children: [
-          Text(
-            't = ${val.toStringAsFixed(2)}s',
-            style: MotorsportTheme.tabularStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: MotorsportColors.info,
-            ),
-          ),
-          Expanded(
-            child: Slider(
-              value: val,
-              min: xMin,
-              max: xMax,
-              activeColor: MotorsportColors.info,
-              onChanged: c.scrubReplay,
-            ),
-          ),
-          TextButton(
-            onPressed: c.exitReplayMode,
-            child: const Text('Sair Replay'),
           ),
         ],
       ),

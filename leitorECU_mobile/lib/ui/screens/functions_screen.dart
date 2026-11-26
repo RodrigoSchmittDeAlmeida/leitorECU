@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../analytics/math_channels.dart';
@@ -770,65 +771,279 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
           ),
           if (c.events.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 130),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: MotorsportColors.plot,
-                border: Border.all(color: MotorsportColors.borderSubtle),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final ev in c.events.reversed.take(15))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: Text(
-                        '[t=${ev.timeSec.toStringAsFixed(1)}s] ${ev.message}',
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11,
-                          color: ev.level == 'alarm'
-                              ? MotorsportColors.alarm
-                              : (ev.level == 'warn'
-                                  ? MotorsportColors.warning
-                                  : MotorsportColors.info),
-                        ),
-                      ),
+            InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _showExpandedLogSheet(
+                context,
+                title: 'Eventos (${c.events.length})',
+                icon: Icons.warning_amber_rounded,
+                lines: [
+                  for (final ev in c.events.reversed)
+                    (
+                      '[t=${ev.timeSec.toStringAsFixed(1)}s] ${ev.message}',
+                      ev.level == 'alarm'
+                          ? MotorsportColors.alarm
+                          : (ev.level == 'warn'
+                              ? MotorsportColors.warning
+                              : MotorsportColors.info),
                     ),
                 ],
+                onClear: c.clearEvents,
+              ),
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 150),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: MotorsportColors.plot,
+                  border: Border.all(color: MotorsportColors.border),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'EVENTOS (${c.events.length})',
+                          style: const TextStyle(
+                            color: MotorsportColors.muted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const Spacer(),
+                        const Icon(Icons.open_in_full, size: 13, color: MotorsportColors.info),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Toque para expandir',
+                          style: TextStyle(
+                            color: MotorsportColors.info,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          for (final ev in c.events.reversed.take(6))
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                '[t=${ev.timeSec.toStringAsFixed(1)}s] ${ev.message}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 11,
+                                  color: ev.level == 'alarm'
+                                      ? MotorsportColors.alarm
+                                      : (ev.level == 'warn'
+                                          ? MotorsportColors.warning
+                                          : MotorsportColors.info),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
           if (c.consoleLogs.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 120),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: MotorsportColors.plot,
-                border: Border.all(color: MotorsportColors.borderSubtle),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final line in c.consoleLogs.reversed.take(20))
-                    Text(
+            InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: () => _showExpandedLogSheet(
+                context,
+                title: 'Console ELM327 / ECU (${c.consoleLogs.length})',
+                icon: Icons.terminal,
+                lines: [
+                  for (final line in c.consoleLogs.reversed)
+                    (
                       line,
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 10.5,
-                        color: MotorsportColors.muted,
-                      ),
+                      line.contains('REJEITADO') || line.contains('!!')
+                          ? MotorsportColors.warning
+                          : (line.contains('ACEITO') || line.contains('✓')
+                              ? MotorsportColors.ok
+                              : MotorsportColors.text),
                     ),
                 ],
+                onClear: c.clearConsoleLogs,
+              ),
+              child: Container(
+                constraints: const BoxConstraints(maxHeight: 150),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: MotorsportColors.plot,
+                  border: Border.all(color: MotorsportColors.border),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'CONSOLE (${c.consoleLogs.length})',
+                          style: const TextStyle(
+                            color: MotorsportColors.muted,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const Spacer(),
+                        const Icon(Icons.open_in_full, size: 13, color: MotorsportColors.info),
+                        const SizedBox(width: 4),
+                        const Text(
+                          'Toque para expandir',
+                          style: TextStyle(
+                            color: MotorsportColors.info,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        children: [
+                          for (final line in c.consoleLogs.reversed.take(8))
+                            Text(
+                              line,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 10.5,
+                                color: MotorsportColors.muted,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
         ],
       ),
+    );
+  }
+
+  Future<void> _showExpandedLogSheet(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required List<(String text, Color color)> lines,
+    required VoidCallback onClear,
+  }) {
+    final fullText = lines.map((e) => e.$1).join('\n');
+    return showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: MotorsportColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        side: BorderSide(color: MotorsportColors.border),
+      ),
+      builder: (ctx) {
+        final maxH = MediaQuery.sizeOf(ctx).height * 0.85;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxH),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
+                  child: Row(
+                    children: [
+                      Icon(icon, size: 18, color: MotorsportColors.info),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: MotorsportColors.text,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Copiar tudo',
+                        icon: const Icon(Icons.copy, size: 18, color: MotorsportColors.info),
+                        onPressed: () async {
+                          await Clipboard.setData(ClipboardData(text: fullText));
+                          if (!ctx.mounted) return;
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(content: Text('Conteúdo copiado para a área de transferência.')),
+                          );
+                        },
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          onClear();
+                          Navigator.of(ctx).pop();
+                        },
+                        child: const Text('Limpar'),
+                      ),
+                      IconButton(
+                        tooltip: 'Fechar',
+                        icon: const Icon(Icons.close, size: 20, color: MotorsportColors.muted),
+                        onPressed: () => Navigator.of(ctx).pop(),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: MotorsportColors.borderSubtle),
+                Expanded(
+                  child: Container(
+                    color: MotorsportColors.plot,
+                    padding: const EdgeInsets.all(12),
+                    child: ListView.separated(
+                      itemCount: lines.length,
+                      separatorBuilder: (_, _) => const Divider(
+                        height: 8,
+                        color: MotorsportColors.borderSubtle,
+                      ),
+                      itemBuilder: (_, idx) {
+                        final item = lines[idx];
+                        return SelectableText(
+                          item.$1,
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            height: 1.35,
+                            color: item.$2,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

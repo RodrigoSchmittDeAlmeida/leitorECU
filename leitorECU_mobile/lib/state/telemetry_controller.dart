@@ -335,6 +335,15 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
   String? replayFileName;
   double replayScrubTime = 0.0;
   Map<String, double> replayValues = <String, double>{};
+  bool replayPlaying = false;
+  double replaySpeed = 1.0; // 0.5, 1.0, 2.0, 4.0
+  int replayCurrentIndex = 0;
+  int get replayTotalSamples => replayDataset?.records.length ?? 0;
+  String? replayActiveEventText;
+  Timer? _replayTimer;
+  double _replayClockSec = 0.0;
+  final Map<String, ({List<double> times, List<double> values})>
+      _replayChannelSeries = {};
 
   // Controle interno de loop assíncrono
   bool _running = false;
@@ -530,6 +539,8 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
     }
     if (replayMode) {
       exitReplayMode();
+    } else {
+      pauseReplay();
     }
 
     _t0 = DateTime.now();
@@ -1182,6 +1193,9 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
     if (_running) {
       await disconnect();
     }
+    _replayTimer?.cancel();
+    _replayTimer = null;
+    replayPlaying = false;
 
     final ds = await CsvReplayParser.parseFile(path);
     if (ds.isEmpty) return false;
@@ -1189,7 +1203,10 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
     replayDataset = ds;
     replayFileName = path.split(Platform.pathSeparator).last;
     replayMode = true;
+    replayCurrentIndex = 0;
+    replayActiveEventText = null;
     replayScrubTime = ds.minTime;
+    _replayClockSec = ds.minTime;
 
     latest.clear();
     stamps.clear();
@@ -1199,6 +1216,7 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
       buf.clear();
     }
     buffers.clear();
+    _replayChannelSeries.clear();
     events.clear();
     detector.reset();
     map2d.clear();
@@ -1216,6 +1234,9 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
       );
     }
 
+    final tmpTimes = <String, List<double>>{};
+    final tmpValues = <String, List<double>>{};
+
     for (var i = 0; i < ds.records.length; i++) {
       final t = ds.times[i];
       final rec = ds.records[i];
@@ -1225,6 +1246,8 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
         final v = entry.value;
         if (!v.isFinite) continue;
         buffers.putIfAbsent(k, () => SeriesBuffer()).append(t, v);
+        tmpTimes.putIfAbsent(k, () => <double>[]).add(t);
+        tmpValues.putIfAbsent(k, () => <double>[]).add(v);
         final pMin = peakMin[k];
         if (pMin == null || v < pMin) peakMin[k] = v;
         final pMax = peakMax[k];
@@ -1237,6 +1260,10 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
       if (rec.containsKey('rpm') && rec.containsKey('map')) {
         map2d.addSample(rec['rpm']!, rec['map']!, rec);
       }
+    }
+
+    for (final k in tmpTimes.keys) {
+      _replayChannelSeries[k] = (times: tmpTimes[k]!, values: tmpValues[k]!);
     }
 
     for (final ev in ds.events) {
@@ -1255,28 +1282,141 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
     return loadReplayFromPath(imported.path);
   }
 
-  void scrubReplay(double t) {
+  void scrubReplay(double t) => _scrubReplayInternal(t, syncClock: true);
+
+  void _scrubReplayInternal(double t, {required bool syncClock}) {
     final ds = replayDataset;
     if (!replayMode || ds == null || ds.isEmpty) return;
     final idx = ds.indexForTime(t);
     if (idx < 0 || idx >= ds.records.length) return;
+    replayCurrentIndex = idx;
     replayScrubTime = ds.times[idx];
-    replayValues = Map<String, double>.from(ds.records[idx]);
+    if (syncClock) {
+      _replayClockSec = replayScrubTime;
+    }
+
+    // Carry-forward: mantém último valor conhecido de cada canal até replayScrubTime
+    // para que linhas esparsas não pisquem '--' nos cards durante o replay.
+    final carried = <String, double>{};
+    for (final entry in _replayChannelSeries.entries) {
+      final times = entry.value.times;
+      if (times.isEmpty || times.first > replayScrubTime) continue;
+      var lo = 0;
+      var hi = times.length;
+      while (lo < hi) {
+        final mid = (lo + hi) >> 1;
+        if (times[mid] <= replayScrubTime) {
+          lo = mid + 1;
+        } else {
+          hi = mid;
+        }
+      }
+      final lastIdx = lo - 1;
+      if (lastIdx >= 0) {
+        carried[entry.key] = entry.value.values[lastIdx];
+      }
+    }
+    carried.addAll(ds.records[idx]);
+
+    replayValues = carried;
     latest
       ..clear()
       ..addAll(replayValues);
     stamps
       ..clear()
       ..addEntries(replayValues.keys.map((k) => MapEntry(k, replayScrubTime)));
+
+    String? closestEvent;
+    var bestDist = double.infinity;
+    for (final ev in events) {
+      final d = (ev.timeSec - replayScrubTime).abs();
+      if (d <= 1.5 && d < bestDist) {
+        bestDist = d;
+        closestEvent = ev.message;
+      }
+    }
+    replayActiveEventText = closestEvent;
+
     _safeNotify();
   }
 
+  void toggleReplayPlay() {
+    final ds = replayDataset;
+    if (!replayMode || ds == null || ds.isEmpty) return;
+    if (replayPlaying) {
+      pauseReplay();
+      return;
+    }
+    if (replayScrubTime >= ds.maxTime - 0.05) {
+      scrubReplay(ds.minTime);
+    }
+    _replayClockSec = replayScrubTime;
+    replayPlaying = true;
+    _replayTimer?.cancel();
+    _replayTimer = Timer.periodic(const Duration(milliseconds: 50), (_) {
+      final curDs = replayDataset;
+      if (_disposed || !replayMode || curDs == null || curDs.isEmpty || !replayPlaying) {
+        pauseReplay();
+        return;
+      }
+      _replayClockSec += 0.05 * replaySpeed;
+      if (_replayClockSec >= curDs.maxTime) {
+        _scrubReplayInternal(curDs.maxTime, syncClock: true);
+        pauseReplay();
+      } else {
+        _scrubReplayInternal(_replayClockSec, syncClock: false);
+      }
+    });
+    _safeNotify();
+  }
+
+  void pauseReplay() {
+    _replayTimer?.cancel();
+    _replayTimer = null;
+    if (replayPlaying) {
+      replayPlaying = false;
+      _safeNotify();
+    }
+  }
+
+  void setReplaySpeed(double speed) {
+    replaySpeed = speed;
+    _safeNotify();
+  }
+
+  void stepReplaySamples(int delta) {
+    final ds = replayDataset;
+    if (!replayMode || ds == null || ds.isEmpty) return;
+    if (replayPlaying) {
+      pauseReplay();
+    }
+    final newIdx = (replayCurrentIndex + delta).clamp(0, ds.records.length - 1);
+    scrubReplay(ds.times[newIdx]);
+  }
+
+  void stepReplaySeconds(double deltaSec) {
+    final ds = replayDataset;
+    if (!replayMode || ds == null || ds.isEmpty) return;
+    if (replayPlaying) {
+      pauseReplay();
+    }
+    final target = (replayScrubTime + deltaSec).clamp(ds.minTime, ds.maxTime);
+    scrubReplay(target);
+  }
+
   void exitReplayMode() {
+    _replayTimer?.cancel();
+    _replayTimer = null;
+    replayPlaying = false;
     replayMode = false;
     replayDataset = null;
     replayFileName = null;
     replayScrubTime = 0.0;
+    _replayClockSec = 0.0;
+    replayCurrentIndex = 0;
+    replayActiveEventText = null;
     replayValues = <String, double>{};
+    _replayChannelSeries.clear();
     latest.clear();
     stamps.clear();
     peakMin.clear();
@@ -1302,6 +1442,9 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
   void dispose() {
     _disposed = true;
     _running = false;
+    _replayTimer?.cancel();
+    _replayTimer = null;
+    replayPlaying = false;
     try {
       _activeTransport?.close();
     } catch (_) {}

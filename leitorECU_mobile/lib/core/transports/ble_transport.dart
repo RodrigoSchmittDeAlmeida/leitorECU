@@ -225,6 +225,16 @@ class BleTransport extends ObdTransport {
     _device = dev;
 
     try {
+      await _connSub?.cancel();
+      _connSub = null;
+      await _notifySub?.cancel();
+      _notifySub = null;
+
+      try {
+        await FlutterBluePlus.stopScan();
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+
       _connSub = dev.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
           _connected = false;
@@ -232,7 +242,36 @@ class BleTransport extends ObdTransport {
         }
       });
 
-      await dev.connect(timeout: const Duration(seconds: 20), mtu: 512);
+      // Retry silencioso para erros transitórios do stack HCI Android (147, 133, 8, 22, 257)
+      Object? lastConnectErr;
+      var connectOk = false;
+      for (var attempt = 1; attempt <= 3; attempt++) {
+        try {
+          await dev.connect(timeout: const Duration(seconds: 20), mtu: 512);
+          connectOk = true;
+          break;
+        } catch (e) {
+          lastConnectErr = e;
+          final msg = e.toString().toUpperCase();
+          final isTransientHci = msg.contains('147') ||
+              msg.contains('133') ||
+              msg.contains('257') ||
+              msg.contains('UNKNOWN_HCI_ERROR') ||
+              msg.contains('GATT_ERROR') ||
+              msg.contains('ANDROID-CODE: 8') ||
+              msg.contains('ANDROID-CODE: 22');
+          if (!isTransientHci || attempt == 3) {
+            rethrow;
+          }
+          try {
+            await dev.disconnect();
+          } catch (_) {}
+          await Future<void>.delayed(Duration(milliseconds: 600 * attempt));
+        }
+      }
+      if (!connectOk && lastConnectErr != null) {
+        throw lastConnectErr;
+      }
       _connected = true;
 
       final services = await dev.discoverServices();

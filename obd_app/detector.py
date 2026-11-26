@@ -99,7 +99,8 @@ class DecelDetector:
             rpm_val = latest["rpm"]
             tps_val = latest.get("tps", 0.0)
             map_val = latest["map"]
-            if rpm_val < 1900.0 and tps_val < 8.0 and map_val > 60.0:
+            # Somente com motor funcionando (>= 450 RPM); com chave ligada e motor desligado MAP ~101 kPa é normal
+            if 450.0 <= rpm_val < 1900.0 and tps_val < 8.0 and map_val > 60.0:
                 if t - self._last_vacuum_alert >= 2.0:
                     self._last_vacuum_alert = t
                     ev.append(Event(t, "alarm",
@@ -107,7 +108,7 @@ class DecelDetector:
                                     f"com TPS {tps_val:.1f}% a {rpm_val:.0f} RPM"))
 
         # --- Diagnóstico Contínuo 2: Retardo Crítico ATDC (Avanço Negativo / Pipoco no Escape)
-        if fresh("advance"):
+        if fresh("advance") and (not fresh("rpm") or latest["rpm"] >= 450.0):
             adv_val = latest["advance"]
             if adv_val < -8.0:
                 if t - self._last_atdc_alert >= 2.0:

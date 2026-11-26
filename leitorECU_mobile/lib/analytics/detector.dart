@@ -140,7 +140,8 @@ class DecelDetector {
       final rpmVal = latest['rpm']!;
       final tpsVal = latest['tps'] ?? 0.0;
       final mapVal = latest['map']!;
-      if (rpmVal < 1900.0 && tpsVal < 8.0 && mapVal > 60.0) {
+      // Somente com motor em funcionamento (>= 450 RPM); em KOEO (0 RPM) MAP ~101 kPa é normal.
+      if (rpmVal >= 450.0 && rpmVal < 1900.0 && tpsVal < 8.0 && mapVal > 60.0) {
         if (t - _lastVacuumAlert >= 2.0) {
           _lastVacuumAlert = t;
           ev.add(DiagnosticEvent(
@@ -153,8 +154,8 @@ class DecelDetector {
       }
     }
 
-    // 2. Retardo Crítico ATDC (< -8.0°)
-    if (fresh('advance')) {
+    // 2. Retardo Crítico ATDC (< -8.0°) — somente com motor funcionando
+    if (fresh('advance') && (!fresh('rpm') || latest['rpm']! >= 450.0)) {
       final advVal = latest['advance']!;
       if (advVal < -8.0) {
         if (t - _lastAtdcAlert >= 2.0) {

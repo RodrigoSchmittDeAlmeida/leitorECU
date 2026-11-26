@@ -293,7 +293,8 @@ class LogExporters {
     final report = _LogReportData.build(ds, sourceName);
     final rpmStat = report.statFor('rpm');
     final spdStat = report.statFor('speed');
-    final ectStat = report.statFor('ect') ?? report.statFor('cht_c');
+    final ectStat =
+        report.statFor('ect') ?? report.statFor('cht_temp') ?? report.statFor('cht_c');
     final stftStat = report.statFor('stft') ?? report.statFor('lambda_trim');
     final ltftStat = report.statFor('ltft') ?? report.statFor('ltft_idle');
     final batStat = report.statFor('battery');
@@ -303,6 +304,7 @@ class LogExporters {
       'speed',
       'map',
       'ect',
+      'cht_temp',
       'cht_c',
       'lambda_v',
       'stft',
@@ -945,7 +947,8 @@ class LogExporters {
     // Bloco KPIs rápidos
     final rpmStat = report.statFor('rpm');
     final spdStat = report.statFor('speed');
-    final ectStat = report.statFor('ect') ?? report.statFor('cht_c');
+    final ectStat =
+        report.statFor('ect') ?? report.statFor('cht_temp') ?? report.statFor('cht_c');
     final stftStat = report.statFor('stft') ?? report.statFor('lambda_trim');
     final ltftStat = report.statFor('ltft') ?? report.statFor('ltft_idle');
     final batStat = report.statFor('battery');
@@ -965,7 +968,16 @@ class LogExporters {
     y -= 38;
 
     // Mini-gráficos vetoriais dos principais canais
-    const sparkKeys = ['rpm', 'speed', 'ect', 'lambda_v', 'stft', 'advance'];
+    const sparkKeys = [
+      'rpm',
+      'speed',
+      'ect',
+      'cht_temp',
+      'cht_c',
+      'lambda_v',
+      'stft',
+      'advance',
+    ];
     final availableSparks = sparkKeys.where(report.activeKeys.contains).take(4).toList();
     if (availableSparks.isNotEmpty) {
       drawText(36, y, 'Curvas Principais no Tempo', size: 11.5, bold: true, rgb: '0.05 0.35 0.58');
@@ -1109,7 +1121,7 @@ class LogExporters {
         'rpm' => '#00D2FF',
         'speed' => '#38BDF8',
         'map' || 'boost_bar' => '#F97316',
-        'ect' || 'cht_c' => '#FF5252',
+        'ect' || 'cht_temp' || 'cht_c' => '#FF5252',
         'lambda_v' || 'lambda2_v' => '#00E676',
         'stft' || 'ltft' || 'lambda_trim' => '#FFB300',
         'advance' => '#A855F7',

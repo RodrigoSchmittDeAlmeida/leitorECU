@@ -342,7 +342,8 @@ void main() {
       expect(strat.activeFast.contains(0x2173), isFalse);
     });
 
-    test('prioritizes Bloco 005 every 2 cycles and resetAdaptation sends 14FF00 + 31010000 (never 2800)', () async {
+    test('prioritizes Bloco 005 every 2 cycles and resetAdaptation sends KWP2000 1089 + 14FF00 + 31B800 + 3B000000 (never 2800) and reports NRC 0x33 honestly', () async {
+      var rejectWithSecurity = false;
       final t = _ScriptedTransport((cmd) {
         if (cmd == '2103') {
           return '61030110681201640301001B018A';
@@ -353,9 +354,12 @@ void main() {
         if (cmd == '2105') {
           return '6105011068020164070150250001';
         }
+        if (cmd == '1089') return '5089';
         if (cmd == '14FF00') return '54';
-        if (cmd == '31010000') return '71010000';
+        if (cmd == '31B800') return rejectWithSecurity ? '7F3133' : '71B800';
+        if (cmd == '3B000000') return rejectWithSecurity ? '7F3B33' : '7B00';
         if (cmd == '2120') return '61201401801401801401800636B0';
+        if (cmd == '2167') return 'NO DATA';
         if (cmd == '1800FF00') return '5800000000';
         return 'NO DATA';
       });
@@ -371,11 +375,23 @@ void main() {
         expect(t.sentCommands, contains('2105'));
       }
 
+      // Case 1: Accepted KWP2000 reset
       t.sentCommands.clear();
+      ctx.infos.clear();
       await strat.resetAdaptation(elm, ctx);
+      expect(t.sentCommands, contains('1089'));
       expect(t.sentCommands, contains('14FF00'));
-      expect(t.sentCommands, contains('31010000'));
+      expect(t.sentCommands, contains('31B800'));
+      expect(t.sentCommands, contains('3B000000'));
       expect(t.sentCommands.any((c) => c.contains('2800')), isFalse);
+      expect(ctx.infos.any((m) => m.contains('aceito')), isTrue);
+
+      // Case 2: Rejected with NRC 0x33 (Security Access) -> honest feedback
+      rejectWithSecurity = true;
+      t.sentCommands.clear();
+      ctx.infos.clear();
+      await strat.resetAdaptation(elm, ctx);
+      expect(ctx.infos.any((m) => m.contains('0x33')), isTrue);
       await t.close();
     });
   });

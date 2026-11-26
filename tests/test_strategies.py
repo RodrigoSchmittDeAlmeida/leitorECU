@@ -139,11 +139,14 @@ def test_vag_strategy_polling(monkeypatch, tmp_path):
     assert "rpm" in all_keys
     assert "lambda_v" in all_keys
 
-    # Testa procedimento de reset de adaptação
+    # Testa procedimento de reset de adaptação KWP2000 VAG
     strategy.reset_adaptation(elm, worker)
     logs_str = " ".join(str(log) for log in worker.emitted_logs)
+    assert "1089" in logs_str
     assert "14FF00" in logs_str
-    assert "31010000" in logs_str
+    assert "31B800" in logs_str
+    assert "3B000000" in logs_str
+    assert "2800" not in logs_str
 
     transport.close()
 

@@ -18,6 +18,11 @@ class ValueCard extends StatelessWidget {
     this.maxFormatted,
     this.compact = false,
     this.onTap,
+    this.editMode = false,
+    this.onMovePrev,
+    this.onMoveNext,
+    this.onChangeParameter,
+    this.onRemove,
   });
 
   final String channelKey;
@@ -31,53 +36,68 @@ class ValueCard extends StatelessWidget {
   final String? maxFormatted;
   final bool compact;
   final VoidCallback? onTap;
+  final bool editMode;
+  final VoidCallback? onMovePrev;
+  final VoidCallback? onMoveNext;
+  final VoidCallback? onChangeParameter;
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final tokens = MotorsportTheme.tokensOf(context);
     final color = accentColor ?? MotorsportColors.colorForChannel(channelKey);
-    final (bgColor, borderColor, noteColor) = switch (alertState) {
+    final (bgColor, baseBorderColor, noteColor) = switch (alertState) {
       CardAlertState.normal => (
-        MotorsportColors.surface,
-        MotorsportColors.normalBorder,
-        MotorsportColors.muted,
-      ),
+          tokens.surface,
+          tokens.highContrast ? tokens.border : MotorsportColors.normalBorder,
+          tokens.muted,
+        ),
       CardAlertState.warn => (
-        MotorsportColors.warnBg,
-        MotorsportColors.warnBorder,
-        MotorsportColors.warning,
-      ),
+          MotorsportColors.warnBg,
+          MotorsportColors.warnBorder,
+          MotorsportColors.warning,
+        ),
       CardAlertState.alarm => (
-        MotorsportColors.alarmBg,
-        MotorsportColors.alarmBorder,
-        MotorsportColors.alarm,
-      ),
+          MotorsportColors.alarmBg,
+          MotorsportColors.alarmBorder,
+          MotorsportColors.alarm,
+        ),
       CardAlertState.stale => (
-        MotorsportColors.staleBg,
-        MotorsportColors.staleBorder,
-        MotorsportColors.stale,
-      ),
+          tokens.highContrast ? tokens.surface : MotorsportColors.staleBg,
+          tokens.highContrast ? tokens.borderSubtle : MotorsportColors.staleBorder,
+          tokens.stale,
+        ),
     };
 
-    final stateBarColor = switch (alertState) {
-      CardAlertState.normal => color,
-      CardAlertState.warn => MotorsportColors.warning,
-      CardAlertState.alarm => MotorsportColors.alarm,
-      CardAlertState.stale => MotorsportColors.stale.withValues(alpha: 0.4),
-    };
+    final borderColor = editMode ? tokens.accent.withValues(alpha: 0.85) : baseBorderColor;
+    final borderWidth = editMode
+        ? (tokens.highContrast ? 2.2 : 1.5)
+        : (alertState == CardAlertState.alarm
+            ? (tokens.cardBorderWidth + 0.5)
+            : tokens.cardBorderWidth);
+
+    final stateBarColor = editMode
+        ? tokens.accent
+        : switch (alertState) {
+            CardAlertState.normal => color,
+            CardAlertState.warn => MotorsportColors.warning,
+            CardAlertState.alarm => MotorsportColors.alarm,
+            CardAlertState.stale => tokens.stale.withValues(alpha: 0.45),
+          };
 
     final isPlaceholder = formattedValue == '--';
-    final valueColor = isPlaceholder ? MotorsportColors.stale : color;
+    final valueColor = isPlaceholder ? tokens.stale : color;
     final hasPeaks = minFormatted != null && maxFormatted != null;
 
     return Material(
       color: bgColor,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(4),
-        side: BorderSide(color: borderColor, width: alertState == CardAlertState.alarm ? 1.5 : 1),
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(color: borderColor, width: borderWidth),
       ),
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(4),
+        onTap: editMode ? onChangeParameter : onTap,
+        borderRadius: BorderRadius.circular(6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
@@ -86,9 +106,84 @@ class ValueCard extends StatelessWidget {
               height: 3,
               decoration: BoxDecoration(
                 color: stateBarColor,
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(5)),
               ),
             ),
+            if (editMode)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: tokens.accent.withValues(alpha: 0.10),
+                  border: Border(
+                    bottom: BorderSide(
+                      color: tokens.accent.withValues(alpha: 0.25),
+                    ),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    _EditControlButton(
+                      icon: Icons.chevron_left,
+                      tooltip: 'Mover para trás',
+                      color: tokens.text,
+                      disabledColor: tokens.stale.withValues(alpha: 0.4),
+                      onTap: onMovePrev,
+                    ),
+                    _EditControlButton(
+                      icon: Icons.chevron_right,
+                      tooltip: 'Mover para frente',
+                      color: tokens.text,
+                      disabledColor: tokens.stale.withValues(alpha: 0.4),
+                      onTap: onMoveNext,
+                    ),
+                    Expanded(
+                      child: Tooltip(
+                        message: 'Trocar parâmetro',
+                        child: InkWell(
+                          onTap: onChangeParameter,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 3,
+                              vertical: 3,
+                            ),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.swap_horiz,
+                                    size: 14,
+                                    color: tokens.accent,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    'Trocar',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      color: tokens.accent,
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    _EditControlButton(
+                      icon: Icons.delete_outline,
+                      tooltip: 'Remover card',
+                      color: MotorsportColors.alarm,
+                      disabledColor: tokens.stale.withValues(alpha: 0.4),
+                      onTap: onRemove,
+                    ),
+                  ],
+                ),
+              ),
             Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: compact ? 8 : 10,
@@ -114,21 +209,21 @@ class ValueCard extends StatelessWidget {
                           title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: MotorsportColors.muted,
+                          style: TextStyle(
+                            color: tokens.muted,
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.2,
                           ),
                         ),
                       ),
-                      if (onTap != null)
-                        const Padding(
-                          padding: EdgeInsets.only(right: 4),
+                      if (!editMode && onTap != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
                           child: Icon(
                             Icons.show_chart_rounded,
                             size: 12,
-                            color: MotorsportColors.muted,
+                            color: tokens.muted,
                           ),
                         ),
                       if (note.isNotEmpty) ...[
@@ -180,8 +275,8 @@ class ValueCard extends StatelessWidget {
                         const SizedBox(width: 4),
                         Text(
                           unit,
-                          style: const TextStyle(
-                            color: MotorsportColors.muted,
+                          style: TextStyle(
+                            color: tokens.muted,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
                           ),
@@ -197,13 +292,48 @@ class ValueCard extends StatelessWidget {
                     style: MotorsportTheme.tabularStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
-                      color: hasPeaks ? MotorsportColors.stale : MotorsportColors.stale.withValues(alpha: 0.55),
+                      color: hasPeaks ? tokens.stale : tokens.stale.withValues(alpha: 0.55),
                     ),
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EditControlButton extends StatelessWidget {
+  const _EditControlButton({
+    required this.icon,
+    required this.tooltip,
+    required this.color,
+    required this.disabledColor,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Color color;
+  final Color disabledColor;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+          child: Icon(
+            icon,
+            size: 16,
+            color: onTap != null ? color : disabledColor,
+          ),
         ),
       ),
     );

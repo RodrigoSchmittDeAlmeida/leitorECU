@@ -414,34 +414,176 @@ class VagKwpStrategy extends VehicleStrategy {
     await readDtcs(elm, ctx);
   }
 
+  static String _decodeKwpNrc(int nrc) {
+    return switch (nrc) {
+      0x10 => 'Rejeição geral (0x10)',
+      0x11 => 'Serviço não suportado (0x11)',
+      0x12 => 'Subfunção/formato não suportado (0x12)',
+      0x21 => 'ECU ocupada (0x21)',
+      0x22 => 'Condições incorretas — motor ligado ou temperatura/tensão fora da janela (0x22)',
+      0x31 => 'Canal fora de faixa (0x31)',
+      0x33 => 'Acesso de segurança / Seed-Key Bosch exigido (0x33)',
+      0x35 => 'Chave de segurança inválida (0x35)',
+      0x78 => 'Processando (0x78)',
+      _ => 'NRC 0x${nrc.toRadixString(16).toUpperCase().padLeft(2, '0')}',
+    };
+  }
+
+  static ({bool accepted, bool pending, int? nrc, String summary}) _evaluateKwpResp(
+    ElmResponse resp,
+    String expectedPosHex,
+  ) {
+    final allRaw = '${resp.lines.join('')} ${resp.error ?? ''}'
+        .replaceAll(RegExp(r'\s+'), '')
+        .toUpperCase();
+    final hasPending78 = RegExp(r'7F[0-9A-F]{2}78').hasMatch(allRaw);
+    // Remove frames intermediários 7F xx 78 (ResponsePending) antes de checar positivo/erro real
+    final cleaned = allRaw.replaceAll(RegExp(r'7F[0-9A-F]{2}78'), '');
+    final posHex = expectedPosHex.toUpperCase();
+    if (cleaned.contains(posHex)) {
+      return (accepted: true, pending: hasPending78, nrc: null, summary: 'ACEITO ($cleaned)');
+    }
+    final negMatch = RegExp(r'7F[0-9A-F]{2}([0-9A-F]{2})').firstMatch(cleaned);
+    if (negMatch != null) {
+      final nrc = int.tryParse(negMatch.group(1)!, radix: 16);
+      return (
+        accepted: false,
+        pending: false,
+        nrc: nrc,
+        summary: 'REJEITADO: ${nrc != null ? _decodeKwpNrc(nrc) : cleaned}',
+      );
+    }
+    if (hasPending78) {
+      return (
+        accepted: true,
+        pending: true,
+        nrc: 0x78,
+        summary: 'ACEITO (Processando 0x78 — ECU executando comando)',
+      );
+    }
+    final raw = resp.dataLines().join('').replaceAll(RegExp(r'\s+'), '').toUpperCase();
+    if (!resp.ok || raw.isEmpty) {
+      return (accepted: false, pending: false, nrc: null, summary: resp.error ?? 'SEM RESPOSTA');
+    }
+    if (raw.contains(posHex)) {
+      return (accepted: true, pending: false, nrc: null, summary: 'ACEITO ($raw)');
+    }
+    return (accepted: false, pending: false, nrc: null, summary: 'INESPERADO ($raw)');
+  }
+
+  Future<Map<String, double>> _readBlockNow(
+    Elm327Client elm,
+    StrategyContext ctx,
+    int pcode,
+  ) async {
+    final pdef = obdPids[pcode];
+    if (pdef == null) return const {};
+    final r = await elm.queryPid(pdef.cmd);
+    if (!r.ok || isVagNegative(r)) return const {};
+    final out = <String, double>{};
+    final data = extractPayload(r, pdef.mode, pdef.pid, pdef.nbytes);
+    if (data != null) {
+      try {
+        out.addAll(pdef.decode(data));
+      } catch (_) {}
+    }
+    final cellVals = _decodeCells(r, pdef.pid, ctx);
+    if (cellVals != null) out.addAll(cellVals);
+    if (out.isNotEmpty) {
+      ctx.emitSample(out);
+    }
+    return out;
+  }
+
   @override
   Future<void> resetAdaptation(Elm327Client elm, StrategyContext ctx) async {
-    ctx.emitLog('Iniciando procedimento de Reset de Adaptação / Flex na Bosch ME7.5.30...');
-    ctx.emitStatus('connecting', 'Enviando comandos de Reset de Adaptação (Canal 00)...');
+    ctx.emitLog('Iniciando Reset de Adaptação / Flex KWP2000 VAG (Bosch ME7.5.30)...');
+    ctx.emitStatus('connecting', 'Executando Reset de Adaptação KWP2000 (Canal 00)...');
 
-    final r1 = await elm.command('14FF00', timeout: const Duration(seconds: 6));
-    ctx.emitLog('> 14FF00 (Clear DTCs / RAM) -> ${r1.lines.isNotEmpty ? r1.lines.join(" ") : (r1.error ?? "OK")}');
+    // 1. Leitura ANTES do reset (Bloco 032 LTFT + Bloco 103 Flex Fixa)
+    final before32 = await _readBlockNow(elm, ctx, 0x2120);
+    final before103 = await _readBlockNow(elm, ctx, 0x2167);
+    final ltftBefore = before32['ltft'];
+    final flexBefore = before103['g103_c6'];
 
-    // Routine Control Grupo 00 (NUNCA enviar 2800 CommunicationControl!)
-    final r2 = await elm.command('31010000', timeout: const Duration(seconds: 5));
-    ctx.emitLog('> 31010000 (Routine Reset Canal 00) -> ${r2.lines.isNotEmpty ? r2.lines.join(" ") : (r2.error ?? "OK")}');
+    // 2. Garante sessão diagnóstica estendida VAG KWP2000 (10 89)
+    final rSess = await elm.command('1089', timeout: const Duration(seconds: 4));
+    final evalSess = _evaluateKwpResp(rSess, '50');
+    ctx.emitLog('> 1089 (Sessão VAG KWP2000) -> ${evalSess.summary}');
 
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    final rTrim = await elm.queryPid('2120');
-    if (rTrim.ok && !isVagNegative(rTrim)) {
-      final data = extractPayload(rTrim, 0x21, 0x20, 6);
-      if (data != null) {
-        final pdef = obdPids[0x2120];
-        if (pdef != null) {
-          try {
-            ctx.emitSample(pdef.decode(data));
-          } catch (_) {}
-        }
-      }
+    // 3. Limpa DTCs / RAM (14 FF 00) — aguarda conclusão se ECU responder 0x78 (ResponsePending)
+    final rClear = await elm.command('14FF00', timeout: const Duration(seconds: 6));
+    final evalClear = _evaluateKwpResp(rClear, '54');
+    ctx.emitLog('> 14FF00 (Limpar DTCs / RAM) -> ${evalClear.summary}');
+    if (evalClear.pending) {
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
     }
 
-    ctx.emitInfo('Comandos de Reset de Adaptação (Canal 00) enviados à ECU com sucesso!');
-    ctx.emitStatus('connected', 'Conectado — Reset de Adaptação concluído');
+    // 4. VAG KWP2000 Basic Setting Grupo 000 (31 B8 00 — NUNCA enviar 2800!)
+    final rBasic = await elm.command('31B800', timeout: const Duration(seconds: 5));
+    final evalBasic = _evaluateKwpResp(rBasic, '71');
+    ctx.emitLog('> 31B800 (Basic Setting Grupo 000) -> ${evalBasic.summary}');
+    if (evalBasic.pending) {
+      await Future<void>.delayed(const Duration(milliseconds: 1000));
+    }
+
+    // 5. VAG KWP2000 Adaptation Channel 00 = 0000 (3B 00 00 00 — Factory Reset)
+    final rAdapt = await elm.command('3B000000', timeout: const Duration(seconds: 5));
+    final evalAdapt = _evaluateKwpResp(rAdapt, '7B');
+    ctx.emitLog('> 3B000000 (Adaptação Canal 00 = 0) -> ${evalAdapt.summary}');
+
+    await Future<void>.delayed(const Duration(milliseconds: 450));
+
+    // 6. Releitura DEPOIS do reset para comprovação real
+    final after32 = await _readBlockNow(elm, ctx, 0x2120);
+    final after103 = await _readBlockNow(elm, ctx, 0x2167);
+    final ltftAfter = after32['ltft'];
+    final flexAfter = after103['g103_c6'];
+
+    final ltftChanged = ltftBefore != null &&
+        ltftAfter != null &&
+        (ltftAfter - ltftBefore).abs() > 0.5;
+    final flexChanged = flexBefore != null &&
+        flexAfter != null &&
+        (flexAfter - flexBefore).abs() > 1.0;
+    final kwpAccepted = evalBasic.accepted || evalAdapt.accepted;
+
+    final nrcs = <int>[
+      if (evalBasic.nrc != null) evalBasic.nrc!,
+      if (evalAdapt.nrc != null) evalAdapt.nrc!,
+    ];
+
+    if (kwpAccepted || ltftChanged || flexChanged) {
+      final deltaParts = <String>[
+        if (ltftBefore != null && ltftAfter != null)
+          'LTFT ${ltftBefore.toStringAsFixed(1)}% → ${ltftAfter.toStringAsFixed(1)}%',
+        if (flexBefore != null && flexAfter != null)
+          'Flex(103.6) ${flexBefore.toStringAsFixed(0)}% → ${flexAfter.toStringAsFixed(0)}%',
+      ];
+      final detail = deltaParts.isNotEmpty ? ' (${deltaParts.join(' · ')})' : '';
+      ctx.emitInfo('Reset KWP2000 aceito pela ECU!$detail');
+      ctx.emitStatus('connected', 'Conectado — Reset KWP2000 confirmado');
+    } else if (nrcs.contains(0x33)) {
+      ctx.emitInfo(
+        'ECU bloqueou o reset por Segurança (NRC 0x33 — Seed-Key Bosch exigido). '
+        'Para destravar o Flex (103.6), abasteça ≥12 L com chave desligada ou use scanner VAG com login.',
+      );
+      ctx.emitStatus('connected', 'Conectado — Reset bloqueado pela ECU (NRC 0x33)');
+    } else if (nrcs.contains(0x22)) {
+      ctx.emitInfo(
+        'ECU recusou o reset (NRC 0x22 — Condições incorretas). '
+        'Desligue o motor mantendo apenas a ignição ligada e tente novamente.',
+      );
+      ctx.emitStatus('connected', 'Conectado — Reset recusado (NRC 0x22)');
+    } else {
+      final reason = !evalAdapt.accepted ? evalAdapt.summary : evalBasic.summary;
+      ctx.emitInfo(
+        'DTCs limpos, mas a ECU não zerou a EEPROM de LTFT/Flex ($reason). '
+        'Abasteça ≥12 L com a chave desligada ou use scanner VAG Canal 00/Flex.',
+      );
+      ctx.emitStatus('connected', 'Conectado — EEPROM LTFT/Flex mantida pela ECU');
+    }
+
     await readDtcs(elm, ctx);
   }
 
