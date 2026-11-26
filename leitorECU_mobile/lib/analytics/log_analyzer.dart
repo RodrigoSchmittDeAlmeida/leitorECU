@@ -315,7 +315,15 @@ class LogAnalyzer {
       if (_isUnlabeledRawBlockKey(key, desc.label)) {
         continue;
       }
-      final values = channelValues[key]!;
+      var values = channelValues[key]!;
+      // Para consumo instantâneo (km/l), descarta sentinelas de veículo parado (0.0)
+      // e Cut-Off (99.9 km/l) para não inflar artificialmente a média/mediana do log.
+      if (key == 'fuel_econ_kml') {
+        final movingValid = values.where((v) => v > 0.05 && v < 99.0).toList();
+        if (movingValid.isNotEmpty) {
+          values = movingValid;
+        }
+      }
       final stat = _computeChannelStats(key, values);
       stats.add(stat);
       byKey[key] = stat;

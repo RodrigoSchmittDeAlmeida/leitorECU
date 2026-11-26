@@ -89,15 +89,17 @@ class MathChannelsEngine:
         # 1. Integração temporal da viagem e aceleração longitudinal
         if self.last_t is not None and t > self.last_t:
             dt = t - self.last_t
-            # Litros consumidos
-            self.trip_liters += (fuel_lph / 3600.0) * dt
-            # Quilômetros percorridos
-            self.trip_km += (speed / 3600.0) * dt
-            # Aceleração longitudinal em Gs via derivada de last_spd_ms
+            # Ignora pausas longas (>15s) de segundo plano / reconexão para não distorcer distância nem consumo
+            if dt <= 15.0:
+                self.trip_liters += (fuel_lph / 3600.0) * dt
+                self.trip_km += (speed / 3600.0) * dt
+            # Aceleração longitudinal em Gs via derivada de last_spd_ms (protegida contra ruído de quantização)
             spd_ms = speed / 3.6
-            if dt > 0:
+            if 0.08 <= dt <= 3.5:
                 accel_g = ((spd_ms - self.last_spd_ms) / dt) / 9.80665
-                res["accel_g"] = round(accel_g, 2)
+                res["accel_g"] = round(max(-2.50, min(2.50, accel_g)), 2)
+            elif dt > 3.5:
+                res["accel_g"] = 0.0
             self.last_spd_ms = spd_ms
         else:
             self.last_spd_ms = speed / 3.6
@@ -115,8 +117,11 @@ class MathChannelsEngine:
         else:
             res["trip_avg_kml"] = 0.0
 
-        # 2. Desvio da Mistura Lambda Error (%)
-        if lambda_v is not None and lambda_v > 0.02:
+        # 2. Desvio da Mistura Lambda Error (%) — suporta Wideband (lambda_eq) e Banda Estreita (lambda_v)
+        lambda_eq = latest.get("lambda_eq")
+        if lambda_eq is not None and lambda_eq > 0.1:
+            res["lambda_error_pct"] = round((lambda_eq - 1.0) * 100.0, 1)
+        elif lambda_v is not None and lambda_v > 0.02:
             # Em banda estreita, 0.450 V = estequiométrico (λ = 1.00)
             # Acima de 0.45 V = rica (desvio negativo de ar), abaixo = pobre
             lambda_est = 1.0 - (lambda_v - 0.45) * 0.35
@@ -143,18 +148,43 @@ class MathChannelsEngine:
             if cyl_retards:
                 res["knock_retard_max"] = round(max(0.0, max(cyl_retards)), 2)
 
-        # 5. Potência (cv) e Torque (kgfm) Estimados (sem teto artificial de 220 cv, ajustado para Flex/Turbo até 900 cv)
-        if rpm > 600.0 and map_kpa > 20.0:
+        # 5. Potência (cv) e Torque (kgfm) Estimados via Massa de Ar (Speed-Density)
+        # Usa RPM + MAP + IAT (síncronos no mesmo frame), imune a inj_ms defasado
+        # em Linha K e ao Bloco 103.5 (etanol dinâmico) travado em 100%.
+        tps = latest.get("tps")
+        inj_ms = latest.get("inj_ms") if "inj_ms" in latest else latest.get("inj_pulse_width")
+        is_cut_off = (inj_ms is not None and inj_ms <= 0.05) or (
+            tps is not None and tps <= 0.5 and rpm > 1400.0 and map_kpa < 28.0
+        )
+        if rpm > 600.0 and map_kpa > 20.0 and not is_cut_off:
             ethanol_pct = latest.get("flex_ethanol_pct") or latest.get("ethanol") or 27.0
             eth_ratio = min(1.0, max(0.0, ethanol_pct / 100.0))
-            # Ajuste estequiométrico e densidade pelo teor de etanol
-            fuel_density = 740.0 * (1.0 - eth_ratio) + 789.0 * eth_ratio  # g/L
-            # Fator térmico de conversão cv por g/s
-            eff_factor = 15.2 * (1.0 - eth_ratio) + 12.0 * eth_ratio
-            fuel_gs = (fuel_lph * fuel_density) / 3600.0
-            hp_est = fuel_gs * eff_factor
-            # Limite ampliado para comportar motores aspirados preparados, turbo e GDI de alta potência
-            hp_est = max(0.0, min(900.0, hp_est))
+            iat = latest.get("iat", 30.0)
+
+            norm_map = max(0.2, map_kpa / 100.0)
+            if norm_map <= 1.0:
+                if rpm < 2000.0:
+                    rpm_ve = 0.88 + 0.12 * (rpm / 2000.0)
+                elif rpm > 4200.0:
+                    rpm_ve = max(0.84, 1.0 - 0.06 * ((rpm - 4200.0) / 1500.0))
+                else:
+                    rpm_ve = 1.0
+                ve = (0.72 + 0.25 * norm_map) * rpm_ve
+            else:
+                ve = min(1.18, 0.97 + 0.08 * (norm_map - 1.0))
+
+            t_kelvin = max(240.0, iat + 273.15)
+            air_gs = (rpm * map_kpa * self.displacement_l * ve * 1000.0) / (120.0 * 287.05 * t_kelvin)
+
+            # Energia térmica por g/s de ar (~2.96 kW/(g/s)) é quase idêntica entre gasolina e etanol
+            cv_per_air_gs = 1.54 * (1.0 + 0.03 * eth_ratio)
+            hp_gross = air_gs * cv_per_air_gs
+
+            # Perdas mecânicas (FMEP) + bombeamento em vácuo (PMEP)
+            fmep_kpa = 85.0 + 0.014 * rpm + max(0.0, (100.0 - map_kpa) * 0.60)
+            hp_loss = (fmep_kpa * self.displacement_l * rpm / 120000.0) * 1.35962
+
+            hp_est = max(0.0, min(900.0, hp_gross - hp_loss))
             torque_kgfm = (hp_est * 716.2) / rpm if rpm > 0 else 0.0
 
             res["power_hp"] = round(hp_est, 1)

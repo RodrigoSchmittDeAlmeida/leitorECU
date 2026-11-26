@@ -91,11 +91,15 @@ class PerformanceTimer {
     // 1. Integração da distância percorrida (trapezoidal) e força G
     if (lastT != null && t > lastT!) {
       final dt = t - lastT!;
-      distanceM += (spdMs + lastSpdMs) * 0.5 * dt;
-      final accelMs2 = dt > 0.0 ? (spdMs - lastSpdMs) / dt : 0.0;
-      final gForce = accelMs2 / 9.80665;
-      if (gForce > record.maxG) {
-        record.maxG = _round2(gForce);
+      if (dt <= 5.0) {
+        distanceM += (spdMs + lastSpdMs) * 0.5 * dt;
+      }
+      if (dt >= 0.08 && dt <= 3.5) {
+        final accelMs2 = (spdMs - lastSpdMs) / dt;
+        final gForce = (accelMs2 / 9.80665).clamp(-2.50, 2.50);
+        if (gForce > record.maxG) {
+          record.maxG = _round2(gForce);
+        }
       }
     }
 

@@ -140,6 +140,42 @@ void main() {
       expect(eval.crankingOk, isFalse);
       expect(eval.isCharging, isFalse);
     });
+
+    test('computes realistic VW 1.6 EA111 WOT power/torque immune to stale inj_ms and 100% flex', () {
+      final engine = MathChannelsEngine(displacementL: 1.6);
+
+      final mTq = engine.compute(1.0, {
+        'rpm': 2500.0,
+        'map': 99.0,
+        'iat': 35.0,
+        'tps': 85.0,
+        'inj_ms': 12.5,
+        'flex_ethanol_pct': 100.0,
+      });
+      expect(mTq['torque_kgfm']!, inInclusiveRange(14.5, 16.0));
+      expect(mTq['power_hp']!, inInclusiveRange(50.0, 58.0));
+
+      final mHp = engine.compute(2.0, {
+        'rpm': 5250.0,
+        'map': 98.0,
+        'iat': 35.0,
+        'tps': 90.0,
+        'inj_ms': 6.5,
+        'flex_ethanol_pct': 100.0,
+      });
+      expect(mHp['power_hp']!, inInclusiveRange(96.0, 108.0));
+      expect(mHp['torque_kgfm']!, inInclusiveRange(13.0, 14.8));
+
+      final mCut = engine.compute(3.0, {
+        'rpm': 2800.0,
+        'map': 22.0,
+        'iat': 35.0,
+        'tps': 0.0,
+        'inj_ms': 0.0,
+      });
+      expect(mCut['power_hp'], 0.0);
+      expect(mCut['torque_kgfm'], 0.0);
+    });
   });
 
   group('DecelDetector', () {

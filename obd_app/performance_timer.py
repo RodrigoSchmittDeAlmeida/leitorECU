@@ -68,14 +68,16 @@ class PerformanceTimer:
         # 1. Integração da distância percorrida
         if self.last_t is not None and t > self.last_t:
             dt = t - self.last_t
-            # Integração trapezoidal
-            self.distance_m += (spd_ms + self.last_spd_ms) * 0.5 * dt
+            # Integração trapezoidal (ignora pausas longas > 5s)
+            if dt <= 5.0:
+                self.distance_m += (spd_ms + self.last_spd_ms) * 0.5 * dt
 
-            # Aceleração longitudinal em Gs
-            accel_ms2 = (spd_ms - self.last_spd_ms) / dt if dt > 0 else 0.0
-            g_force = accel_ms2 / 9.80665
-            if g_force > self.record.max_g:
-                self.record.max_g = round(g_force, 2)
+            # Aceleração longitudinal em Gs (protegida contra ruído de quantização de velocidade)
+            if 0.08 <= dt <= 3.5:
+                accel_ms2 = (spd_ms - self.last_spd_ms) / dt
+                g_force = max(-2.50, min(2.50, accel_ms2 / 9.80665))
+                if g_force > self.record.max_g:
+                    self.record.max_g = round(g_force, 2)
 
         self.last_t = t
         self.last_spd_ms = spd_ms

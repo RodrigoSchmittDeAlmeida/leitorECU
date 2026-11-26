@@ -42,11 +42,13 @@ def estimate_fuel_metrics(latest: Dict[str, float], displacement_l: float = 1.6)
 
     # 1. Estimativa via Tempo de Injeção real (mais precisa)
     if inj_ms is not None and inj_ms > 0.05:
-        # Vazão típica de bico injetor (195 cc/min a 3.0 bar = ~2.40 g/s de gasolina por bico)
-        injector_cc_min = 195.0
+        # Bico Flex a ~4.0 bar (ex.: VW EA111 1.6 TotalFlex ~275 cc/min) com dead-time ~0.85 ms
+        injector_cc_min = 275.0
+        dead_time_ms = 0.85
+        eff_inj_ms = max(0.0, inj_ms - dead_time_ms)
         # 4 cilindros, 2 injeções por volta do virabrequim (ciclo 4 tempos)
         # injector_cc_min / 60.0 converte cc/min para cc/s por bico a 100% de duty cycle
-        total_cc_s = (rpm / 60.0) * 2.0 * (inj_ms / 1000.0) * (injector_cc_min / 60.0)
+        total_cc_s = (rpm / 60.0) * 2.0 * (eff_inj_ms / 1000.0) * (injector_cc_min / 60.0)
         fuel_lph = (total_cc_s * 3600.0) / 1000.0
     else:
         # 2. Estimativa via Speed-Density (RPM, MAP, IAT)

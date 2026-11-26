@@ -127,6 +127,35 @@ def test_math_channels_turbo_power_above_220hp_and_ethanol_density():
     assert m["torque_kgfm"] > 20.0
 
 
+def test_math_channels_gol_16_wot_power_and_torque_accuracy():
+    """Garante precisão da curva de potência/torque do VW EA111 1.6 Flex via Speed-Density (imune a inj_ms defasado e Bloco 103.5 em 100%)."""
+    engine = MathChannelsEngine(displacement_l=1.6)
+
+    # Pico de torque em WOT (~2500 RPM, MAP 99 kPa, mesmo com Bloco 103.5 em 100% e inj_ms defasado)
+    m_tq = engine.compute(
+        t=1.0,
+        latest={"rpm": 2500.0, "map": 99.0, "iat": 35.0, "tps": 85.0, "inj_ms": 12.5, "flex_ethanol_pct": 100.0},
+    )
+    assert 14.5 <= m_tq["torque_kgfm"] <= 16.0, f"Torque WOT 2500 RPM fora da faixa real EA111: {m_tq['torque_kgfm']}"
+    assert 50.0 <= m_tq["power_hp"] <= 58.0
+
+    # Pico de potência em WOT (~5250 RPM, MAP 98 kPa)
+    m_hp = engine.compute(
+        t=2.0,
+        latest={"rpm": 5250.0, "map": 98.0, "iat": 35.0, "tps": 90.0, "inj_ms": 6.5, "flex_ethanol_pct": 100.0},
+    )
+    assert 96.0 <= m_hp["power_hp"] <= 108.0, f"Potência WOT 5250 RPM fora da faixa real EA111: {m_hp['power_hp']}"
+    assert 13.0 <= m_hp["torque_kgfm"] <= 14.8
+
+    # Cut-off (borboleta fechada em desaceleração) zera potência e torque
+    m_cut = engine.compute(
+        t=3.0,
+        latest={"rpm": 2800.0, "map": 22.0, "iat": 35.0, "tps": 0.0, "inj_ms": 0.0},
+    )
+    assert m_cut["power_hp"] == 0.0
+    assert m_cut["torque_kgfm"] == 0.0
+
+
 def test_math_channels_battery_and_alternator_health():
     """Garante avaliação de saúde da bateria em repouso, queda na partida (< 9.6V) e alternador (> 13.6V)."""
     engine = MathChannelsEngine()

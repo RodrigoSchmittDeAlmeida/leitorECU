@@ -54,13 +54,15 @@ class FuelEstimator {
     double fuelLph;
     // 1. Estimativa via Tempo de Injeção real (mais precisa)
     if (injMs != null && injMs > 0.05) {
-      // Vazão típica de bico injetor (195 cc/min a 3.0 bar)
-      const injectorCcMin = 195.0;
+      // Bico Flex a ~4.0 bar (ex.: VW EA111 1.6 TotalFlex ~275 cc/min) com dead-time ~0.85 ms
+      const injectorCcMin = 275.0;
+      const deadTimeMs = 0.85;
+      final effInjMs = math.max(0.0, injMs - deadTimeMs);
       // 4 cilindros, 2 injeções por volta do virabrequim (ciclo 4 tempos)
       // injectorCcMin / 60.0 converte cc/min para cc/s por bico a 100% duty cycle
       final totalCcS = (rpm / 60.0) *
           2.0 *
-          (injMs / 1000.0) *
+          (effInjMs / 1000.0) *
           (injectorCcMin / 60.0);
       fuelLph = (totalCcS * 3600.0) / 1000.0;
     } else {

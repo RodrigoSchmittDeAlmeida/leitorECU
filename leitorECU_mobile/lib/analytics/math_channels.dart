@@ -239,15 +239,50 @@ class MathChannelsEngine {
       }
     }
 
-    // 5. Potência (cv) e Torque (kgfm) Estimados (até 900 cv para Turbo/GDI/Flex)
-    if (rpm > 600.0 && mapKpa > 20.0) {
+    // 5. Potência (cv) e Torque (kgfm) Estimados via Massa de Ar (Speed-Density)
+    // Usa RPM + MAP + IAT (síncronos no mesmo frame), imune a inj_ms defasado
+    // em Linha K e ao Bloco 103.5 (etanol dinâmico) travado em 100%.
+    final tps = latest['tps'];
+    final injMs = latest['inj_ms'] ?? latest['inj_pulse_width'];
+    final isCutOff = (injMs != null && injMs <= 0.05) ||
+        (tps != null && tps <= 0.5 && rpm > 1400.0 && mapKpa < 28.0);
+    if (rpm > 600.0 && mapKpa > 20.0 && !isCutOff) {
       final ethanolPct =
           latest['flex_ethanol_pct'] ?? latest['ethanol'] ?? 27.0;
       final ethRatio = (ethanolPct / 100.0).clamp(0.0, 1.0);
-      final fuelDensity = 740.0 * (1.0 - ethRatio) + 789.0 * ethRatio;
-      final effFactor = 15.2 * (1.0 - ethRatio) + 12.0 * ethRatio;
-      final fuelGs = (fuelLph * fuelDensity) / 3600.0;
-      final hpEst = (fuelGs * effFactor).clamp(0.0, 900.0);
+      final iat = latest['iat'] ?? 30.0;
+
+      final normMap = math.max(0.2, mapKpa / 100.0);
+      final double ve;
+      if (normMap <= 1.0) {
+        final double rpmVe;
+        if (rpm < 2000.0) {
+          rpmVe = 0.88 + 0.12 * (rpm / 2000.0);
+        } else if (rpm > 4200.0) {
+          rpmVe = math.max(0.84, 1.0 - 0.06 * ((rpm - 4200.0) / 1500.0));
+        } else {
+          rpmVe = 1.0;
+        }
+        ve = (0.72 + 0.25 * normMap) * rpmVe;
+      } else {
+        ve = math.min(1.18, 0.97 + 0.08 * (normMap - 1.0));
+      }
+
+      final tKelvin = math.max(240.0, iat + 273.15);
+      final airGs =
+          (rpm * mapKpa * displacementL * ve * 1000.0) /
+              (120.0 * 287.05 * tKelvin);
+
+      // Energia térmica por g/s de ar (~2.96 kW/(g/s)) é praticamente idêntica
+      // entre gasolina e etanol (+3% rendimento térmico no etanol).
+      final cvPerAirGs = 1.54 * (1.0 + 0.03 * ethRatio);
+      final hpGross = airGs * cvPerAirGs;
+
+      // Perdas mecânicas (FMEP) + bombeamento em vácuo (PMEP)
+      final fmepKpa = 85.0 + 0.014 * rpm + math.max(0.0, (100.0 - mapKpa) * 0.60);
+      final hpLoss = (fmepKpa * displacementL * rpm / 120000.0) * 1.35962;
+
+      final hpEst = (hpGross - hpLoss).clamp(0.0, 900.0);
       final torqueKgfm = rpm > 0.0 ? (hpEst * 716.2) / rpm : 0.0;
 
       res['power_hp'] = _round1(hpEst);
