@@ -29,7 +29,10 @@ class FlexAfStatusCard extends StatelessWidget {
         final lambda1 = latest['lambda_v'];
 
         final ectOk = (latest['ect'] ?? 0.0) >= 80.0;
-        final closedLoopOk = latest['fuel_sys1'] == 2.0;
+        final g005c4 = latest['g005_c4'];
+        final closedLoopOk = latest['fuel_sys1'] == 2.0 ||
+            g005c4 == 5.0 ||
+            g005c4 == 6.0;
         final block1038Unlocked = status1038 != null && status1038 < 0.5;
         final noDtcs = controller.dtcs.isEmpty;
 

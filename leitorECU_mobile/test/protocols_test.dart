@@ -222,16 +222,34 @@ void main() {
 
     test('decVagGroup05 decodes Cut-Off, WOT and Closed Loop in C4', () {
       final base = [0x01, 100, 100, 0x02, 100, 100, 0x07, 100, 50];
+      // Bitmask k=0x10
       expect(
-        decVagGroup05(Uint8List.fromList([...base, 0x25, 0x00, 0x08]))['fuel_sys1'],
+        decVagGroup05(Uint8List.fromList([...base, 0x10, 0x00, 0x08]))['fuel_sys1'],
         1.0,
       );
       expect(
-        decVagGroup05(Uint8List.fromList([...base, 0x25, 0x00, 0x04]))['fuel_sys1'],
+        decVagGroup05(Uint8List.fromList([...base, 0x10, 0x00, 0x04]))['fuel_sys1'],
         4.0,
       );
       expect(
-        decVagGroup05(Uint8List.fromList([...base, 0x25, 0x00, 0x01]))['fuel_sys1'],
+        decVagGroup05(Uint8List.fromList([...base, 0x10, 0x00, 0x01]))['fuel_sys1'],
+        2.0,
+      );
+      // Tabela de texto VAG k=0x25 (Bosch ME7.5.30 032906032AJ)
+      expect(
+        decVagGroup05(Uint8List.fromList([...base, 0x25, 0x00, 9]))['fuel_sys1'],
+        1.0,
+      );
+      expect(
+        decVagGroup05(Uint8List.fromList([...base, 0x25, 0x00, 8]))['fuel_sys1'],
+        4.0,
+      );
+      expect(
+        decVagGroup05(Uint8List.fromList([...base, 0x25, 0x00, 5]))['fuel_sys1'],
+        2.0,
+      );
+      expect(
+        decVagGroup05(Uint8List.fromList([...base, 0x25, 0x00, 6]))['fuel_sys1'],
         2.0,
       );
     });
@@ -329,6 +347,25 @@ void main() {
       expect(res118NonTurbo['wastegate_pct'], 65.0);
       expect(res118NonTurbo.containsKey('map'), isFalse);
       expect(res118NonTurbo.containsKey('boost_bar'), isFalse);
+
+      // Bloco 005 (2105) com nbytes=12 e tabela de texto k=0x25 (ME7.5.30 032906032AJ)
+      expect(obdPids[0x2105]!.nbytes, equals(12));
+      expect(
+        decVagGroup05(Uint8List.fromList([0x01, 10, 20, 0x02, 10, 10, 0x07, 10, 50, 0x25, 0, 5]))['fuel_sys1'],
+        equals(2.0),
+      );
+      expect(
+        decVagGroup05(Uint8List.fromList([0x01, 10, 20, 0x02, 10, 10, 0x07, 10, 50, 0x25, 0, 6]))['fuel_sys1'],
+        equals(2.0),
+      );
+      expect(
+        decVagGroup05(Uint8List.fromList([0x01, 10, 20, 0x02, 10, 10, 0x07, 10, 50, 0x25, 0, 8]))['fuel_sys1'],
+        equals(4.0),
+      );
+      expect(
+        decVagGroup05(Uint8List.fromList([0x01, 10, 20, 0x02, 10, 10, 0x07, 10, 50, 0x25, 0, 9]))['fuel_sys1'],
+        equals(1.0),
+      );
     });
   });
 

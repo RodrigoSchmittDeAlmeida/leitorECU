@@ -129,6 +129,14 @@ def test_vag_group05_fuel_sys1_operating_states():
     res_closed = _dec_vag_group05(p_closed)
     assert res_closed["fuel_sys1"] == 2.0
 
+    # 4. Tabela de texto VAG k=0x25 (Bosch ME7.5.30 032906032AJ: 5/6=Malha Fechada, 8=WOT, 9=Cut-Off)
+    from obd_app.pids import PIDS
+    assert PIDS[(0x21 << 8) | 0x05].nbytes == 12
+    assert _dec_vag_group05(bytes([0x01, 10, 20, 0x02, 10, 10, 0x07, 10, 50, 0x25, 0, 5]))["fuel_sys1"] == 2.0
+    assert _dec_vag_group05(bytes([0x01, 10, 20, 0x02, 10, 10, 0x07, 10, 50, 0x25, 0, 6]))["fuel_sys1"] == 2.0
+    assert _dec_vag_group05(bytes([0x01, 10, 20, 0x02, 10, 10, 0x07, 10, 50, 0x25, 0, 8]))["fuel_sys1"] == 4.0
+    assert _dec_vag_group05(bytes([0x01, 10, 20, 0x02, 10, 10, 0x07, 10, 50, 0x25, 0, 9]))["fuel_sys1"] == 1.0
+
 
 def test_decode_vag_cell_unification():
     """Garante que decode_vag_cell utiliza vag.decode_cell diretamente sem duplicação."""

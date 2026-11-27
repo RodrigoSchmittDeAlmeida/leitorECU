@@ -279,15 +279,27 @@ def _dec_vag_group05(d: bytes) -> Dict[str, Optional[float]]:
         if v3 is not None and u3 == "km/h":
             out["speed"] = v3
     if len(d) >= 12:
-        # Célula 4: Estado de Operação da ME7.5 (bits de Lenta, Parcial, WOT, Cut-Off / Schubabschaltung)
+        # Célula 4: Estado de Operação da ME7.5
         # Mapeamento para fuel_sys1 padrão SAE: Cut-Off = 1.0, Malha Fechada = 2.0, Enriquecimento/WOT = 4.0
-        b4 = d[11]
-        if (b4 & 0x08) or (b4 & 0x80):
-            out["fuel_sys1"] = 1.0  # Cut-Off / Schubabschaltung
-        elif b4 & 0x04:
-            out["fuel_sys1"] = 4.0  # WOT / Enriquecimento Plena Carga
+        k4 = d[9]
+        if k4 == 0x25:
+            # Tabela de texto VAG (Bosch ME7.5.30 032906032AJ):
+            # 5 = Lenta, 6 = Parcial (Malha Fechada), 7/8 = Enriquecimento/WOT, 9 = Cut-Off/Desaceleração
+            code = (d[10] << 8) | d[11]
+            if code == 9:
+                out["fuel_sys1"] = 1.0  # Cut-Off / Desaceleração
+            elif code in (7, 8):
+                out["fuel_sys1"] = 4.0  # WOT / Enriquecimento
+            else:
+                out["fuel_sys1"] = 2.0  # Lenta (5) / Parcial (6) -> Malha Fechada
         else:
-            out["fuel_sys1"] = 2.0  # Lenta / Parcial / Malha Fechada
+            b4 = d[11]
+            if (b4 & 0x08) or (b4 & 0x80):
+                out["fuel_sys1"] = 1.0  # Cut-Off / Schubabschaltung
+            elif b4 & 0x04:
+                out["fuel_sys1"] = 4.0  # WOT / Enriquecimento Plena Carga
+            else:
+                out["fuel_sys1"] = 2.0  # Lenta / Parcial / Malha Fechada
     return out
 
 
@@ -546,7 +558,7 @@ PIDS: Dict[int, PidDef] = {
         PidDef(0x02, 12, _dec_vag_group02, "VW Bloco 002 RPM+Carga+MAP (2102)", mode=0x21, extra=True),
         PidDef(0x03, 12, _dec_vag_group03, "VW Bloco 003 RPM+MAP+TPS+Avanço (2103)", mode=0x21, fast=True),
         PidDef(0x04, 12, _dec_vag_group04, "VW Bloco 004 RPM+Bat+ECT+IAT (2104)", mode=0x21, slow=True),
-        PidDef(0x05, 9, _dec_vag_group05, "VW Bloco 005 RPM+Carga+Vel (2105)", mode=0x21, extra=True),
+        PidDef(0x05, 12, _dec_vag_group05, "VW Bloco 005 RPM+Carga+Vel+Estado (2105)", mode=0x21, extra=True),
         PidDef(0x14, 12, _dec_vag_group20, "VW Bloco 020 Retardo Detonação (2114)", mode=0x21, extra=True),
         PidDef(0x1A, 12, _dec_vag_group26, "VW Bloco 026 Tensão Detonação (211A)", mode=0x21, extra=True),
         PidDef(0x3E, 12, _dec_vag_group62, "VW Bloco 062 Pistas TPS/APP (213E)", mode=0x21, extra=True),
