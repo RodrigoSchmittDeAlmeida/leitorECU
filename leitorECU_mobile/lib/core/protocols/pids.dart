@@ -129,7 +129,6 @@ Map<String, double> decVagGroup02(Uint8List d) {
     if (c2 != null && c2.$2 == '%') out['load'] = c2.$1;
     if (c3 != null && c3.$2.contains('ms')) {
       out['inj_ms'] = c3.$1;
-      out['inj_pulse_width'] = c3.$1;
     }
     if (c4 != null && c4.$2 == 'mbar') {
       out['map'] = c4.$1 / 10.0;
@@ -276,19 +275,12 @@ Map<String, double> decVagGroup62(Uint8List d) {
 }
 
 Map<String, double> decVagGroup103(Uint8List d) {
-  final out = <String, double>{};
-  for (final cellIdx in const [4, 0, 5, 1]) {
-    final off = cellIdx * 3;
-    if (d.length >= off + 3) {
-      final c = decodeVagCell(d[off], d[off + 1], d[off + 2]);
-      if (c != null && c.$2 == '%' && c.$1 >= 0.0 && c.$1 <= 100.0) {
-        out['flex_ethanol_pct'] = c.$1;
-        out['ethanol'] = c.$1;
-        break;
-      }
-    }
-  }
-  return out;
+  // Na arquitetura VAG Bosch ME7 / ME7.5.30 (032906032AJ), o Bloco 103 (2167)
+  // corresponde ao Controle da Bomba de Combustível (Kraftstoffpumpenregelung),
+  // NÃO ao teor de etanol Flex (103.5 oscila 9..99.6% com a demanda de carga e
+  // 103.6/103.8 ficam em 100% / 1 no relé ON/OFF do Gol G5).
+  // As células brutas g103_c* seguem disponíveis via decodeVagBlock sem poluir flex_ethanol_pct.
+  return const {};
 }
 
 Map<String, double> decVagGroup114(Uint8List d) {
@@ -506,7 +498,7 @@ final Map<int, PidDef> obdPids = {
     PidDef(0x14, 12, decVagGroup20, 'VW Bloco 020 Retardo Detonação (2114)', mode: 0x21, extra: true),
     PidDef(0x1A, 12, decVagGroup26, 'VW Bloco 026 Tensão Detonação (211A)', mode: 0x21, extra: true),
     PidDef(0x3E, 12, decVagGroup62, 'VW Bloco 062 Pistas TPS/APP (213E)', mode: 0x21, extra: true),
-    PidDef(0x67, 15, decVagGroup103, 'VW Bloco 103 Adaptação Flex (2167)', mode: 0x21, extra: true, slow: true),
+    PidDef(0x67, 15, decVagGroup103, 'VW Bloco 103 Controle Bomba Comb. (2167)', mode: 0x21, extra: true, slow: true),
     PidDef(0x72, 12, decVagGroup114, 'VW Bloco 114 Carga+N75 (2172)', mode: 0x21, extra: true),
     PidDef(0x73, 12, decVagGroup115, 'VW Bloco 115 Pressão Turbo (2173)', mode: 0x21, fast: true),
     PidDef(0x76, 12, decVagGroup118, 'VW Bloco 118 IAT+N75+Boost (2176)', mode: 0x21, extra: true),

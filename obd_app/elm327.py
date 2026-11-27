@@ -53,15 +53,21 @@ class ElmResponse:
 
 def classify(lines: List[str], prompt: bool) -> Optional[str]:
     joined = " ".join(lines).upper()
+    hex_cleaned: List[str] = []
     for l in lines:
         s = l.strip()
         if _HEX_LINE.match(s):
-            clean = re.sub(r"^[0-9A-Fa-f]{1,2}:\s*", "", s).replace(" ", "").upper()
-            if clean.startswith("7F") and len(clean) >= 4:
-                sid = clean[2:4]
-                nrc = clean[4:6] if len(clean) >= 6 else ""
-                return f"NEGATIVE RESPONSE 7F {sid} {nrc}".strip()
-    if any(_HEX_LINE.match(l) for l in lines):
+            hex_cleaned.append(re.sub(r"^[0-9A-Fa-f]{1,2}:\s*", "", s).replace(" ", "").upper())
+    has_pos_hex = any(c and not c.startswith("7F") for c in hex_cleaned)
+    for clean in hex_cleaned:
+        if clean.startswith("7F") and len(clean) >= 4:
+            sid = clean[2:4]
+            nrc = clean[4:6] if len(clean) >= 6 else ""
+            # NRC 0x78 (ResponsePending) seguido da resposta positiva final na mesma leitura não é erro
+            if nrc == "78" and has_pos_hex:
+                continue
+            return f"NEGATIVE RESPONSE 7F {sid} {nrc}".strip()
+    if hex_cleaned:
         return None
     for token in ("UNABLE TO CONNECT", "BUS INIT: ...ERROR", "BUS INIT:...ERROR", "BUS ERROR",
                   "CAN ERROR", "FB ERROR", "DATA ERROR", "BUFFER FULL", "NO DATA", "STOPPED", "ERROR"):

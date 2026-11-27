@@ -162,7 +162,15 @@ class _ChannelDetailChartSheetState extends State<ChannelDetailChartSheet> {
                   }
                   minVal = lo;
                   maxVal = hi;
-                  avgVal = sum / visibleValues.length;
+                  if (widget.channelKey == 'fuel_econ_kml') {
+                    final movingValid =
+                        visibleValues.where((v) => v > 0.05 && v < 99.0).toList();
+                    avgVal = movingValid.isNotEmpty
+                        ? movingValid.reduce((a, b) => a + b) / movingValid.length
+                        : sum / visibleValues.length;
+                  } else {
+                    avgVal = sum / visibleValues.length;
+                  }
                 }
 
                 // Se usuário tocou/arrastou crosshair, encontra o ponto real mais próximo

@@ -75,8 +75,8 @@ class FuelEstimator {
       // 2. Estimativa via Speed-Density (RPM, MAP, IAT)
       final normMap = math.max(0.2, mapKpa / 100.0);
       final double ve;
-      if (normMap <= 1.0) {
-        ve = 0.75 + 0.15 * normMap;
+      if (normMap <= 1.06) {
+        ve = 0.75 + 0.15 * math.min(1.0, normMap);
       } else {
         // Em motores turbo, a VE em relação ao deslocamento estático pode superar 100%
         ve = math.min(1.20, 0.90 + 0.10 * (normMap - 1.0));

@@ -314,10 +314,10 @@ class VagKwpStrategy extends VehicleStrategy {
     if (decelMode || !ctx.readExtras) {
       pidsToQuery = List<int>.from(activeFast);
     } else {
-      // Prioriza Bloco 005 (0x2105) a cada 2 ciclos na Linha K
+      // Prioriza Bloco 005 (0x2105) a cada 2 ciclos e Bloco 032 (0x2120 LTFT) 2x na rotação
       final interleaved = <int>[
         0x2105, 0x2102, 0x2105, 0x2104,
-        0x2105, 0x2120, 0x2105, 0x2167,
+        0x2105, 0x2120, 0x2105, 0x2120,
         0x2105, 0x2114, 0x2105, 0x213E,
       ];
       if (!_isAspiratedGol) {
@@ -510,7 +510,7 @@ class VagKwpStrategy extends VehicleStrategy {
         final reason = errDetail ?? 'NO DATA';
         final msg =
             'Painel de Instrumentos (0x17) sem resposta ($reason). '
-            'O painel pode operar em protocolo KW1281 ou estar inacessível na Linha K.';
+            'No Gol G5 / PQ24, o painel pode operar via CAN/TP2.0 ou KW1281 fora do KWP2000 5-baud.';
         ctx.emitLog('⚠️ $msg');
         ctx.emitInfo(msg);
       }
@@ -556,14 +556,15 @@ class VagKwpStrategy extends VehicleStrategy {
     ElmResponse resp,
     String expectedPosHex,
   ) {
-    final allRaw = '${resp.lines.join('')} ${resp.error ?? ''}'
-        .replaceAll(RegExp(r'\s+'), '')
-        .toUpperCase();
-    final hasPending78 = RegExp(r'7F[0-9A-F]{2}78').hasMatch(allRaw);
-    // Remove frames intermediários 7F xx 78 (ResponsePending) antes de checar positivo/erro real
-    final cleaned = allRaw.replaceAll(RegExp(r'7F[0-9A-F]{2}78'), '');
+    // Usa exclusivamente linhas hexadecimais puras (sem concatenar texto de resp.error)
+    final hexRaw = resp.dataLines().join('').replaceAll(RegExp(r'\s+'), '').toUpperCase();
+    final errUpper = (resp.error ?? '').toUpperCase();
+    final hasPending78 = RegExp(r'7F[0-9A-F]{2}78').hasMatch(hexRaw) ||
+        RegExp(r'7F\s*[0-9A-F]{2}\s*78').hasMatch(errUpper);
+    // Remove frames intermediários 7F xx 78 (ResponsePending) antes de avaliar positivo/erro real
+    final cleaned = hexRaw.replaceAll(RegExp(r'7F[0-9A-F]{2}78'), '');
     final posHex = expectedPosHex.toUpperCase();
-    if (cleaned.contains(posHex)) {
+    if (cleaned.startsWith(posHex) || cleaned.contains(posHex)) {
       return (accepted: true, pending: hasPending78, nrc: null, summary: 'ACEITO ($cleaned)');
     }
     final negMatch = RegExp(r'7F[0-9A-F]{2}([0-9A-F]{2})').firstMatch(cleaned);
@@ -584,14 +585,10 @@ class VagKwpStrategy extends VehicleStrategy {
         summary: 'ACEITO (Processando 0x78 — ECU executando comando)',
       );
     }
-    final raw = resp.dataLines().join('').replaceAll(RegExp(r'\s+'), '').toUpperCase();
-    if (!resp.ok || raw.isEmpty) {
+    if (!resp.ok || cleaned.isEmpty) {
       return (accepted: false, pending: false, nrc: null, summary: resp.error ?? 'SEM RESPOSTA');
     }
-    if (raw.contains(posHex)) {
-      return (accepted: true, pending: false, nrc: null, summary: 'ACEITO ($raw)');
-    }
-    return (accepted: false, pending: false, nrc: null, summary: 'INESPERADO ($raw)');
+    return (accepted: false, pending: false, nrc: null, summary: 'INESPERADO ($cleaned)');
   }
 
   Future<Map<String, double>> _readBlockNow(
@@ -620,14 +617,13 @@ class VagKwpStrategy extends VehicleStrategy {
 
   @override
   Future<void> resetAdaptation(Elm327Client elm, StrategyContext ctx) async {
-    ctx.emitLog('Iniciando Reset de Adaptação / Flex KWP2000 VAG (Bosch ME7.5.30)...');
+    ctx.emitLog('Iniciando Reset de Adaptação / Mistura KWP2000 VAG (Bosch ME7.5.30)...');
     ctx.emitStatus('connecting', 'Executando Reset de Adaptação KWP2000 (Canal 00)...');
 
-    // 1. Leitura ANTES do reset (Bloco 032 LTFT + Bloco 103 Flex Fixa)
+    // 1. Leitura ANTES do reset (Bloco 032 LTFT Lenta + Parcial)
     final before32 = await _readBlockNow(elm, ctx, 0x2120);
-    final before103 = await _readBlockNow(elm, ctx, 0x2167);
+    final ltftIdleBefore = before32['ltft_idle'];
     final ltftBefore = before32['ltft'];
-    final flexBefore = before103['g103_c6'];
 
     // 2. Garante sessão diagnóstica estendida VAG KWP2000 (10 89)
     final rSess = await elm.command('1089', timeout: const Duration(seconds: 4));
@@ -657,18 +653,17 @@ class VagKwpStrategy extends VehicleStrategy {
 
     await Future<void>.delayed(const Duration(milliseconds: 450));
 
-    // 6. Releitura DEPOIS do reset para comprovação real
+    // 6. Releitura DEPOIS do reset para comprovação real no Bloco 032
     final after32 = await _readBlockNow(elm, ctx, 0x2120);
-    final after103 = await _readBlockNow(elm, ctx, 0x2167);
+    final ltftIdleAfter = after32['ltft_idle'];
     final ltftAfter = after32['ltft'];
-    final flexAfter = after103['g103_c6'];
 
-    final ltftChanged = ltftBefore != null &&
-        ltftAfter != null &&
-        (ltftAfter - ltftBefore).abs() > 0.5;
-    final flexChanged = flexBefore != null &&
-        flexAfter != null &&
-        (flexAfter - flexBefore).abs() > 1.0;
+    final ltftChanged = (ltftBefore != null &&
+            ltftAfter != null &&
+            (ltftAfter - ltftBefore).abs() > 0.5) ||
+        (ltftIdleBefore != null &&
+            ltftIdleAfter != null &&
+            (ltftIdleAfter - ltftIdleBefore).abs() > 0.5);
     final kwpAccepted = evalBasic.accepted || evalAdapt.accepted;
 
     final nrcs = <int>[
@@ -676,12 +671,12 @@ class VagKwpStrategy extends VehicleStrategy {
       if (evalAdapt.nrc != null) evalAdapt.nrc!,
     ];
 
-    if (kwpAccepted || ltftChanged || flexChanged) {
+    if (kwpAccepted || ltftChanged) {
       final deltaParts = <String>[
+        if (ltftIdleBefore != null && ltftIdleAfter != null)
+          'Lenta ${ltftIdleBefore.toStringAsFixed(1)}% → ${ltftIdleAfter.toStringAsFixed(1)}%',
         if (ltftBefore != null && ltftAfter != null)
-          'LTFT ${ltftBefore.toStringAsFixed(1)}% → ${ltftAfter.toStringAsFixed(1)}%',
-        if (flexBefore != null && flexAfter != null)
-          'Flex(103.6) ${flexBefore.toStringAsFixed(0)}% → ${flexAfter.toStringAsFixed(0)}%',
+          'Parcial ${ltftBefore.toStringAsFixed(1)}% → ${ltftAfter.toStringAsFixed(1)}%',
       ];
       final detail = deltaParts.isNotEmpty ? ' (${deltaParts.join(' · ')})' : '';
       ctx.emitInfo('Reset KWP2000 aceito pela ECU!$detail');
@@ -689,7 +684,7 @@ class VagKwpStrategy extends VehicleStrategy {
     } else if (nrcs.contains(0x33)) {
       ctx.emitInfo(
         'ECU bloqueou o reset por Segurança (NRC 0x33 — Seed-Key Bosch exigido). '
-        'Para destravar o Flex (103.6), abasteça ≥12 L com chave desligada ou use scanner VAG com login.',
+        'Para zerar o Bloco 032 / A/F na EEPROM, utilize VCDS / KKL no Canal 00.',
       );
       ctx.emitStatus('connected', 'Conectado — Reset bloqueado pela ECU (NRC 0x33)');
     } else if (nrcs.contains(0x22)) {
@@ -701,10 +696,10 @@ class VagKwpStrategy extends VehicleStrategy {
     } else {
       final reason = !evalAdapt.accepted ? evalAdapt.summary : evalBasic.summary;
       ctx.emitInfo(
-        'DTCs limpos, mas a ECU não zerou a EEPROM de LTFT/Flex ($reason). '
-        'Abasteça ≥12 L com a chave desligada ou use scanner VAG Canal 00/Flex.',
+        'DTCs limpos, mas a ECU recusou zerar a EEPROM de LTFT/A/F via ELM327 ($reason). '
+        'Na Bosch ME7.5.30, o reset de Canal 00 exige scanner VAG/VCDS via cabo KKL.',
       );
-      ctx.emitStatus('connected', 'Conectado — EEPROM LTFT/Flex mantida pela ECU');
+      ctx.emitStatus('connected', 'Conectado — EEPROM LTFT/A/F mantida pela ECU');
     }
 
     await readDtcs(elm, ctx);

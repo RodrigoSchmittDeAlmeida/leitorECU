@@ -209,11 +209,11 @@ class VagKwpStrategy(BaseVehicleStrategy):
             # Em todo ciclo lê os 2 blocos de alta velocidade (Bloco 003 + Bloco 033)
             # E intercala o Bloco 005 (Velocidade/Carga/Cut-Off) a cada 2 ciclos (~1,5s)
             # alternando com os demais blocos complementares:
-            # 002 (Inj/Carga/MAP), 004 (Bat/ECT/IAT), 032 (LTFT Lenta+Parcial),
-            # 103 (Flex), 020 (Retardo Detonação), 062 (TPS/APP)
+            # 002 (Inj/Carga/MAP), 004 (Bat/ECT/IAT), 032 (LTFT Lenta+Parcial 2x),
+            # 020 (Retardo Detonação), 062 (TPS/APP)
             interleaved = [
                 0x2105, 0x2102, 0x2105, 0x2104,
-                0x2105, 0x2120, 0x2105, 0x2167,
+                0x2105, 0x2120, 0x2105, 0x2120,
                 0x2105, 0x2114, 0x2105, 0x213E,
             ]
             is_asp_gol = bool(self.ecu_id and self.ecu_id.upper().startswith("032906032AJ"))
@@ -360,7 +360,7 @@ class VagKwpStrategy(BaseVehicleStrategy):
                 reason = err_detail or "NO DATA"
                 msg = (
                     f"Painel de Instrumentos (0x17) sem resposta ({reason}). "
-                    "O painel pode operar em protocolo KW1281 ou estar inacessível na Linha K."
+                    "No Gol G5 / PQ24, o painel pode operar via CAN/TP2.0 ou KW1281 fora do KWP2000 5-baud."
                 )
                 worker.log.emit(f"⚠️ {msg}")
                 worker.info.emit(msg)
@@ -392,13 +392,16 @@ class VagKwpStrategy(BaseVehicleStrategy):
 
     @classmethod
     def _evaluate_kwp_resp(cls, resp: Any, expected_pos_hex: str) -> Tuple[bool, bool, Optional[int], str]:
-        lines = getattr(resp, "lines", None) or []
+        data_lines = resp.data_lines() if hasattr(resp, "data_lines") else (getattr(resp, "lines", None) or [])
         err = getattr(resp, "error", None) or ""
-        all_raw = re.sub(r"\s+", "", f"{''.join(lines)} {err}").upper()
-        has_pending_78 = bool(re.search(r"7F[0-9A-F]{2}78", all_raw))
-        cleaned = re.sub(r"7F[0-9A-F]{2}78", "", all_raw)
+        hex_raw = re.sub(r"\s+", "", "".join(data_lines)).upper()
+        has_pending_78 = bool(
+            re.search(r"7F[0-9A-F]{2}78", hex_raw)
+            or re.search(r"7F\s*[0-9A-F]{2}\s*78", err.upper())
+        )
+        cleaned = re.sub(r"7F[0-9A-F]{2}78", "", hex_raw)
         pos_hex = expected_pos_hex.upper()
-        if pos_hex in cleaned:
+        if cleaned.startswith(pos_hex) or pos_hex in cleaned:
             return True, has_pending_78, None, f"ACEITO ({cleaned})"
         neg = re.search(r"7F[0-9A-F]{2}([0-9A-F]{2})", cleaned)
         if neg:
@@ -406,13 +409,9 @@ class VagKwpStrategy(BaseVehicleStrategy):
             return False, False, nrc, f"REJEITADO: {cls._decode_kwp_nrc(nrc)}"
         if has_pending_78:
             return True, True, 0x78, "ACEITO (Processando 0x78 — ECU executando comando)"
-        data_lines = resp.data_lines() if hasattr(resp, "data_lines") else lines
-        raw = re.sub(r"\s+", "", "".join(data_lines)).upper()
-        if not getattr(resp, "ok", False) or not raw:
+        if not getattr(resp, "ok", False) or not cleaned:
             return False, False, None, err or "SEM RESPOSTA"
-        if pos_hex in raw:
-            return True, False, None, f"ACEITO ({raw})"
-        return False, False, None, f"INESPERADO ({raw})"
+        return False, False, None, f"INESPERADO ({cleaned})"
 
     def _read_block_now(self, elm: Any, worker: Any, pcode: int) -> Dict[str, float]:
         pdef = PIDS.get(pcode)
@@ -436,15 +435,14 @@ class VagKwpStrategy(BaseVehicleStrategy):
         return out
 
     def reset_adaptation(self, elm: Any, worker: Any) -> None:
-        """Reset de Adaptação / Flex KWP2000 VAG (Bosch ME7.5.30) com validação real de NRC."""
-        worker.log.emit("Iniciando Reset de Adaptação / Flex KWP2000 VAG (Bosch ME7.5.30)...")
+        """Reset de Adaptação / Mistura KWP2000 VAG (Bosch ME7.5.30) com validação real de NRC."""
+        worker.log.emit("Iniciando Reset de Adaptação / Mistura KWP2000 VAG (Bosch ME7.5.30)...")
         worker.status.emit("connecting", "Executando Reset de Adaptação KWP2000 (Canal 00)...")
 
-        # 1. Leitura ANTES do reset (Bloco 032 LTFT + Bloco 103 Flex Fixa)
+        # 1. Leitura ANTES do reset (Bloco 032 LTFT Lenta + Parcial)
         before32 = self._read_block_now(elm, worker, 0x2120)
-        before103 = self._read_block_now(elm, worker, 0x2167)
+        ltft_idle_before = before32.get("ltft_idle")
         ltft_before = before32.get("ltft")
-        flex_before = before103.get("g103_c6")
 
         # 2. Garante sessão diagnóstica estendida VAG KWP2000 (10 89)
         r_sess = elm.command("1089", 4.0)
@@ -470,39 +468,32 @@ class VagKwpStrategy(BaseVehicleStrategy):
         adapt_ok, _, adapt_nrc, adapt_sum = self._evaluate_kwp_resp(r_adapt, "7B")
         worker.log.emit(f"> 3B000000 (Adaptação Canal 00 = 0) -> {adapt_sum}")
 
-        # 6. Releitura DEPOIS do reset para comprovação real
+        # 6. Releitura DEPOIS do reset para comprovação real no Bloco 032
         time.sleep(0.45)
         after32 = self._read_block_now(elm, worker, 0x2120)
-        after103 = self._read_block_now(elm, worker, 0x2167)
+        ltft_idle_after = after32.get("ltft_idle")
         ltft_after = after32.get("ltft")
-        flex_after = after103.get("g103_c6")
 
         ltft_changed = (
-            ltft_before is not None
-            and ltft_after is not None
-            and abs(ltft_after - ltft_before) > 0.5
-        )
-        flex_changed = (
-            flex_before is not None
-            and flex_after is not None
-            and abs(flex_after - flex_before) > 1.0
+            (ltft_before is not None and ltft_after is not None and abs(ltft_after - ltft_before) > 0.5)
+            or (ltft_idle_before is not None and ltft_idle_after is not None and abs(ltft_idle_after - ltft_idle_before) > 0.5)
         )
         kwp_accepted = basic_ok or adapt_ok
         nrcs = [n for n in (basic_nrc, adapt_nrc) if n is not None]
 
-        if kwp_accepted or ltft_changed or flex_changed:
+        if kwp_accepted or ltft_changed:
             parts = []
+            if ltft_idle_before is not None and ltft_idle_after is not None:
+                parts.append(f"Lenta {ltft_idle_before:.1f}% → {ltft_idle_after:.1f}%")
             if ltft_before is not None and ltft_after is not None:
-                parts.append(f"LTFT {ltft_before:.1f}% → {ltft_after:.1f}%")
-            if flex_before is not None and flex_after is not None:
-                parts.append(f"Flex(103.6) {flex_before:.0f}% → {flex_after:.0f}%")
+                parts.append(f"Parcial {ltft_before:.1f}% → {ltft_after:.1f}%")
             detail = f" ({' · '.join(parts)})" if parts else ""
             worker.info.emit(f"Reset KWP2000 aceito pela ECU!{detail}")
             worker.status.emit("connected", "Conectado — Reset KWP2000 confirmado")
         elif 0x33 in nrcs:
             worker.info.emit(
                 "ECU bloqueou o reset por Segurança (NRC 0x33 — Seed-Key Bosch exigido). "
-                "Para destravar o Flex (103.6), abasteça ≥12 L com chave desligada ou use scanner VAG com login."
+                "Para zerar o Bloco 032 / A/F na EEPROM, utilize VCDS / KKL no Canal 00."
             )
             worker.status.emit("connected", "Conectado — Reset bloqueado pela ECU (NRC 0x33)")
         elif 0x22 in nrcs:
@@ -514,10 +505,10 @@ class VagKwpStrategy(BaseVehicleStrategy):
         else:
             reason = adapt_sum if not adapt_ok else basic_sum
             worker.info.emit(
-                f"DTCs limpos, mas a ECU não zerou a EEPROM de LTFT/Flex ({reason}). "
-                "Abasteça ≥12 L com a chave desligada ou use scanner VAG Canal 00/Flex."
+                f"DTCs limpos, mas a ECU recusou zerar a EEPROM de LTFT/A/F via ELM327 ({reason}). "
+                "Na Bosch ME7.5.30, o reset de Canal 00 exige scanner VAG/VCDS via cabo KKL."
             )
-            worker.status.emit("connected", "Conectado — EEPROM LTFT/Flex mantida pela ECU")
+            worker.status.emit("connected", "Conectado — EEPROM LTFT/A/F mantida pela ECU")
 
         self.read_dtcs(elm, worker)
 

@@ -176,14 +176,18 @@ class MathChannelsEngine:
             iat = latest.get("iat", 30.0)
 
             norm_map = max(0.2, map_kpa / 100.0)
-            if norm_map <= 1.0:
+            # Até ~106 kPa é pressão atmosférica ao nível do mar / ram-air em motor aspirado
+            if norm_map <= 1.06:
                 if rpm < 2000.0:
                     rpm_ve = 0.88 + 0.12 * (rpm / 2000.0)
-                elif rpm > 4200.0:
-                    rpm_ve = max(0.84, 1.0 - 0.06 * ((rpm - 4200.0) / 1500.0))
+                elif rpm <= 5250.0:
+                    rpm_ve = max(0.84, 1.0 - 0.06 * ((rpm - 4200.0) / 1500.0)) if rpm > 4200.0 else 1.0
                 else:
-                    rpm_ve = 1.0
-                ve = (0.72 + 0.25 * norm_map) * rpm_ve
+                    # Acima do regime de potência máxima (~5250 RPM), cabeçotes aspirados
+                    # sofrem queda acentuada de enchimento volumétrico (evita inflar cv a 6000 RPM).
+                    ve_at_5250 = 1.0 - 0.06 * ((5250.0 - 4200.0) / 1500.0)
+                    rpm_ve = max(0.78, ve_at_5250 - 0.09 * ((rpm - 5250.0) / 750.0))
+                ve = (0.72 + 0.25 * min(1.0, norm_map)) * rpm_ve
             else:
                 ve = min(1.18, 0.97 + 0.08 * (norm_map - 1.0))
 

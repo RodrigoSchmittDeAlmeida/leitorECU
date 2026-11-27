@@ -1112,7 +1112,7 @@ class MainWindow(QMainWindow):
         self.btn_reset_adaptation = QPushButton("Reset Adaptação / Flex")
         self.btn_reset_adaptation.setToolTip(
             "Restaura valores de adaptação de fábrica na EEPROM (Canal 00 / Basic Setting 000).\n"
-            "Zera o Bloco 032 e força o descarte do aprendizado antigo de combustível (Bloco 103 Flex).\n"
+            "Zera o Bloco 032 (LTFT) e o aprendizado de mistura A/F na EEPROM.\n"
             "Execute com o motor aquecido (> 80 °C), ignição LIGADA e motor DESLIGADO."
         )
         self.btn_reset_adaptation.clicked.connect(self._reset_adaptation_dialog)
@@ -2388,7 +2388,7 @@ class MainWindow(QMainWindow):
             "Reset de Adaptação / Flex (Canal 00)",
             "Deseja enviar o comando de Reset de Adaptação (Canal 00 / Basic Settings)?\n\n"
             "Isso força a central Bosch ME7.5.30 a restaurar os parâmetros de fábrica de combustível "
-            "e zerar as correções aprendidas da EEPROM (Blocos 032 e 103).\n\n"
+            "e zerar as correções aprendidas da EEPROM (Bloco 032 LTFT e A/F).\n\n"
             "Recomendado: motor aquecido (> 80 °C), ignição LIGADA e motor PARADO.\n"
             "Após o comando, desligue a ignição por 60 segundos antes de dar a partida.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No

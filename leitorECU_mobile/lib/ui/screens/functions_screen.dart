@@ -99,12 +99,14 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Reset Adaptação / Flex (Canal 00)'),
         content: const Text(
-          'ATENÇÃO: Isso enviará o comando de Reset de Adaptação (Canal 00 / Basic Setting 000) '
-          'para a central Bosch ME7.5.30, zerando os blocos 032 (LTFT) e 103 (Flex).\n\n'
+          'ATENÇÃO: Isso enviará o comando KWP2000 de Reset de Adaptação (Canal 00 / Basic Setting 000) '
+          'para restaurar os ajustes de mistura (Bloco 032 LTFT e A/F na EEPROM).\n\n'
+          'Nota: Em algumas calibrações Bosch ME7.5.30, a central rejeita o reset via ELM327 '
+          'e exige cabo KKL / VCDS (Adaptação Canal 00).\n\n'
           'Requisitos obrigatórios:\n'
           '• Motor aquecido (> 80 °C)\n'
           '• Ignição LIGADA e motor PARADO\n'
-          '• Após confirmar, aguarde e desligue a chave por 60s antes da partida.',
+          '• Após confirmar, desligue a chave por 60s antes da partida.',
         ),
         actions: [
           TextButton(
@@ -139,7 +141,7 @@ class _FunctionsScreenState extends State<FunctionsScreen> {
             MediaQuery.sizeOf(context).width >= MotorsportTheme.tabletBreakpoint;
 
         final showFlexCard = c.vehicleProfile != VehicleProfileId.fordKa ||
-            c.latest.containsKey('g103_c6') ||
+            c.latest.containsKey('ltft_idle') ||
             c.latest.containsKey('ltft');
 
         final cards = <Widget>[

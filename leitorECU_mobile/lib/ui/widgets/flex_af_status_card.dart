@@ -4,7 +4,8 @@ import '../../state/telemetry_controller.dart';
 import '../theme/motorsport_theme.dart';
 import 'uniform_action_button.dart';
 
-/// Card dedicado à saúde do sistema Flex / A/F na Bosch ME7.5.30 (Blocos 103, 032, 033 e Sonda 1).
+/// Card dedicado à saúde real da mistura estequiométrica e adaptação A/F na Bosch ME7.5.30
+/// utilizando exclusivamente canais verificados (Blocos 032, 033, 002.3 e 005.4).
 class FlexAfStatusCard extends StatelessWidget {
   const FlexAfStatusCard({
     super.key,
@@ -21,39 +22,49 @@ class FlexAfStatusCard extends StatelessWidget {
       listenable: controller,
       builder: (context, _) {
         final latest = controller.latest;
-        final flexFixed = latest['g103_c6'] ?? latest['flex_ethanol_pct'];
-        final flexDynamic = latest['g103_c5'];
-        final status1038 = latest['g103_c8'];
+        final ltftIdle = latest['ltft_idle'];
         final ltft = latest['ltft'];
         final stft = latest['stft'];
         final lambda1 = latest['lambda_v'];
-
-        final ectOk = (latest['ect'] ?? 0.0) >= 80.0;
+        final injMs = latest['inj_ms'] ?? latest['inj_pulse_width'];
+        final rpm = latest['rpm'];
+        final ect = latest['ect'];
+        final tps = latest['tps'];
+        final speed = latest['speed'];
+        final fuelSys1 = latest['fuel_sys1'];
         final g005c4 = latest['g005_c4'];
-        final closedLoopOk = latest['fuel_sys1'] == 2.0 ||
-            g005c4 == 5.0 ||
-            g005c4 == 6.0;
-        final block1038Unlocked = status1038 != null && status1038 < 0.5;
+
+        final ectOk = (ect ?? 0.0) >= 80.0;
+        final closedLoopOk =
+            fuelSys1 == 2.0 || g005c4 == 5.0 || g005c4 == 6.0;
+        final lambdaActiveOk = lambda1 != null && lambda1 >= 0.01;
         final noDtcs = controller.dtcs.isEmpty;
 
-        final isLockedOnEthanol = flexFixed != null &&
-            flexFixed >= 90.0 &&
-            ltft != null &&
-            ltft <= -12.0 &&
-            status1038 != null &&
-            status1038 >= 0.5;
-        final allConditionsOk =
-            ectOk && closedLoopOk && block1038Unlocked && noDtcs;
+        final isWarmIdle = rpm != null &&
+            rpm >= 680.0 &&
+            rpm <= 960.0 &&
+            ectOk &&
+            (tps == null || tps < 6.5) &&
+            (speed == null || speed < 2.0);
 
-        final cardAccent = isLockedOnEthanol
-            ? MotorsportColors.warning
-            : (allConditionsOk ? MotorsportColors.ok : tokens.accent);
+        final isSevereRich = ltft != null && ltft <= -12.0;
+        final isSevereLean = ltft != null && ltft >= 12.0;
+        final isHealthyMixture = ltft != null &&
+            ltft.abs() <= 10.0 &&
+            (ltftIdle == null || ltftIdle.abs() <= 6.0);
+        final allPreconditionsOk =
+            ectOk && closedLoopOk && lambdaActiveOk && noDtcs;
 
-        final (String statusText, Color statusColor) = status1038 == null
-            ? ('--', tokens.stale)
-            : (status1038 >= 0.5
-                ? ('TRAVADO (1)', MotorsportColors.warning)
-                : ('LIBERADO (0)', MotorsportColors.ok));
+        final Color cardAccent;
+        if (isSevereRich || isSevereLean) {
+          cardAccent = ltft.abs() > 20.0
+              ? MotorsportColors.alarm
+              : MotorsportColors.warning;
+        } else if (isHealthyMixture && allPreconditionsOk) {
+          cardAccent = MotorsportColors.ok;
+        } else {
+          cardAccent = tokens.accent;
+        }
 
         String fmtPct(double? v, {bool signed = false}) {
           if (v == null) return '--';
@@ -61,52 +72,71 @@ class FlexAfStatusCard extends StatelessWidget {
           return '$sign${v.toStringAsFixed(1)}%';
         }
 
+        final (String loopText, Color loopColor) = switch (fuelSys1) {
+          2.0 => ('Malha Fechada', MotorsportColors.ok),
+          1.0 => ('Cut-Off', tokens.accent),
+          4.0 => ('Enriq. WOT', MotorsportColors.warning),
+          _ => g005c4 == 5.0 || g005c4 == 6.0
+              ? ('Malha Fechada', MotorsportColors.ok)
+              : ('--', tokens.stale),
+        };
+
+        final ltftIdleColor = ltftIdle == null
+            ? tokens.stale
+            : (ltftIdle.abs() > 8.0 ? MotorsportColors.warning : tokens.text);
         final ltftColor = ltft == null
             ? tokens.stale
-            : (ltft.abs() > 12.0
-                ? MotorsportColors.warning
-                : tokens.text);
+            : (ltft.abs() > 20.0
+                ? MotorsportColors.alarm
+                : (ltft.abs() > 12.0 ? MotorsportColors.warning : tokens.text));
         final stftColor = stft == null
             ? tokens.stale
-            : (stft.abs() > 15.0
-                ? MotorsportColors.warning
-                : tokens.text);
+            : (stft.abs() > 15.0 ? MotorsportColors.warning : tokens.text);
 
-        final metrics = <_FlexMetricItem>[
-          _FlexMetricItem(
-            label: 'Bloco 103.6 (Flex Fixa)',
-            value: fmtPct(flexFixed),
-            valueColor: flexFixed == null ? tokens.stale : tokens.text,
+        final Color injColor;
+        if (injMs == null) {
+          injColor = tokens.stale;
+        } else if (isWarmIdle && injMs >= 3.0) {
+          injColor = MotorsportColors.warning;
+        } else {
+          injColor = tokens.text;
+        }
+
+        final metrics = <_MixtureMetricItem>[
+          _MixtureMetricItem(
+            label: 'LTFT Lenta (032.1)',
+            value: fmtPct(ltftIdle, signed: true),
+            valueColor: ltftIdleColor,
           ),
-          _FlexMetricItem(
-            label: 'Bloco 103.5 (Dinâmico)',
-            value: fmtPct(flexDynamic),
-            valueColor: flexDynamic == null ? tokens.stale : tokens.text,
-          ),
-          _FlexMetricItem(
-            label: 'Bloco 103.8 (Status)',
-            value: statusText,
-            valueColor: statusColor,
-          ),
-          _FlexMetricItem(
-            label: 'LTFT Parcial',
+          _MixtureMetricItem(
+            label: 'LTFT Parcial (032.2)',
             value: fmtPct(ltft, signed: true),
             valueColor: ltftColor,
           ),
-          _FlexMetricItem(
-            label: 'STFT',
+          _MixtureMetricItem(
+            label: 'STFT (033.1)',
             value: fmtPct(stft, signed: true),
             valueColor: stftColor,
           ),
-          _FlexMetricItem(
-            label: 'Sonda 1',
+          _MixtureMetricItem(
+            label: isWarmIdle ? 'Pulso Lenta Quente' : 'Pulso Injeção (002.3)',
+            value: injMs == null ? '--' : '${injMs.toStringAsFixed(2)} ms',
+            valueColor: injColor,
+          ),
+          _MixtureMetricItem(
+            label: 'Sonda 1 (033.2)',
             value: lambda1 == null ? '--' : '${lambda1.toStringAsFixed(3)} V',
             valueColor: lambda1 == null ? tokens.stale : tokens.text,
+          ),
+          _MixtureMetricItem(
+            label: 'Operação (005.4)',
+            value: loopText,
+            valueColor: loopColor,
           ),
         ];
 
         return UniformSectionCard(
-          title: 'Saúde Flex / A/F (Bosch ME7.5.30)',
+          title: 'Saúde da Mistura & A/F (Bosch ME7.5.30)',
           icon: Icons.local_gas_station_outlined,
           accent: cardAccent,
           child: Column(
@@ -124,15 +154,26 @@ class FlexAfStatusCard extends StatelessWidget {
                       for (final m in metrics)
                         SizedBox(
                           width: itemW,
-                          child: _FlexMetricTile(item: m, tokens: tokens),
+                          child: _MixtureMetricTile(item: m, tokens: tokens),
                         ),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               Text(
-                'PRÉ-CONDIÇÕES DE APRENDIZADO',
+                'Ref. lenta quente (800 rpm): ~2,1–2,6 ms Gasolina · ~3,1–3,6 ms Etanol',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: tokens.muted,
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'CONDIÇÕES DE ADAPTAÇÃO DE MISTURA',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -158,8 +199,8 @@ class FlexAfStatusCard extends StatelessWidget {
                     tokens: tokens,
                   ),
                   _PreconditionChip(
-                    label: '103.8 Liberado',
-                    ok: block1038Unlocked,
+                    label: 'Sonda Ativa',
+                    ok: lambdaActiveOk,
                     tokens: tokens,
                   ),
                   _PreconditionChip(
@@ -169,7 +210,7 @@ class FlexAfStatusCard extends StatelessWidget {
                   ),
                 ],
               ),
-              if (isLockedOnEthanol) ...[
+              if (isSevereRich) ...[
                 const SizedBox(height: 10),
                 _ContextBanner(
                   icon: Icons.warning_amber_rounded,
@@ -177,10 +218,22 @@ class FlexAfStatusCard extends StatelessWidget {
                   bg: MotorsportColors.warnBg,
                   textColor: tokens.text,
                   message:
-                      'A/F travado em Etanol (${ltft.toStringAsFixed(1)}% na gasolina). '
-                      'Abasteça ≥ 12–15 L com a chave desligada para destravar o Bloco 103.8.',
+                      'Mistura rica em carga parcial (LTFT ${fmtPct(ltft, signed: true)}): '
+                      'A/F aprendido em Etanol na EEPROM (faça Reset Canal 00 via VCDS) ou '
+                      'excesso físico na linha (pressão > 4,2 bar, cânister N80 ou bicos).',
                 ),
-              ] else if (allConditionsOk) ...[
+              ] else if (isSevereLean) ...[
+                const SizedBox(height: 10),
+                _ContextBanner(
+                  icon: Icons.warning_amber_rounded,
+                  color: MotorsportColors.warning,
+                  bg: MotorsportColors.warnBg,
+                  textColor: tokens.text,
+                  message:
+                      'Mistura pobre em carga parcial (LTFT ${fmtPct(ltft, signed: true)}): '
+                      'verifique entrada de ar falso, pressão baixa da bomba/filtro ou bicos sujos.',
+                ),
+              ] else if (isHealthyMixture && allPreconditionsOk) ...[
                 const SizedBox(height: 10),
                 _ContextBanner(
                   icon: Icons.check_circle_outline,
@@ -188,12 +241,9 @@ class FlexAfStatusCard extends StatelessWidget {
                   bg: const Color(0xFF0A2E1E),
                   textColor: tokens.text,
                   message:
-                      'Aprendizado Flex liberado: todas as pré-condições atendidas. '
-                      'Conduza em regime de carga parcial para atualizar o A/F.',
+                      'Mistura estequiométrica saudável: correções LTFT Lenta e Parcial dentro da janela ideal (±10%).',
                 ),
-              ] else if (flexFixed != null ||
-                  ltft != null ||
-                  status1038 != null) ...[
+              ] else if (ltft != null || stft != null || lambda1 != null) ...[
                 const SizedBox(height: 10),
                 _ContextBanner(
                   icon: Icons.info_outline,
@@ -201,8 +251,7 @@ class FlexAfStatusCard extends StatelessWidget {
                   bg: tokens.surfaceAlt,
                   textColor: tokens.muted,
                   message:
-                      'Aguardando pré-condições completas (ECT ≥ 80°C, malha fechada, '
-                      'sem DTCs e Bloco 103.8 liberado) para aprendizado de A/F.',
+                      'Aguardando aquecimento completo (ECT ≥ 80°C) e malha fechada estável para aprendizado de longo prazo.',
                 ),
               ],
             ],
@@ -213,8 +262,8 @@ class FlexAfStatusCard extends StatelessWidget {
   }
 }
 
-class _FlexMetricItem {
-  const _FlexMetricItem({
+class _MixtureMetricItem {
+  const _MixtureMetricItem({
     required this.label,
     required this.value,
     required this.valueColor,
@@ -225,13 +274,13 @@ class _FlexMetricItem {
   final Color valueColor;
 }
 
-class _FlexMetricTile extends StatelessWidget {
-  const _FlexMetricTile({
+class _MixtureMetricTile extends StatelessWidget {
+  const _MixtureMetricTile({
     required this.item,
     required this.tokens,
   });
 
-  final _FlexMetricItem item;
+  final _MixtureMetricItem item;
   final MotorsportVisualTokens tokens;
 
   @override
@@ -364,7 +413,7 @@ class _ContextBanner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
-              maxLines: 3,
+              maxLines: 4,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: textColor,

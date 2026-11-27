@@ -678,11 +678,11 @@ void main() {
     await tester.tap(find.text('Funções').last);
     await tester.pump(const Duration(milliseconds: 120));
     await tester.dragUntilVisible(
-      find.text('Saúde Flex / A/F (Bosch ME7.5.30)'),
+      find.text('Saúde da Mistura & A/F (Bosch ME7.5.30)'),
       find.byType(ListView).last,
       const Offset(0, -200),
     );
-    expect(find.text('Saúde Flex / A/F (Bosch ME7.5.30)'), findsOneWidget);
+    expect(find.text('Saúde da Mistura & A/F (Bosch ME7.5.30)'), findsOneWidget);
     await tester.dragUntilVisible(
       find.text('Ler Tanque (0x17)'),
       find.byType(ListView).last,

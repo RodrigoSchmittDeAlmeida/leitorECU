@@ -171,3 +171,31 @@ def test_vag_read_instrument_cluster_0x17_and_restore_0x01():
         assert "".join(r2103.data_lines()).startswith("6103")
     finally:
         t.close()
+
+
+def test_vag_group103_no_flex_pollution_and_response_pending_78():
+    """Garante que o Bloco 103 (bomba de combustível) não polui flex_ethanol_pct e 7F..78 + 54FF00 é aceito limpo."""
+    from obd_app.elm327 import ElmResponse, classify
+    from obd_app.math_channels import MathChannelsEngine
+    from obd_app.pids import _dec_vag_group103
+    from obd_app.protocols.vag import VagKwpStrategy
+
+    raw_103 = bytes.fromhex("00000000000000000000000021641B216464216400100001")
+    dec = _dec_vag_group103(raw_103)
+    assert "flex_ethanol_pct" not in dec
+    assert "ethanol" not in dec
+
+    lines = ["7F 14 78", "54 FF 00"]
+    err = classify(lines, prompt=True)
+    assert err is None
+    resp = ElmResponse("14FF00", lines=lines, error=err, raw="\r".join(lines))
+    ok, pending, nrc, summary = VagKwpStrategy._evaluate_kwp_resp(resp, "54")
+    assert ok is True
+    assert pending is True
+    assert nrc is None
+    assert summary == "ACEITO (54FF00)"
+
+    eng = MathChannelsEngine(displacement_l=1.6)
+    m6000 = eng.compute(1.0, {"rpm": 6000.0, "map": 102.0, "iat": 38.0, "tps": 100.0, "inj_ms": 11.48})
+    assert 96.0 <= m6000["power_hp"] <= 105.0
+

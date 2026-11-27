@@ -1371,6 +1371,12 @@ class TelemetryController extends ChangeNotifier implements StrategyContext {
       final orig = ds.records[i];
       final newRec = Map<String, double>.from(orig);
       carried.addAll(orig);
+      if (carried.containsKey('g103_c5') || carried.containsKey('g103_c6')) {
+        newRec.remove('flex_ethanol_pct');
+        newRec.remove('ethanol');
+        carried.remove('flex_ethanol_pct');
+        carried.remove('ethanol');
+      }
 
       final fuel = FuelEstimator.estimateFuelMetrics(
         carried,

@@ -212,7 +212,6 @@ def _dec_vag_group02(d: bytes) -> Dict[str, Optional[float]]:
             out["load"] = v2
         if v3 is not None and "ms" in u3:
             out["inj_ms"] = v3
-            out["inj_pulse_width"] = v3
         if v4 is not None and u4 == "mbar":
             out["map"] = v4 / 10.0  # mbar -> kPa
     return out
@@ -496,18 +495,13 @@ def _dec_vag_group62(d: bytes) -> Dict[str, Optional[float]]:
 
 
 def _dec_vag_group103(d: bytes) -> Dict[str, Optional[float]]:
-    """Bloco VW 103 (comando 2167): Adaptação de Combustível Flex (Teor de Etanol % em C1 ou C5)."""
-    out: Dict[str, Optional[float]] = {}
-    # Na ME7.5.30 (032906032AJ), C1..C4 podem ser vazios (00 00 00) e o Etanol % vir em C5 (offset 12)
-    for cell_idx in (4, 0, 5, 1):
-        off = cell_idx * 3
-        if len(d) >= off + 3:
-            v, u = decode_vag_cell(d[off], d[off + 1], d[off + 2])
-            if v is not None and u == "%" and 0.0 <= v <= 100.0:
-                out["flex_ethanol_pct"] = v
-                out["ethanol"] = v
-                break
-    return out
+    """Bloco VW 103 (comando 2167): Controle da Bomba de Combustível (Kraftstoffpumpenregelung).
+
+    Na ME7.5.30 (032906032AJ), 103.5 oscila 9..99.6% com a demanda instantânea e 103.6/103.8
+    permanecem em 100% / 1 (relé ON/OFF da bomba), portanto NÃO deve poluir flex_ethanol_pct.
+    As células brutas g103_c* continuam decodificadas normalmente por vag.decode_block().
+    """
+    return {}
 
 
 @dataclass(frozen=True)
@@ -562,7 +556,7 @@ PIDS: Dict[int, PidDef] = {
         PidDef(0x14, 12, _dec_vag_group20, "VW Bloco 020 Retardo Detonação (2114)", mode=0x21, extra=True),
         PidDef(0x1A, 12, _dec_vag_group26, "VW Bloco 026 Tensão Detonação (211A)", mode=0x21, extra=True),
         PidDef(0x3E, 12, _dec_vag_group62, "VW Bloco 062 Pistas TPS/APP (213E)", mode=0x21, extra=True),
-        PidDef(0x67, 15, _dec_vag_group103, "VW Bloco 103 Adaptação Flex (2167)", mode=0x21, extra=True, slow=True),
+        PidDef(0x67, 15, _dec_vag_group103, "VW Bloco 103 Controle Bomba Comb. (2167)", mode=0x21, extra=True, slow=True),
         PidDef(0x72, 12, _dec_vag_group114, "VW Bloco 114 Carga+N75 (2172)", mode=0x21, extra=True),
         PidDef(0x73, 12, _dec_vag_group115, "VW Bloco 115 Pressão Turbo (2173)", mode=0x21, fast=True),
         PidDef(0x76, 12, _dec_vag_group118, "VW Bloco 118 IAT+N75+Boost (2176)", mode=0x21, extra=True),

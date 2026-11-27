@@ -56,21 +56,28 @@ class ElmResponse {
 
 String? classifyElmResponse(List<String> lines, {required bool prompt}) {
   final joined = lines.join(' ').toUpperCase();
+  final hexCleaned = <String>[];
   for (final l in lines) {
     final s = l.trim();
     if (_hexLineRegex.hasMatch(s)) {
-      final clean = s
-          .replaceFirst(_framePrefixRegex, '')
-          .replaceAll(' ', '')
-          .toUpperCase();
-      if (clean.startsWith('7F') && clean.length >= 4) {
-        final sid = clean.substring(2, 4);
-        final nrc = clean.length >= 6 ? clean.substring(4, 6) : '';
-        return 'NEGATIVE RESPONSE 7F $sid $nrc'.trim();
-      }
+      hexCleaned.add(
+        s.replaceFirst(_framePrefixRegex, '').replaceAll(' ', '').toUpperCase(),
+      );
     }
   }
-  if (lines.any((l) => _hexLineRegex.hasMatch(l.trim()))) {
+  final hasPositiveHex = hexCleaned.any((c) => c.isNotEmpty && !c.startsWith('7F'));
+  for (final clean in hexCleaned) {
+    if (clean.startsWith('7F') && clean.length >= 4) {
+      final sid = clean.substring(2, 4);
+      final nrc = clean.length >= 6 ? clean.substring(4, 6) : '';
+      // NRC 0x78 (ResponsePending) seguido da resposta positiva final na mesma leitura não é erro
+      if (nrc == '78' && hasPositiveHex) {
+        continue;
+      }
+      return 'NEGATIVE RESPONSE 7F $sid $nrc'.trim();
+    }
+  }
+  if (hexCleaned.isNotEmpty) {
     return null;
   }
   const errorTokens = [

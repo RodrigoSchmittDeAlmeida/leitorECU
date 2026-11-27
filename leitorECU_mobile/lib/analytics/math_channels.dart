@@ -260,16 +260,22 @@ class MathChannelsEngine {
 
       final normMap = math.max(0.2, mapKpa / 100.0);
       final double ve;
-      if (normMap <= 1.0) {
+      // Até ~106 kPa é pressão atmosférica ao nível do mar / ram-air em motor aspirado
+      if (normMap <= 1.06) {
         final double rpmVe;
         if (rpm < 2000.0) {
           rpmVe = 0.88 + 0.12 * (rpm / 2000.0);
-        } else if (rpm > 4200.0) {
-          rpmVe = math.max(0.84, 1.0 - 0.06 * ((rpm - 4200.0) / 1500.0));
+        } else if (rpm <= 5250.0) {
+          rpmVe = rpm > 4200.0
+              ? math.max(0.84, 1.0 - 0.06 * ((rpm - 4200.0) / 1500.0))
+              : 1.0;
         } else {
-          rpmVe = 1.0;
+          // Acima do regime de potência máxima (~5250 RPM), cabeçotes aspirados
+          // sofrem queda acentuada de enchimento volumétrico (evita inflar cv a 6000 RPM).
+          const veAt5250 = 1.0 - 0.06 * ((5250.0 - 4200.0) / 1500.0);
+          rpmVe = math.max(0.78, veAt5250 - 0.09 * ((rpm - 5250.0) / 750.0));
         }
-        ve = (0.72 + 0.25 * normMap) * rpmVe;
+        ve = (0.72 + 0.25 * math.min(1.0, normMap)) * rpmVe;
       } else {
         ve = math.min(1.18, 0.97 + 0.08 * (normMap - 1.0));
       }

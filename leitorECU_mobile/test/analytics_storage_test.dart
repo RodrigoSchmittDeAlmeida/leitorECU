@@ -166,6 +166,16 @@ void main() {
       expect(mHp['power_hp']!, inInclusiveRange(96.0, 108.0));
       expect(mHp['torque_kgfm']!, inInclusiveRange(13.0, 14.8));
 
+      // Em 6000 RPM aspirado (E27), roll-off de VE evita passar de 105 cv no EA111 1.6
+      final m6000 = engine.compute(2.5, {
+        'rpm': 6000.0,
+        'map': 102.0,
+        'iat': 38.0,
+        'tps': 100.0,
+        'inj_ms': 11.48,
+      });
+      expect(m6000['power_hp']!, inInclusiveRange(96.0, 105.0));
+
       final mCut = engine.compute(3.0, {
         'rpm': 2800.0,
         'map': 22.0,

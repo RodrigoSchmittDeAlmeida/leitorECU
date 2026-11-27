@@ -153,6 +153,8 @@ void main() {
       expect(err2, contains('31'));
 
       expect(classifyElmResponse(['41 00 BE 3F A8 13'], prompt: true), isNull);
+      // NRC 0x78 (ResponsePending) seguido da confirmação positiva final na mesma leitura deve ser ok!
+      expect(classifyElmResponse(['7F 14 78', '54 FF 00'], prompt: true), isNull);
       expect(classifyElmResponse(['NO DATA'], prompt: true), 'NO DATA');
       expect(classifyElmResponse([], prompt: false), 'TIMEOUT');
     });
@@ -172,9 +174,10 @@ void main() {
   });
 
   group('VAG Formulas & Mode 01/21 PIDs', () {
-    test('vagKnownLabels has 103.5/103.6 and turbo blocks 114/115/118', () {
-      expect(vagKnownLabels[(103, 5)], 'Fator Carga / Etanol Dinâmico');
-      expect(vagKnownLabels[(103, 6)], 'Adaptação Flex Fixa');
+    test('vagKnownLabels has accurate pump labels for 103.5/103.6, 032.4 O2/ref and turbo blocks 114/115/118', () {
+      expect(vagKnownLabels[(32, 4)], 'Tensão sonda / ref. (032.4)');
+      expect(vagKnownLabels[(103, 5)], 'Demanda entrega comb. (Bomba)');
+      expect(vagKnownLabels[(103, 6)], 'Duty bomba combustível');
       expect(vagKnownLabels[(114, 4)], contains('Wastegate'));
       expect(vagKnownLabels[(115, 3)]!.toLowerCase(), contains('turbo'));
       expect(vagKnownLabels[(118, 3)], isNotNull);
@@ -192,7 +195,7 @@ void main() {
       expect(decodeVagCell(0x25, 0, 0), isNull);
     });
 
-    test('extractVagBlock strips frame prefixes and repeated 61 GG headers', () {
+    test('extractVagBlock strips frame prefixes and decVagGroup103 does not pollute flex_ethanol_pct', () {
       const resp = ElmResponse(
         '2167',
         lines: [
@@ -204,7 +207,11 @@ void main() {
       expect(block, isNotNull);
       expect(block!.length, 18);
       final decoded = decVagGroup103(block);
-      expect(decoded['flex_ethanol_pct'], 27.0);
+      expect(decoded.containsKey('flex_ethanol_pct'), isFalse);
+      expect(decoded.containsKey('ethanol'), isFalse);
+      final cells = decodeVagBlock(103, block);
+      expect(cells['g103_c5']?.$1, 27.0);
+      expect(cells['g103_c6']?.$1, 100.0);
     });
 
     test('decVagGroup32 separates ltft_idle and ltft', () {
@@ -566,7 +573,8 @@ void main() {
       final r103 = await elmGol.command('2167');
       final b103 = extractVagBlock(r103, 103);
       expect(b103, isNotNull);
-      expect(decVagGroup103(b103!)['flex_ethanol_pct'], 27.0);
+      expect(decVagGroup103(b103!), isEmpty);
+      expect(decodeVagBlock(103, b103)['g103_c5']?.$1, 27.0);
 
       // Verify VAG blocks 003, 033, 005, 004, 032 decode realistic physical values
       tGol.engine.simulatedElapsedSeconds = 7.5; // acceleration phase

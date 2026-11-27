@@ -223,6 +223,13 @@ class LogAnalyzer {
       final discoveredKeys = <String>{...ds.availableChannels};
       for (var i = 0; i < n; i++) {
         final copy = Map<String, double>.from(ds.records[i]);
+        // Em logs VAG antigos em que o Bloco 103.5 (bomba comb.) foi gravado em flex_ethanol_pct,
+        // remove o valor falso antes de recalcular consumo e potência.
+        if (copy.containsKey('g103_c5') || copy.containsKey('g103_c6')) {
+          copy.remove('flex_ethanol_pct');
+          copy.remove('ethanol');
+          copy.remove('% Etanol [%]');
+        }
         final t = i < ds.times.length ? ds.times[i] : i.toDouble();
         final fuelEst = FuelEstimator.estimateFuelMetrics(
           copy,

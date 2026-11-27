@@ -57,8 +57,8 @@ def estimate_fuel_metrics(
         # 2. Estimativa via Speed-Density (RPM, MAP, IAT)
         # Eficiência volumétrica empírica de motores aspirados e sobrealimentados (Turbo/SC)
         norm_map = max(0.2, map_kpa / 100.0)
-        if norm_map <= 1.0:
-            ve = 0.75 + 0.15 * norm_map
+        if norm_map <= 1.06:
+            ve = 0.75 + 0.15 * min(1.0, norm_map)
         else:
             # Em motores turbo, o VE em relação ao deslocamento estático pode superar 100%
             ve = min(1.20, 0.90 + 0.10 * (norm_map - 1.0))
