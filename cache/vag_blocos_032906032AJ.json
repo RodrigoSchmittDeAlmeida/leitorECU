@@ -301,8 +301,8 @@
    "mbar"
   ],
   "g003_c3": [
-   "Bloco 003.3 Borboleta [%]",
-   "%"
+   "Bloco 003.3 Borboleta [°]",
+   "°"
   ],
   "g003_c4": [
    "Bloco 003.4 Avanço [°]",
@@ -337,8 +337,8 @@
    "km/h"
   ],
   "g005_c4": [
-   "Bloco 005.4 Estado operação [cod]",
-   "cod"
+   "Bloco 005.4 Estado operação [raw52]",
+   "raw52"
   ],
   "g006_c1": [
    "Bloco 006.1 RPM [rpm]",
@@ -549,11 +549,11 @@
    "%"
   ],
   "g032_c3": [
-   "Bloco 032.3 Fator adaptação mistura [%]",
+   "Bloco 032.3 Fator regulação lambda [%]",
    "%"
   ],
   "g032_c4": [
-   "Bloco 032.4 Tensão referência ECU [V]",
+   "Bloco 032.4 Tensão sonda / ref. (032.4) [V]",
    "V"
   ],
   "g033_c1": [
@@ -565,12 +565,12 @@
    "V"
   ],
   "g033_c3": [
-   "Bloco 033.3 [°C]",
-   "°C"
+   "Bloco 033.3 [rpm]",
+   "rpm"
   ],
   "g033_c4": [
-   "Bloco 033.4 [°C]",
-   "°C"
+   "Bloco 033.4 [rpm]",
+   "rpm"
   ],
   "g034_c1": [
    "Bloco 034.1 RPM [rpm]",
@@ -1541,19 +1541,19 @@
    "bits"
   ],
   "g103_c5": [
-   "Bloco 103.5 Teor Etanol Flex [%]",
+   "Bloco 103.5 Demanda entrega comb. (Bomba) [%]",
    "%"
   ],
   "g103_c6": [
-   "Bloco 103.6 Adaptação Mistura Flex [%]",
+   "Bloco 103.6 Duty bomba combustível [%]",
    "%"
   ],
   "g103_c7": [
-   "Bloco 103.7 Correção Partida Flex [%]",
+   "Bloco 103.7 Fator demanda injeção [%]",
    "%"
   ],
   "g103_c8": [
-   "Bloco 103.8 Status Reconhecimento Flex [bits]",
+   "Bloco 103.8 Status relé bomba comb. [bits]",
    "bits"
   ],
   "g104_c1": [
