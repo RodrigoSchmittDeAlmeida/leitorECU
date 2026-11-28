@@ -37,3 +37,29 @@ def test_detector_reset():
     det._reset_episode()
     det.in_decel = False
     assert not det.in_decel
+
+
+def test_me7530_gasoline_af_and_dashpot_do_not_false_alarm():
+    """Garante que ME7.5.30 com A/F Gasolina (-20.31%) e dashpot (-23.25°) não dispare falso alarme."""
+    det = DecelDetector()
+    stamps = {k: 1.0 for k in ("rpm", "tps", "map", "advance", "stft", "ltft", "ltft_idle")}
+    evs1 = det.update(
+        1.0,
+        {"rpm": 920.0, "tps": 3.5, "map": 54.0, "advance": -23.25, "stft": -1.5, "ltft": -20.31, "ltft_idle": 0.0},
+        stamps,
+    )
+    assert not any("RETARDO CRÍTICO ATDC" in e.message for e in evs1)
+
+    stamps2 = {k: 3.5 for k in ("rpm", "tps", "map", "advance", "stft", "ltft", "ltft_idle")}
+    evs2 = det.update(
+        3.5,
+        {"rpm": 800.0, "tps": 2.6, "map": 30.5, "advance": 2.5, "stft": -2.5, "ltft": -20.31, "ltft_idle": 0.0},
+        stamps2,
+    )
+    assert not any("DESVIO SEVERO DE MISTURA" in e.message for e in evs2)
+
+    # Mas com carga alta (MAP 75 kPa), avanço -12° continua disparando alarme ATDC
+    stamps3 = {k: 6.0 for k in ("rpm", "tps", "map", "advance")}
+    evs3 = det.update(6.0, {"rpm": 1800.0, "tps": 25.0, "map": 75.0, "advance": -12.0}, stamps3)
+    assert any("RETARDO CRÍTICO ATDC" in e.message and e.level == "alarm" for e in evs3)
+

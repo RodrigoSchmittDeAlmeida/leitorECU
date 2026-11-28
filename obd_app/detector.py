@@ -125,10 +125,20 @@ class DecelDetector:
                                     f"CARGA ANORMAL COM BORBOLETA FECHADA: MAP em {map_val:.1f} kPa "
                                     f"com TPS {tps_val:.1f}% a {rpm_val:.0f} RPM"))
 
-        # --- Diagnóstico Contínuo 2: Retardo Crítico ATDC (Avanço Negativo / Pipoco no Escape)
+        # --- Diagnóstico Contínuo 2: Retardo Crítico ATDC (Avanço Negativo sob Carga)
+        # Em desaceleração/dashpot com pedal solto (TPS <= 6.5% e vácuo MAP <= 58 kPa),
+        # retardos breves de -10° a -23° são amortecimento normal de torque da Bosch ME7.5.30.
         if fresh("advance") and (not fresh("rpm") or latest["rpm"] >= 450.0):
             adv_val = latest["advance"]
-            if adv_val < -8.0:
+            tps_cur = latest.get("tps")
+            map_cur = latest.get("map")
+            is_dashpot_decel = (
+                tps_cur is not None
+                and tps_cur <= 6.5
+                and map_cur is not None
+                and map_cur <= 58.0
+            )
+            if adv_val < -8.0 and not is_dashpot_decel:
                 if t - self._last_atdc_alert >= 2.0:
                     self._last_atdc_alert = t
                     f_sys = latest.get("fuel_sys1")
@@ -232,8 +242,11 @@ class DecelDetector:
             rpm_val = latest["rpm"]
             tps_val = latest.get("tps", 0.0)
             if 650.0 <= rpm_val <= 3800.0 and tps_val <= 50.0:
+                is_vag_flex = ("ltft_idle" in latest) and ("flex_ethanol_pct" not in latest)
                 total_trim = stft + ltft
-                if abs(total_trim) > c.trim_drift_limit:
+                eff_limit = 27.0 if is_vag_flex else c.trim_drift_limit
+                idle_drift = is_vag_flex and abs(latest.get("ltft_idle", 0.0) + stft) > 16.0
+                if abs(total_trim) > eff_limit or idle_drift:
                     if self._trim_drift_start is None:
                         self._trim_drift_start = t
                     elif (t - self._trim_drift_start >= 2.0) and (t - self._last_trim_drift_alert >= 5.0):

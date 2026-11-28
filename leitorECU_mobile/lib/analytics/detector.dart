@@ -172,10 +172,17 @@ class DecelDetector {
       }
     }
 
-    // 2. Retardo Crítico ATDC (< -8.0°) — somente com motor funcionando
+    // 2. Retardo Crítico ATDC (< -8.0°) sob carga — ignora dashpot normal com pedal solto
+    // (TPS <= 6.5% e vácuo MAP <= 58 kPa na queda de giro da Bosch ME7.5.30).
     if (fresh('advance') && (!fresh('rpm') || latest['rpm']! >= 450.0)) {
       final advVal = latest['advance']!;
-      if (advVal < -8.0) {
+      final tpsCur = latest['tps'];
+      final mapCur = latest['map'];
+      final isDashpotDecel = tpsCur != null &&
+          tpsCur <= 6.5 &&
+          mapCur != null &&
+          mapCur <= 58.0;
+      if (advVal < -8.0 && !isDashpotDecel) {
         if (t - _lastAtdcAlert >= 2.0) {
           _lastAtdcAlert = t;
           final fSys = latest['fuel_sys1'];
@@ -340,15 +347,20 @@ class DecelDetector {
       }
     }
 
-    // 7. Desvio Severo de Mistura (|STFT + LTFT| > 22% sustentado)
+    // 7. Desvio Severo de Mistura (|STFT + LTFT| > 22% em OBD padrão; > 27% na escala TotalFlex ME7.5.30)
     final stft = latest['stft'];
     final ltft = latest['ltft'];
     if (stft != null && ltft != null && fresh('rpm')) {
       final rpmVal = latest['rpm']!;
       final tpsVal = latest['tps'] ?? 0.0;
       if (rpmVal >= 650.0 && rpmVal <= 3800.0 && tpsVal <= 50.0) {
+        final isVagFlex = latest.containsKey('ltft_idle') &&
+            !latest.containsKey('flex_ethanol_pct');
         final totalTrim = stft + ltft;
-        if (totalTrim.abs() > c.trimDriftLimit) {
+        final effLimit = isVagFlex ? 27.0 : c.trimDriftLimit;
+        final idleDrift =
+            isVagFlex && ((latest['ltft_idle'] ?? 0.0) + stft).abs() > 16.0;
+        if (totalTrim.abs() > effLimit || idleDrift) {
           if (_trimDriftStart == null) {
             _trimDriftStart = t;
           } else if ((t - _trimDriftStart! >= 2.0) &&

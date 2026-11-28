@@ -1094,6 +1094,26 @@ void main() {
         rep.findings.any((f) => f.category == 'Arrefecimento' && f.title.contains('Ciclo de Eletroventilador')),
         isTrue,
       );
+
+      // 4. Bosch ME7.5.30 TotalFlex: -20.31% em 032.2 (Canal 59 Gasolina) e -23.25° em dashpot (TPS <= 6.5%, MAP <= 58 kPa) NÃO disparam falso alarme
+      final dsMe75 = ReplayDataset(
+        availableChannels: const ['rpm', 'map', 'tps', 'advance', 'ect', 'speed', 'inj_ms', 'stft', 'ltft', 'ltft_idle', 'lambda_v', 'battery'],
+        times: const [0.0, 1.0, 2.0, 3.0],
+        records: const [
+          {'rpm': 760.0, 'map': 30.5, 'tps': 2.6, 'advance': 2.5, 'ect': 81.0, 'speed': 0.0, 'inj_ms': 2.30, 'stft': 0.5, 'ltft': -20.31, 'ltft_idle': 0.0, 'lambda_v': 0.12, 'battery': 14.1},
+          {'rpm': 1900.0, 'map': 26.0, 'tps': 6.0, 'advance': 21.0, 'ect': 81.0, 'speed': 0.0, 'inj_ms': 2.46, 'stft': -1.0, 'ltft': -20.31, 'ltft_idle': 0.0, 'lambda_v': 0.68, 'battery': 14.1},
+          {'rpm': 1320.0, 'map': 54.0, 'tps': 3.5, 'advance': -23.25, 'ect': 81.0, 'speed': 0.0, 'inj_ms': 2.46, 'stft': 0.0, 'ltft': -20.31, 'ltft_idle': 0.0, 'lambda_v': 0.06, 'battery': 14.1},
+          {'rpm': 760.0, 'map': 30.0, 'tps': 2.4, 'advance': 3.0, 'ect': 81.0, 'speed': 0.0, 'inj_ms': 2.30, 'stft': 0.8, 'ltft': -20.31, 'ltft_idle': 0.0, 'lambda_v': 0.65, 'battery': 14.1},
+        ],
+        events: const [],
+        isTurboDetected: false,
+      );
+      final repMe75 = LogAnalyzer.analyze(dsMe75, fileName: 'logLenta-20%.csv');
+      expect(repMe75.findings.where((f) => f.severity == 'alarm' || f.severity == 'warn'), isEmpty);
+      expect(
+        repMe75.findings.any((f) => f.category == 'Mistura' && f.detail.contains('Gasolina reconhecida')),
+        isTrue,
+      );
     });
   });
 }

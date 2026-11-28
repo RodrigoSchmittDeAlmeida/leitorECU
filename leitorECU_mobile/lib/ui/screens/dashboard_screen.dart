@@ -953,14 +953,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
     }
 
-    if (activeKey == 'stft' ||
+    final isVagFlex = c.latest.containsKey('ltft_idle') &&
+        !c.latest.containsKey('flex_ethanol_pct');
+
+    if (activeKey == 'ltft' && isVagFlex) {
+      if (value.abs() >= 24.0) {
+        return (CardAlertState.alarm, value < 0 ? 'LIMITE RICA' : 'LIMITE POBRE');
+      }
+      if (value.abs() >= 22.5) {
+        return (CardAlertState.warn, value < 0 ? 'perto batente -' : 'perto batente +');
+      }
+      if (value <= -13.0) {
+        return (CardAlertState.normal, 'A/F Gasolina');
+      }
+      if (value >= 10.0) {
+        return (CardAlertState.normal, 'A/F Etanol');
+      }
+      return (CardAlertState.normal, 'A/F Flex');
+    } else if (activeKey == 'stft' ||
         activeKey == 'ltft' ||
         activeKey == 'ltft_idle' ||
         activeKey == 'lambda_trim') {
-      if (value.abs() > 20.0) {
+      final warnLim = activeKey == 'ltft_idle' ? 8.0 : 10.0;
+      final alarmLim = activeKey == 'ltft_idle' ? 14.0 : 20.0;
+      if (value.abs() > alarmLim) {
         return (CardAlertState.alarm, value < 0 ? 'RICA' : 'POBRE');
       }
-      if (value.abs() > 10.0) {
+      if (value.abs() > warnLim) {
         return (CardAlertState.warn, value < 0 ? 'corrigindo -' : 'corrigindo +');
       }
     } else if (activeKey == 'ect' || activeKey == 'cht_temp') {
@@ -979,6 +998,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return (CardAlertState.normal, 'repouso');
       }
     } else if (activeKey == 'advance') {
+      final tpsCur = c.latest['tps'];
+      final mapCur = c.latest['map'];
+      final isDashpot = tpsCur != null &&
+          tpsCur <= 6.5 &&
+          mapCur != null &&
+          mapCur <= 58.0;
+      if (isDashpot) {
+        if (value < -5.0) return (CardAlertState.normal, 'dashpot');
+        return (CardAlertState.normal, '');
+      }
       if (value < -8.0) return (CardAlertState.alarm, 'RETARDO ATDC');
       if (value < -5.0) return (CardAlertState.warn, 'retardado');
     } else if (activeKey == 'lambda_v') {

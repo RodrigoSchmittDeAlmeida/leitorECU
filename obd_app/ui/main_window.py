@@ -1822,7 +1822,21 @@ class MainWindow(QMainWindow):
                 continue
             v = self.latest[k]
             state, note = "normal", ""
-            if k in ("stft", "ltft", "lambda_trim"):
+            is_vag_flex = ("ltft_idle" in self.latest) and ("flex_ethanol_pct" not in self.latest)
+            if k == "ltft" and is_vag_flex:
+                # Na Bosch ME7.5.30 TotalFlex, o Bloco 032.2 armazena o fator A/F de combustível
+                # (Gasolina Canal 59 = -20.3%, E27/E30 = -17%..-20.5%, Flex = 0%, Etanol = +10%..+22%).
+                if abs(v) >= 24.0:
+                    state, note = "alarm", "LIMITE RICA" if v < 0 else "LIMITE POBRE"
+                elif abs(v) >= 22.5:
+                    state, note = "warn", "perto batente -" if v < 0 else "perto batente +"
+                elif v <= -13.0:
+                    state, note = "normal", "A/F Gasolina"
+                elif v >= 10.0:
+                    state, note = "normal", "A/F Etanol"
+                else:
+                    state, note = "normal", "A/F Flex"
+            elif k in ("stft", "ltft", "lambda_trim"):
                 if abs(v) > 20:
                     state, note = "alarm", "RICA" if v < 0 else "POBRE"
                 elif abs(v) > 10:
@@ -1854,7 +1868,14 @@ class MainWindow(QMainWindow):
             elif k == "lambda2_v":
                 state, note = self._lambda2_state(now)
             elif k == "advance" and v < -5:
-                state, note = "warn", "retardado"
+                tps_cur = self.latest.get("tps")
+                map_cur = self.latest.get("map")
+                if tps_cur is not None and tps_cur <= 6.5 and map_cur is not None and map_cur <= 58.0:
+                    state, note = "normal", "dashpot"
+                elif v < -8:
+                    state, note = "alarm", "RETARDO ATDC"
+                else:
+                    state, note = "warn", "retardado"
             card.set_state(state, note)
 
     def _lambda_state(self, now: float) -> Tuple[str, str]:

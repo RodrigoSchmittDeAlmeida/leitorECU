@@ -47,19 +47,43 @@ class FlexAfStatusCard extends StatelessWidget {
             (tps == null || tps < 6.5) &&
             (speed == null || speed < 2.0);
 
-        final isSevereRich = ltft != null && ltft <= -12.0;
-        final isSevereLean = ltft != null && ltft >= 12.0;
+        final sameDirStftDrift = stft != null &&
+            ltft != null &&
+            stft.abs() >= 6.0 &&
+            (ltft * stft) > 0;
+        final isSevereRich = (ltft != null &&
+                (ltft <= -24.0 || (ltft <= -22.5 && sameDirStftDrift))) ||
+            (ltftIdle != null && ltftIdle <= -12.0) ||
+            (stft != null && stft <= -15.0);
+        final isSevereLean = (ltft != null &&
+                (ltft >= 24.0 || (ltft >= 22.5 && sameDirStftDrift))) ||
+            (ltftIdle != null && ltftIdle >= 12.0) ||
+            (stft != null && stft >= 15.0);
+        final isIdleDriftWarn = ltftIdle != null && ltftIdle.abs() > 7.5;
         final isHealthyMixture = ltft != null &&
-            ltft.abs() <= 10.0 &&
-            (ltftIdle == null || ltftIdle.abs() <= 6.0);
+            ltft.abs() < 22.5 &&
+            (ltftIdle == null || ltftIdle.abs() <= 7.5) &&
+            (stft == null || stft.abs() <= 10.0);
         final allPreconditionsOk =
             ectOk && closedLoopOk && lambdaActiveOk && noDtcs;
 
+        final String fuelProfileText;
+        if (ltft == null) {
+          fuelProfileText = 'Aguardando leitura do Bloco 032.2';
+        } else if (ltft <= -13.0) {
+          fuelProfileText =
+              'Gasolina reconhecida (preset Canal 59 = -20,3% · E27/E30 típico -17% a -20,5%)';
+        } else if (ltft >= 10.0) {
+          fuelProfileText = 'Etanol hidratado reconhecido (+10% a +22%)';
+        } else {
+          fuelProfileText = 'Mistura Flex intermediária (-13% a +10%)';
+        }
+
         final Color cardAccent;
         if (isSevereRich || isSevereLean) {
-          cardAccent = ltft.abs() > 20.0
-              ? MotorsportColors.alarm
-              : MotorsportColors.warning;
+          cardAccent = MotorsportColors.alarm;
+        } else if (isIdleDriftWarn) {
+          cardAccent = MotorsportColors.warning;
         } else if (isHealthyMixture && allPreconditionsOk) {
           cardAccent = MotorsportColors.ok;
         } else {
@@ -83,20 +107,25 @@ class FlexAfStatusCard extends StatelessWidget {
 
         final ltftIdleColor = ltftIdle == null
             ? tokens.stale
-            : (ltftIdle.abs() > 8.0 ? MotorsportColors.warning : tokens.text);
+            : (ltftIdle.abs() > 12.0
+                ? MotorsportColors.alarm
+                : (ltftIdle.abs() > 7.5 ? MotorsportColors.warning : tokens.text));
         final ltftColor = ltft == null
             ? tokens.stale
-            : (ltft.abs() > 20.0
+            : (ltft.abs() >= 24.0
                 ? MotorsportColors.alarm
-                : (ltft.abs() > 12.0 ? MotorsportColors.warning : tokens.text));
+                : (ltft.abs() >= 22.5 ? MotorsportColors.warning : tokens.text));
         final stftColor = stft == null
             ? tokens.stale
-            : (stft.abs() > 15.0 ? MotorsportColors.warning : tokens.text);
+            : (stft.abs() > 14.0 ? MotorsportColors.warning : tokens.text);
 
+        final isGasolineAf = ltft != null && ltft <= -13.0;
         final Color injColor;
         if (injMs == null) {
           injColor = tokens.stale;
-        } else if (isWarmIdle && injMs >= 3.0) {
+        } else if (isWarmIdle && isGasolineAf && injMs >= 3.1) {
+          injColor = MotorsportColors.warning;
+        } else if (isWarmIdle && injMs >= 3.9) {
           injColor = MotorsportColors.warning;
         } else {
           injColor = tokens.text;
@@ -214,15 +243,25 @@ class FlexAfStatusCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 _ContextBanner(
                   icon: Icons.warning_amber_rounded,
-                  color: MotorsportColors.warning,
+                  color: MotorsportColors.alarm,
                   bg: MotorsportColors.warnBg,
                   textColor: tokens.text,
                   message:
-                      'Mistura rica em carga parcial (LTFT ${fmtPct(ltft, signed: true)}): '
-                      'A/F aprendido em Etanol na EEPROM (faça Reset Canal 00 via VCDS) ou '
-                      'excesso físico na linha (pressão > 4,2 bar, cânister N80 ou bicos).',
+                      'Saturação rica (032.2 ${fmtPct(ltft, signed: true)} / 032.1 ${fmtPct(ltftIdle, signed: true)}): '
+                      'verifique pressão > 4,2 bar, cânister N80, bicos ou A/F travado em Etanol (Canal 59 = 1 no VCDS força Gasolina).',
                 ),
               ] else if (isSevereLean) ...[
+                const SizedBox(height: 10),
+                _ContextBanner(
+                  icon: Icons.warning_amber_rounded,
+                  color: MotorsportColors.alarm,
+                  bg: MotorsportColors.warnBg,
+                  textColor: tokens.text,
+                  message:
+                      'Saturação pobre (032.2 ${fmtPct(ltft, signed: true)} / 032.1 ${fmtPct(ltftIdle, signed: true)}): '
+                      'verifique entrada de ar falso, pressão baixa da bomba/filtro ou bicos sujos.',
+                ),
+              ] else if (isIdleDriftWarn) ...[
                 const SizedBox(height: 10),
                 _ContextBanner(
                   icon: Icons.warning_amber_rounded,
@@ -230,8 +269,8 @@ class FlexAfStatusCard extends StatelessWidget {
                   bg: MotorsportColors.warnBg,
                   textColor: tokens.text,
                   message:
-                      'Mistura pobre em carga parcial (LTFT ${fmtPct(ltft, signed: true)}): '
-                      'verifique entrada de ar falso, pressão baixa da bomba/filtro ou bicos sujos.',
+                      'LTFT Lenta fora do ideal (${fmtPct(ltftIdle, signed: true)}): '
+                      'monitore entrada de ar falso no coletor/TBI (se positiva) ou purga N80 (se negativa).',
                 ),
               ] else if (isHealthyMixture && allPreconditionsOk) ...[
                 const SizedBox(height: 10),
@@ -241,7 +280,7 @@ class FlexAfStatusCard extends StatelessWidget {
                   bg: const Color(0xFF0A2E1E),
                   textColor: tokens.text,
                   message:
-                      'Mistura estequiométrica saudável: correções LTFT Lenta e Parcial dentro da janela ideal (±10%).',
+                      'Mistura estequiométrica saudável · $fuelProfileText.',
                 ),
               ] else if (ltft != null || stft != null || lambda1 != null) ...[
                 const SizedBox(height: 10),
@@ -251,7 +290,7 @@ class FlexAfStatusCard extends StatelessWidget {
                   bg: tokens.surfaceAlt,
                   textColor: tokens.muted,
                   message:
-                      'Aguardando aquecimento completo (ECT ≥ 80°C) e malha fechada estável para aprendizado de longo prazo.',
+                      '$fuelProfileText · aguardando ECT ≥ 80°C e malha fechada estável.',
                 ),
               ],
             ],

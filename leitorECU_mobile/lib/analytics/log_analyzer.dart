@@ -780,32 +780,123 @@ class LogAnalyzer {
     final warns = <DiagnosticFinding>[];
     final infos = <DiagnosticFinding>[];
 
+    final isVagFlex = (byKey.containsKey('ltft_idle') ||
+            byKey.containsKey('g032_c1') ||
+            byKey.containsKey('g032_c2')) &&
+        !byKey.containsKey('flex_ethanol_pct');
+
     // 1. LTFT / LTFT Lenta
-    for (final key in const ['ltft', 'ltft_idle']) {
-      final stat = byKey[key];
-      if (stat == null) continue;
-      final absMean = stat.mean.abs();
-      final dir = stat.mean >= 0 ? 'positiva (tende a mistura pobre)' : 'negativa (tende a mistura rica)';
-      if (absMean > 18.0) {
-        alarms.add(DiagnosticFinding(
-          severity: 'alarm',
-          category: 'Mistura',
-          title: '${stat.label} crítica (${_signed(stat.mean, 1)}%)',
-          detail:
-              'Adaptação de longo prazo média em ${_signed(stat.mean, 1)}% ($dir), acima do limite crítico de ±18%.',
-        ));
-      } else if (absMean > 10.0) {
-        warns.add(DiagnosticFinding(
-          severity: 'warn',
-          category: 'Mistura',
-          title: '${stat.label} elevada (${_signed(stat.mean, 1)}%)',
-          detail:
-              'Adaptação de longo prazo média em ${_signed(stat.mean, 1)}% ($dir), fora da faixa ideal de ±10%.',
-        ));
+    if (isVagFlex) {
+      // Na Bosch ME7.5.30 TotalFlex, ltft_idle (032.1) centra em 0.0%, enquanto
+      // ltft (032.2) armazena o deslocamento estequiométrico A/F TotalFlex
+      // (Canal 59 Gasolina = -20.3%, E27/E30 = -17% a -20.5%, Flex = 0%, Etanol = +10% a +22%).
+      final idleStat = byKey['ltft_idle'];
+      if (idleStat != null) {
+        final absIdle = idleStat.mean.abs();
+        final dir = idleStat.mean >= 0
+            ? 'positiva (tende a mistura pobre / ar falso)'
+            : 'negativa (tende a mistura rica em lenta)';
+        if (absIdle > 14.0) {
+          alarms.add(DiagnosticFinding(
+            severity: 'alarm',
+            category: 'Mistura',
+            title: '${idleStat.label} crítica (${_signed(idleStat.mean, 1)}%)',
+            detail:
+                'Adaptação de marcha lenta (032.1) média em ${_signed(idleStat.mean, 1)}% ($dir), acima de ±14%.',
+          ));
+        } else if (absIdle > 8.0) {
+          warns.add(DiagnosticFinding(
+            severity: 'warn',
+            category: 'Mistura',
+            title: '${idleStat.label} elevada (${_signed(idleStat.mean, 1)}%)',
+            detail:
+                'Adaptação de marcha lenta (032.1) média em ${_signed(idleStat.mean, 1)}% ($dir), fora da faixa ideal de ±8%.',
+          ));
+        }
+      }
+
+      final partStat = byKey['ltft'];
+      final stftCheck = byKey['stft'];
+      if (partStat != null) {
+        final absPart = partStat.mean.abs();
+        final sameDirStftDrift = stftCheck != null &&
+            stftCheck.mean.abs() >= 6.0 &&
+            (partStat.mean * stftCheck.mean) > 0;
+        if (absPart >= 24.0 || (absPart >= 22.5 && sameDirStftDrift)) {
+          final dir = partStat.mean < 0
+              ? 'negativa (saturando no batente rico)'
+              : 'positiva (saturando no batente pobre)';
+          alarms.add(DiagnosticFinding(
+            severity: 'alarm',
+            category: 'Mistura',
+            title: 'Fator A/F · LTFT Parcial no limite (${_signed(partStat.mean, 1)}%)',
+            detail:
+                'Bloco 032.2 atingiu ${_signed(partStat.mean, 1)}% ($dir), próximo ao batente de ±25% da ME7.5.30.',
+          ));
+        } else {
+          final fuelProfile = partStat.mean <= -13.0
+              ? 'Gasolina reconhecida (preset fábrica Canal 59 = -20,3%; E27/E30 típico -17% a -20,5%)'
+              : (partStat.mean >= 10.0
+                  ? 'Etanol hidratado reconhecido (+10% a +22%)'
+                  : 'Mistura Flex intermediária (-13% a +10%)');
+          infos.add(DiagnosticFinding(
+            severity: 'info',
+            category: 'Mistura',
+            title: 'Perfil A/F TotalFlex: ${_signed(partStat.mean, 1)}% (032.2)',
+            detail: '$fuelProfile.',
+          ));
+        }
+      }
+
+      if (stftCheck != null) {
+        final absStft = stftCheck.mean.abs();
+        if (absStft > 14.0) {
+          alarms.add(DiagnosticFinding(
+            severity: 'alarm',
+            category: 'Mistura',
+            title: 'Correção instantânea STFT crítica (${_signed(stftCheck.mean, 1)}%)',
+            detail:
+                'STFT (033.1) manteve média de ${_signed(stftCheck.mean, 1)}%, indicando desvio ativo não absorvido pela adaptação A/F.',
+          ));
+        } else if (absStft > 9.0) {
+          warns.add(DiagnosticFinding(
+            severity: 'warn',
+            category: 'Mistura',
+            title: 'Correção instantânea STFT elevada (${_signed(stftCheck.mean, 1)}%)',
+            detail:
+                'STFT (033.1) manteve média de ${_signed(stftCheck.mean, 1)}% (acima de ±9%).',
+          ));
+        }
+      }
+    } else {
+      for (final key in const ['ltft', 'ltft_idle']) {
+        final stat = byKey[key];
+        if (stat == null) continue;
+        final absMean = stat.mean.abs();
+        final dir = stat.mean >= 0
+            ? 'positiva (tende a mistura pobre)'
+            : 'negativa (tende a mistura rica)';
+        if (absMean > 18.0) {
+          alarms.add(DiagnosticFinding(
+            severity: 'alarm',
+            category: 'Mistura',
+            title: '${stat.label} crítica (${_signed(stat.mean, 1)}%)',
+            detail:
+                'Adaptação de longo prazo média em ${_signed(stat.mean, 1)}% ($dir), acima do limite crítico de ±18%.',
+          ));
+        } else if (absMean > 10.0) {
+          warns.add(DiagnosticFinding(
+            severity: 'warn',
+            category: 'Mistura',
+            title: '${stat.label} elevada (${_signed(stat.mean, 1)}%)',
+            detail:
+                'Adaptação de longo prazo média em ${_signed(stat.mean, 1)}% ($dir), fora da faixa ideal de ±10%.',
+          ));
+        }
       }
     }
 
-    // 2. Soma STFT + LTFT > 20%
+    // 2. Soma STFT + LTFT (> 20% em OBD padrão; > 27% na escala TotalFlex ME7.5.30)
     final stftStat = byKey['stft'];
     final ltftStat = byKey['ltft'];
     if (stftStat != null && ltftStat != null) {
@@ -822,13 +913,14 @@ class LogAnalyzer {
       final combinedMean = combinedCount > 0
           ? sumCombined / combinedCount
           : stftStat.mean + ltftStat.mean;
-      if (combinedMean.abs() > 20.0) {
+      final combinedLimit = isVagFlex ? 27.0 : 20.0;
+      if (combinedMean.abs() > combinedLimit) {
         alarms.add(DiagnosticFinding(
           severity: 'alarm',
           category: 'Mistura',
           title: 'Correção combinada STFT + LTFT crítica (${_signed(combinedMean, 1)}%)',
           detail:
-              'Soma média STFT (${_signed(stftStat.mean, 1)}%) + LTFT (${_signed(ltftStat.mean, 1)}%) excede ±20%, indicando desvio severo de combustível/ar falso.',
+              'Soma média STFT (${_signed(stftStat.mean, 1)}%) + LTFT (${_signed(ltftStat.mean, 1)}%) excede ±${combinedLimit.toStringAsFixed(0)}%, indicando desvio severo de combustível/ar falso.',
         ));
       }
     }
@@ -919,16 +1011,34 @@ class LogAnalyzer {
       }
     }
 
-    // 5. Avanço de ignição crítico ATDC
+    // 5. Avanço de ignição crítico ATDC sob carga (ignora dashpot normal com pedal solto: TPS <= 6.5% e MAP <= 58 kPa)
     final advStat = byKey['advance'];
     if (advStat != null && advStat.min < -8.0) {
-      alarms.add(DiagnosticFinding(
-        severity: 'alarm',
-        category: 'Ignição',
-        title: 'Retardo crítico de ignição ATDC (${advStat.min.toStringAsFixed(1)}°)',
-        detail:
-            'Avanço mínimo caiu para ${advStat.min.toStringAsFixed(1)}° (< -8,0° ATDC), elevando risco de combustão no escape e superaquecimento.',
-      ));
+      double? minLoadedAdv;
+      for (final rec in ds.records) {
+        final adv = rec['advance'];
+        if (adv == null || !adv.isFinite) continue;
+        final rpm = rec['rpm'];
+        if (rpm != null && rpm < 450.0) continue;
+        final tps = rec['tps'];
+        final map = rec['map'];
+        final isDashpot =
+            tps != null && tps <= 6.5 && map != null && map <= 58.0;
+        if (!isDashpot) {
+          minLoadedAdv =
+              minLoadedAdv == null ? adv : math.min(minLoadedAdv, adv);
+        }
+      }
+      if (minLoadedAdv != null && minLoadedAdv < -8.0) {
+        alarms.add(DiagnosticFinding(
+          severity: 'alarm',
+          category: 'Ignição',
+          title:
+              'Retardo crítico de ignição ATDC (${minLoadedAdv.toStringAsFixed(1)}°)',
+          detail:
+              'Avanço sob carga atingiu ${minLoadedAdv.toStringAsFixed(1)}° (< -8,0° ATDC fora de desaceleração), elevando risco de combustão no escape e superaquecimento.',
+        ));
+      }
     }
 
     // 6. Retardo por detonação (Knock)

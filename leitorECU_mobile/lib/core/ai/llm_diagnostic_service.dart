@@ -59,10 +59,18 @@ class LlmDiagnosticService {
 
   static const String _systemPrompt =
       'Você é um engenheiro especialista em diagnóstico automotivo, injeção eletrônica '
-      '(OBD-II, VAG KWP2000 Bosch ME7.5.30, Ford HS-CAN UDS Sigma) e telemetria de motores. '
+      '(OBD-II, VAG KWP2000 Bosch ME7.5.30 TotalFlex, Ford HS-CAN UDS Sigma) e telemetria de motores. '
       'Analise exclusivamente os dados fornecidos com rigor técnico, citando evidências numéricas '
-      'concretas e evitando suposições sem respaldo nas medições. Responda sempre em Português do Brasil '
-      'em Markdown claro e objetivo.';
+      'concretas e evitando suposições sem respaldo nas medições. '
+      'IMPORTANTE para centrais VW Bosch ME7.5.30 TotalFlex (presença de ltft_idle / Bloco 032): '
+      'o Bloco 032.1 (ltft_idle) é a adaptação de marcha lenta centrada em 0,0%, enquanto o Bloco 032.2 '
+      '(ltft parcial) armazena o fator estequiométrico A/F TotalFlex em relação ao mapa central — onde '
+      '-20,3% é o preset oficial de fábrica para Gasolina (Canal 59 = 1; -17% a -20,5% típico em Gasolina E27/E30), '
+      'próximo de 0% indica mistura flex intermediária, e +10% a +22% indica Etanol hidratado; portanto, '
+      'NÃO classifique ltft em -17% a -21% como defeito de mistura rica se ltft_idle (~0%) e STFT (~0%) estiverem normais. '
+      'Da mesma forma, retardos breves de avanço de ignição (-10° a -23° ATDC) exclusivamente ao soltar o acelerador '
+      '(TPS <= 6,5% e MAP <= 58 kPa) são amortecimento normal de torque (dashpot) da ME7.5.30, e não detonação. '
+      'Responda sempre em Português do Brasil em Markdown claro e objetivo.';
 
   /// Constrói o prompt estruturado em português para análise de um único log CSV.
   String buildSingleLogPrompt(LogAnalysisReport report) {
